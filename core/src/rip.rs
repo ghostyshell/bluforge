@@ -438,7 +438,10 @@ where
 
     // Chapters of the whole title; they are sliced per episode below.
     let marks = crate::disc::Disc::open(&req.source, req.keydb.as_deref())
-        .and_then(|d| d.chapters(wanted[0].title_index))
+        .and_then(|d| {
+            let _ = d.info()?; // chapter marks need the title list read first
+            d.chapters(wanted[0].title_index)
+        })
         .unwrap_or_default();
 
     let mut a: Vec<String> = vec![
