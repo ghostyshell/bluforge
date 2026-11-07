@@ -16,6 +16,8 @@ authoring with custom menus and burning.
 | Disc inspection (titles, streams, HDR, AACS state) via libbluray | ✅ |
 | Rip: MKV / MP4 remux (lossless) | ✅ |
 | Rip: x264 / x265 / VideoToolbox encode | ✅ |
+| Remux metadata: ChapterDB chapter names, TMDB poster, track titles | ✅ |
+| Track defaults: English non-commentary audio, subtitles off | ✅ |
 | Decrypted ISO / folder export | ✅ |
 | Desktop UI (Tauri v2) | ✅ |
 | Blu-ray authoring + menus + burning | 🚧 |
@@ -59,6 +61,8 @@ cargo build --release
 ./target/release/bluforge disc /Volumes/MY_DISC   # inspect titles
 ./target/release/bluforge libs
 ./target/release/bluforge iso /Volumes/MY_DISC ~/movie.iso            # decrypted ISO
+./target/release/bluforge rip /Volumes/MY_DISC                        # main title -> ~/Downloads
+./target/release/bluforge rip /dev/rdisk5 --title 3 ~/Movies/out.mkv  # explicit title + output
 
 # desktop app
 cd app && npm install
@@ -80,6 +84,28 @@ node scripts/mkbd.mjs /tmp/testbd 8
 ./target/release/bluforge rip  /tmp/testbd /tmp/out.mkv --title 0
 ./target/release/bluforge iso  /tmp/testbd /tmp/out.iso --label SINTEL
 ```
+
+## Remux metadata
+
+Ripping a title also enriches the output, via two public services - both
+reached keylessly, so there is nothing to configure:
+
+* **Chapter names** from [ChapterDB](https://chapterdb.plex.tv). The disc's own
+  chapter marks give the times; ChapterDB supplies the scene names, matched on
+  title, chapter count and runtime. If the best entry is for a different cut the
+  disc times are kept and the names are applied by position; with no match you
+  get plain `Chapter NN`.
+* **A poster** from TMDB, written next to the output as `<name>.poster.jpg` and
+  attached inside the MKV as `cover.jpg`.
+
+Track metadata is written on the way out: real language tags and descriptive
+titles for video, audio and subtitles, the English **non-commentary** audio track
+marked default, and every subtitle explicitly non-default so players start with
+subtitles off.
+
+`--no-chapters` / `--no-poster` skip the lookups; `--movie "<title>"` overrides
+the name used to search (default: the disc label). A failed lookup is never
+fatal.
 
 ## Configuration & data
 
