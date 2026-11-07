@@ -5,6 +5,7 @@ import {
   type DiscInfo,
   type EncodeSettings,
   type AudioSel,
+  type CoverHit,
   type IsoProgress,
   type MovieHit,
   type RipMode,
@@ -54,6 +55,12 @@ export default function App() {
   const [poster, setPoster] = useState(true);
   const [movie, setMovie] = useState<string | null>(null);
   const [placeholders, setPlaceholders] = useState<[string, string][]>([]);
+  const [covers, setCovers] = useState(true);
+  const [coverQuery, setCoverQuery] = useState("");
+  const [coverSource, setCoverSource] = useState("all");
+  const [coverHits, setCoverHits] = useState<CoverHit[]>([]);
+  const [thumbs, setThumbs] = useState<Record<string, string>>({});
+  const [coverBusy, setCoverBusy] = useState(false);
   const [preview, setPreview] = useState("");
   const [progress, setProgress] = useState<RipProgress | null>(null);
   const [isoProgress, setIsoProgress] = useState<IsoProgress | null>(null);
@@ -169,8 +176,44 @@ export default function App() {
         movie,
         audio,
         subs,
+        covers,
       });
     } catch (e) { setError(String(e)); setBusy(null); }
+  };
+
+  const searchCovers = async () => {
+    const q = coverQuery.trim();
+    if (!q) return;
+    setCoverBusy(true);
+    setCoverHits([]);
+    setThumbs({});
+    try {
+      setCoverHits(await api.coversSearch(q, coverSource, 12));
+      setToast("Searched covers");
+    } catch (e) { setError(String(e)); }
+    finally { setCoverBusy(false); }
+  };
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      for (const h of coverHits.slice(0, 18)) {
+        if (!alive) return;
+        if (thumbs[h.preview_url]) continue;
+        try {
+          const d = await api.coverThumb(h.preview_url);
+          if (d && alive) setThumbs((t) => ({ ...t, [h.preview_url]: d }));
+        } catch { /* skip */ }
+      }
+    })();
+    return () => { alive = false; };
+  }, [coverHits]);
+
+  const saveCover = async (h: CoverHit) => {
+    try {
+      const p = await api.saveCover(h.source, h.id, cfg?.output_dir ?? null, h.title);
+      setToast(`Saved ${p.split("/").pop()}`);
+    } catch (e) { setError(String(e)); }
   };
 
   const cancel = async () => { try { await api.cancelRip(); } catch { /* ignore */ } setBusy(null); };
@@ -364,6 +407,10 @@ export default function App() {
                 <input type="checkbox" checked={poster} onChange={(e) => setPoster(e.target.checked)} />
                 TMDB poster
               </label>
+              <label className="check">
+                <input type="checkbox" checked={covers} onChange={(e) => setCovers(e.target.checked)} />
+                Cover art next to the rip
+              </label>
             </div>
 
             <label className="field" style={{ marginTop: 12 }}>Movie title for lookups
@@ -375,6 +422,52 @@ export default function App() {
               <span className="sub">Output file</span>
               <div className="mono truncate" title={preview}>{preview || "—"}</div>
             </div>
+          </section>
+
+          {/* Covers */}
+          <section className="card">
+            <div className="row between">
+              <h2>Covers</h2>
+              <span className="sub">case covers + disc labels · HiResCovers / dvdcover.com / TMDB</span>
+            </div>
+            <div className="row" style={{ marginTop: 10, gap: 8 }}>
+              <input className="grow" value={coverQuery} placeholder="Movie title"
+                onChange={(e) => setCoverQuery(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") searchCovers(); }} />
+              <select value={coverSource} onChange={(e) => setCoverSource(e.target.value)}>
+                <option value="all">All sources</option>
+                <option value="hirescovers">HiResCovers</option>
+                <option value="dvdcover">dvdcover.com</option>
+                <option value="tmdb">TMDB poster</option>
+              </select>
+              <button onClick={searchCovers} disabled={coverBusy || !coverQuery.trim()}>
+                {coverBusy ? "…" : "Search"}
+              </button>
+            </div>
+            {coverHits.length > 0 && (
+              <div className="covers">
+                {coverHits.map((h) => (
+                  <div key={`${h.source}-${h.id}`} className="cover" title={h.title}>
+                    <div className="thumb">
+                      {thumbs[h.preview_url]
+                        ? <img src={thumbs[h.preview_url]} alt={h.title} loading="lazy" />
+                        : <span className="spin" />}
+                    </div>
+                    <div className="cmeta">
+                      <div className="truncate">{h.title}</div>
+                      <div className="sub">{h.source} · {h.format} · {h.kind}</div>
+                    </div>
+                    <button className="ghost sm" onClick={() => saveCover(h)}>Save</button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {coverHits.length === 0 && !coverBusy && (
+              <p className="hint" style={{ marginTop: 10 }}>
+                Sets <code>BluForge</code> beside the rip. HiResCovers originals need a member
+                cookie; without one the public preview is saved.
+              </p>
+            )}
           </section>
 
           {error && <div className="err">⚠ {error}</div>}

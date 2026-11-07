@@ -106,6 +106,20 @@ export type RipRequest = {
   movie: string | null;
   audio: AudioSel;
   subs: SubSel;
+  /** Download cover art next to the output */
+  covers: boolean;
+};
+
+export type CoverHit = {
+  source: string;
+  id: string;
+  title: string;
+  kind: string;
+  format: string;
+  preview_url: string;
+  full_url: string;
+  needs_auth: boolean;
+  note: string;
 };
 
 export type AudioSel = "all" | "main" | "english";
@@ -172,6 +186,11 @@ export const api = {
   previewOutput: (template: string, vars: PreviewVars) =>
     invoke<string>("preview_output", { template, vars }),
   templatePlaceholders: () => invoke<[string, string][]>("template_placeholders"),
+  coversSearch: (query: string, source: string, limit: number) =>
+    invoke<CoverHit[]>("covers_search", { query, source, limit }),
+  coverThumb: (url: string) => invoke<string | null>("cover_thumb", { url }),
+  saveCover: (source: string, id: string, destDir: string | null, title: string) =>
+    invoke<string>("save_cover", { source, id, destDir, title }),
   tmdbLookup: (movie: string, runtimeSecs: number) =>
     invoke<MovieHit | null>("tmdb_lookup", { movie, runtimeSecs }),
 };

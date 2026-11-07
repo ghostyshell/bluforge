@@ -21,6 +21,28 @@ pub struct AppConfig {
     pub auto_check_updates: bool,
     /// Last update check (unix seconds) to throttle.
     pub last_update_check: Option<u64>,
+    /// Download cover art next to the rip when one is found.
+    #[serde(default = "yes")]
+    pub auto_cover: bool,
+    /// Checkout of the hirescovers tooling; its manifests are read for search.
+    #[serde(default = "default_hirescovers_dir")]
+    pub hirescovers_dir: PathBuf,
+    #[serde(default)]
+    pub hirescovers_user: Option<String>,
+    #[serde(default)]
+    pub hirescovers_pass: Option<String>,
+    /// Member cookie for hirescovers originals (falls back to the tooling's).
+    #[serde(default)]
+    pub hirescovers_cookie: Option<String>,
+}
+
+pub fn yes() -> bool {
+    true
+}
+
+pub fn default_hirescovers_dir() -> PathBuf {
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+    PathBuf::from(home).join("Code/hirescovers")
 }
 
 pub fn default_template() -> String {
@@ -39,6 +61,11 @@ impl Default for AppConfig {
             auto_update_keys: true,
             auto_check_updates: true,
             last_update_check: None,
+            auto_cover: true,
+            hirescovers_dir: default_hirescovers_dir(),
+            hirescovers_user: None,
+            hirescovers_pass: None,
+            hirescovers_cookie: None,
         }
     }
 }

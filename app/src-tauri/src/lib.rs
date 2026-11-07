@@ -93,6 +93,91 @@ fn tmdb_lookup(movie: String, runtime_secs: f64) -> Option<MovieHit> {
         })
 }
 
+fn b64(data: &[u8]) -> String {
+    const T: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(data.len() * 4 / 3 + 4);
+    for chunk in data.chunks(3) {
+        let b = [
+            chunk[0],
+            *chunk.get(1).unwrap_or(&0),
+            *chunk.get(2).unwrap_or(&0),
+        ];
+        let n = ((b[0] as u32) << 16) | ((b[1] as u32) << 8) | b[2] as u32;
+        out.push(T[((n >> 18) & 63) as usize] as char);
+        out.push(T[((n >> 12) & 63) as usize] as char);
+        out.push(if chunk.len() > 1 {
+            T[((n >> 6) & 63) as usize] as char
+        } else {
+            '='
+        });
+        out.push(if chunk.len() > 2 {
+            T[(n & 63) as usize] as char
+        } else {
+            '='
+        });
+    }
+    out
+}
+
+/// Cover search across the sources.
+#[tauri::command]
+fn covers_search(query: String, source: String, limit: usize) -> Vec<bluforge_core::CoverHit> {
+    let cfg = AppConfig::load();
+    let sources: Vec<bluforge_core::CoverSource> = if source == "all" {
+        bluforge_core::CoverSource::all().to_vec()
+    } else {
+        bluforge_core::CoverSource::parse(&source)
+            .map(|s| vec![s])
+            .unwrap_or_else(|| bluforge_core::CoverSource::all().to_vec())
+    };
+    let mut out = Vec::new();
+    for s in sources {
+        if let Ok(mut r) = bluforge_core::covers::search(s, &query, limit, &cfg.hirescovers_dir) {
+            out.append(&mut r);
+        }
+    }
+    out
+}
+
+/// Fetch a cover image as a data: URL so the webview can show it without CORS
+/// or referer problems.
+#[tauri::command]
+fn cover_thumb(url: String) -> Option<String> {
+    let cfg = AppConfig::load();
+    let cookie = bluforge_core::covers::cookie(&cfg);
+    let (bytes, ctype) = bluforge_core::covers::fetch(&url, cookie.as_deref()).ok()?;
+    if bytes.len() > 6_000_000 {
+        return None;
+    }
+    let mime = if ctype.contains("png") { "image/png" } else { "image/jpeg" };
+    Some(format!("data:{mime};base64,{}", b64(&bytes)))
+}
+
+/// Download one cover into `dest_dir` (defaults to the configured output dir).
+#[tauri::command]
+fn save_cover(source: String, id: String, dest_dir: Option<String>, title: Option<String>) -> Result<String, String> {
+    let cfg = AppConfig::load();
+    let src = bluforge_core::CoverSource::parse(&source).ok_or("unknown source")?;
+    let hit = bluforge_core::covers::by_id(src, &id, &cfg.hirescovers_dir)
+        .map_err(|e| e.to_string())?
+        .or_else(|| {
+            let q = title?;
+            bluforge_core::covers::search(src, &q, 60, &cfg.hirescovers_dir)
+                .ok()?
+                .into_iter()
+                .find(|h| h.id == id)
+        })
+        .ok_or("cover not found")?;
+    let dir = dest_dir
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| cfg.output_dir.clone());
+    let name = format!("{} {}.jpg", hit.kind, bluforge_core::covers::sanitize(&hit.title));
+    let cookie = bluforge_core::covers::cookie(&cfg);
+    let saved = bluforge_core::covers::download(&hit, &dir.join(name), cookie.as_deref())
+        .map_err(|e| e.to_string())?;
+    Ok(saved.path.display().to_string())
+}
+
 #[tauri::command]
 fn snapshot() -> CoreSnapshot {
     bluforge_core::snapshot()
@@ -247,6 +332,9 @@ pub fn run() {
             check_update,
             install_update,
             reveal,
+            covers_search,
+            cover_thumb,
+            save_cover,
             preview_output,
             template_placeholders,
             tmdb_lookup

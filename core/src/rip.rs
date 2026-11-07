@@ -122,6 +122,9 @@ pub struct RipRequest {
     /// Subtitle tracks to keep.
     #[serde(default)]
     pub subs: SubSel,
+    /// Download cover art beside the output when a source has one.
+    #[serde(default = "yes")]
+    pub covers: bool,
 }
 
 fn yes() -> bool {
@@ -141,6 +144,9 @@ pub struct RipProgress {
     /// Resolved output path, once known.
     #[serde(default)]
     pub dest: Option<PathBuf>,
+    /// Cover files saved next to the output.
+    #[serde(default)]
+    pub covers: Vec<String>,
 }
 
 pub fn ffmpeg_path() -> PathBuf {
@@ -912,6 +918,13 @@ where
             want_ms = total_ms,
             "output is shorter than the title - disc read error?"
         );
+    }
+    if req.covers && cfg.auto_cover {
+        let found = crate::covers::auto_covers(&movie, &ctx.dest, &cfg);
+        prog.covers = found.iter().map(|s| s.path.display().to_string()).collect();
+        if found.is_empty() {
+            tracing::info!("no cover art found");
+        }
     }
     if let Some(cf) = &ctx.chapters_file {
         let _ = std::fs::remove_file(cf);

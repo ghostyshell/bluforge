@@ -72,6 +72,14 @@ enum Cmd {
         /// Subtitle tracks to keep: all | english | none.
         #[arg(long, default_value = "all")]
         subs: String,
+        /// Don't download cover art for the disc.
+        #[arg(long)]
+        no_covers: bool,
+    },
+    /// Cover art: search and download case/disc covers.
+    Covers {
+        #[command(subcommand)]
+        cmd: CoversCmd,
     },
     /// Show linked library versions.
     Libs,
@@ -91,6 +99,36 @@ enum Cmd {
     /// Show effective configuration and paths.
     Config,
 }
+
+#[derive(Subcommand)]
+enum CoversCmd {
+    /// List the available sources.
+    Sources,
+    /// Search for covers.
+    Search {
+        /// Title to search for.
+        query: String,
+        /// tmdb | dvdcover | hirescovers | all.
+        #[arg(long, default_value = "all")]
+        source: String,
+        #[arg(long, default_value_t = 12)]
+        limit: usize,
+    },
+    /// Download one cover by source and id (see `covers search`).
+    Get {
+        source: String,
+        id: String,
+        /// Output file, or a directory. Default: the current directory.
+        #[arg(short, long)]
+        out: Option<std::path::PathBuf>,
+        /// Movie title, used to re-resolve the id.
+        #[arg(long)]
+        title: Option<String>,
+    },
+    /// Log in to HiResCovers with the configured credentials.
+    Login,
+}
+
 
 #[derive(Subcommand)]
 enum KeysAction {
@@ -241,6 +279,7 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
             movie,
             audio,
             subs,
+            no_covers,
         } => {
             use bluforge_core::{Container, EncodeSettings, RipMode, RipProgress, RipRequest, VideoCodec};
             let container_kind = if container.eq_ignore_ascii_case("mp4") {
@@ -287,6 +326,7 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
                     "none" => bluforge_core::rip::SubSel::None,
                     _ => bluforge_core::rip::SubSel::All,
                 },
+                covers: !*no_covers,
             };
             let cancel = std::sync::atomic::AtomicBool::new(false);
             let mut last = -1i64;
@@ -302,6 +342,106 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
                 }
             })?;
             eprintln!("\nwrote {dest}");
+        }
+        Cmd::Covers { cmd } => {
+            use bluforge_core::covers::{self, CoverSource};
+            let cfg = AppConfig::load();
+            match cmd {
+                CoversCmd::Sources => {
+                    for s in CoverSource::all() {
+                        println!("{}", s.as_str());
+                    }
+                }
+                CoversCmd::Search {
+                    query,
+                    source,
+                    limit,
+                } => {
+                    let sources: Vec<CoverSource> = if source == "all" {
+                        CoverSource::all().to_vec()
+                    } else {
+                        vec![CoverSource::parse(source).ok_or_else(|| {
+                            bluforge_core::CoreError::Config(format!("unknown source '{source}'"))
+                        })?]
+                    };
+                    let mut rows = Vec::new();
+                    for s in sources {
+                        match covers::search(s, query, *limit, &cfg.hirescovers_dir) {
+                            Ok(mut r) => rows.append(&mut r),
+                            Err(e) => eprintln!("{e}"),
+                        }
+                    }
+                    if cli.json {
+                        println!(
+                            "{}",
+                            serde_json::to_string_pretty(&rows)
+                                .map_err(|e| bluforge_core::CoreError::Config(e.to_string()))?
+                        );
+                    } else if rows.is_empty() {
+                        eprintln!("no covers found");
+                    } else {
+                        for (i, h) in rows.iter().enumerate() {
+                            println!(
+                                "{i:>3}  {:<12} {:<6} {:<10} {}   ({} {})",
+                                h.source, h.kind, h.format, h.title, h.source, h.id
+                            );
+                        }
+                    }
+                }
+                CoversCmd::Get {
+                    source,
+                    id,
+                    out,
+                    title,
+                } => {
+                    let s = CoverSource::parse(source).ok_or_else(|| {
+                        bluforge_core::CoreError::Config(format!("unknown source '{source}'"))
+                    })?;
+                    let hit = match covers::by_id(s, id, &cfg.hirescovers_dir)? {
+                        Some(h) => h,
+                        None => match title {
+                            Some(t) => covers::search(s, t, 50, &cfg.hirescovers_dir)?
+                                .into_iter()
+                                .find(|h| h.id == *id)
+                                .ok_or_else(|| {
+                                    bluforge_core::CoreError::Config(format!("no cover {source}:{id}"))
+                                })?,
+                            None => {
+                                return Err(bluforge_core::CoreError::Config(format!(
+                                    "no cover {source}:{id}"
+                                )))
+                            }
+                        },
+                    };
+                    let dest = match out {
+                        Some(p) if p.is_dir() => p.join(format!("{} {}.jpg", hit.kind, hit.title)),
+                        Some(p) => p.clone(),
+                        None => std::path::PathBuf::from(format!("{} {}.jpg", hit.kind, hit.title)),
+                    };
+                    let saved = covers::download(&hit, &dest, covers::cookie(&cfg).as_deref())?;
+                    eprintln!(
+                        "wrote {} ({:.1} MB{})",
+                        saved.path.display(),
+                        saved.bytes as f64 / 1e6,
+                        if saved.full_size { "" } else { ", preview - log in for full size" }
+                    );
+                }
+                CoversCmd::Login => {
+                    let user = cfg
+                        .hirescovers_user
+                        .clone()
+                        .ok_or_else(|| bluforge_core::CoreError::Config("no hirescovers_user".into()))?;
+                    let pass = cfg
+                        .hirescovers_pass
+                        .clone()
+                        .ok_or_else(|| bluforge_core::CoreError::Config("no hirescovers_pass".into()))?;
+                    let cookie = covers::login_hirescovers(&user, &pass)?;
+                    let mut c = cfg.clone();
+                    c.hirescovers_cookie = Some(cookie);
+                    c.save()?;
+                    eprintln!("hirescovers cookie stored");
+                }
+            }
         }
         Cmd::Config => {
             let cfg = AppConfig::load();

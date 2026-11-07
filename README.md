@@ -18,6 +18,7 @@ authoring with custom menus and burning.
 | Rip: x264 / x265 / VideoToolbox encode | ✅ |
 | Remux metadata: ChapterDB chapter names, TMDB poster, track titles | ✅ |
 | Track defaults: English non-commentary audio, subtitles off | ✅ |
+| Cover art: search/view/download from HiResCovers, dvdcover.com, TMDB | ✅ |
 | Decrypted ISO / folder export | ✅ |
 | Desktop UI (Tauri v2) | ✅ |
 | Blu-ray authoring + menus + burning | 🚧 |
@@ -127,6 +128,29 @@ comes from TMDB; the rest comes from the disc (`{resolution}`, `{hdr}`,
 typo is visible, and empty ones collapse cleanly (`Title ()` -> `Title`). The UI
 lists every placeholder and previews the rendered path live, using the same
 renderer as the ripper.
+
+## Cover art
+
+`covers` searches three sources and downloads the one you pick:
+
+```sh
+./target/release/bluforge covers search "Gladiator II" --source hirescovers
+./target/release/bluforge covers get hirescovers 200648 --out ~/Downloads
+./target/release/bluforge covers login     # store a HiResCovers member cookie
+```
+
+* **hirescovers** - case covers and disc labels. Its 204k-item manifest is read
+  from `$HIRESCOVERS_DIR/state/gallery_items.jsonl`, so *searching* needs no
+  login; the full-size original comes from `secure_image.php` with a member
+  cookie and falls back to the public preview without one. Credentials go in the
+  config (`hirescovers_user` / `hirescovers_pass`) or paste a cookie directly;
+  the tooling's own `state/cookie_free.txt` is used if present.
+* **dvdcover.com** - public WordPress REST; the free `single-free` render.
+* **tmdb** - the movie poster.
+
+A rip saves a front cover (and a disc label, when one exists) next to the output
+as `<name> - cover.jpg` / `<name> - disc.jpg`, unless `--no-covers`. The app has
+the same search with thumbnails, and a *Cover art next to the rip* toggle.
 
 ## Configuration & data
 
