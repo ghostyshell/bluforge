@@ -404,3 +404,60 @@ pub fn human_bytes(n: u64) -> String {    const U: [&str; 6] = ["B", "KB", "MB",
         format!("{v:.2} {}", U[i])
     }
 }
+
+
+/// Eject the optical drive's media.
+///
+/// A failed eject is almost always another process holding the raw device
+/// (MakeMKV's `makemkvcon` is the usual one), so report the holder instead of
+/// a bare "Resource busy".
+pub fn eject() -> Result<String, crate::CoreError> {
+    let snap = crate::snapshot();
+    let dev = snap
+        .optical
+        .first()
+        .ok_or_else(|| crate::CoreError::Disc("no optical drive detected".into()))?;
+    let node = format!("/dev/{}", dev.bsd_name);
+
+    let attempts: [(&str, Vec<String>); 2] = [
+        ("diskutil", vec!["eject".into(), node.clone()]),
+        ("drutil", vec!["eject".into()]),
+    ];
+    let mut last = String::new();
+    for (prog, args) in attempts {
+        match std::process::Command::new(prog).args(&args).output() {
+            Ok(o) if o.status.success() => return Ok(format!("ejected {}", dev.bsd_name)),
+            Ok(o) => {
+                let t = String::from_utf8_lossy(&o.stderr).trim().to_string();
+                last = if t.is_empty() { format!("{prog} failed") } else { t };
+            }
+            Err(e) => last = format!("{prog}: {e}"),
+        }
+        if !std::path::Path::new(&node).exists() {
+            return Ok(format!("ejected {}", dev.bsd_name));
+        }
+    }
+
+    let holders = std::process::Command::new("lsof")
+        .arg(format!("/dev/r{}", dev.bsd_name))
+        .output()
+        .ok()
+        .map(|o| {
+            String::from_utf8_lossy(&o.stdout)
+                .lines()
+                .skip(1)
+                .filter_map(|l| l.split_whitespace().next())
+                .map(|s| s.to_string())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    Err(crate::CoreError::Disc(if holders.is_empty() {
+        format!("eject failed: {last}")
+    } else {
+        format!(
+            "eject failed ({last}) - {} is holding {}",
+            holders.join(", "),
+            dev.bsd_name
+        )
+    }))
+}

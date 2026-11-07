@@ -182,6 +182,7 @@ export const api = {
     listen<RipProgress>("rip://progress", (e) => cb(e.payload)),
   checkUpdate: () => invoke<UpdateInfo>("check_update"),
   installUpdate: () => invoke<void>("install_update"),
+  eject: () => invoke<string>("eject"),
   reveal: (path: string) => invoke<void>("reveal", { path }),
   previewOutput: (template: string, vars: PreviewVars) =>
     invoke<string>("preview_output", { template, vars }),
@@ -189,11 +190,14 @@ export const api = {
   coversSearch: (query: string, source: string, limit: number) =>
     invoke<CoverHit[]>("covers_search", { query, source, limit }),
   coverThumb: (url: string) => invoke<string | null>("cover_thumb", { url }),
-  saveCover: (source: string, id: string, destDir: string | null, title: string) =>
-    invoke<{ path: string; original: boolean; watermarked: boolean; width: number; height: number }>(
-      "save_cover",
-      { source, id, destDir, title },
-    ),
+  saveCovers: (
+    destDir: string,
+    stem: string,
+    items: { role: string; source: string; id: string; title: string }[],
+  ) =>
+    invoke<
+      { role: string; path: string; original: boolean; watermarked: boolean; width: number; height: number }[]
+    >("save_covers", { destDir, stem, items }),
   tmdbLookup: (movie: string, runtimeSecs: number) =>
     invoke<MovieHit | null>("tmdb_lookup", { movie, runtimeSecs }),
 };

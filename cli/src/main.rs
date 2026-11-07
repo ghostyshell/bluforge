@@ -82,6 +82,8 @@ enum Cmd {
         #[command(subcommand)]
         cmd: CoversCmd,
     },
+    /// Eject the disc from the optical drive.
+    Eject,
     /// Show linked library versions.
     Libs,
     /// Export a decrypted ISO (or `--folder`): all AACS/BD+ removed.
@@ -125,6 +127,12 @@ enum CoversCmd {
         /// Movie title, used to re-resolve the id.
         #[arg(long)]
         title: Option<String>,
+        /// Save as a rip sidecar: cover | poster | disc (needs --stem).
+        #[arg(long)]
+        role: Option<String>,
+        /// Rip file stem to name the sidecar after.
+        #[arg(long)]
+        stem: Option<String>,
     },
     /// Show what a cover file really is (original vs watermarked preview).
     Inspect {
@@ -241,6 +249,10 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
                 }
             }
         }
+        Cmd::Eject => match bluforge_core::device::eject() {
+            Ok(m) => println!("{m}"),
+            Err(e) => return Err(e),
+        },
         Cmd::Libs => {
             bluforge_core::Disc::init_env();
             let (aacs, bdplus) = bluforge_core::Disc::decryption_backend();
@@ -403,6 +415,8 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
                     id,
                     out,
                     title,
+                    role,
+                    stem,
                 } => {
                     let s = CoverSource::parse(source).ok_or_else(|| {
                         bluforge_core::CoreError::Config(format!("unknown source '{source}'"))
@@ -423,10 +437,14 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
                             }
                         },
                     };
+                    let name = match (role, stem) {
+                        (Some(r), Some(st)) => covers::role_filename(r, st),
+                        _ => format!("{} {}.jpg", hit.kind, covers::sanitize(&hit.title)),
+                    };
                     let dest = match out {
-                        Some(p) if p.is_dir() => p.join(format!("{} {}.jpg", hit.kind, hit.title)),
+                        Some(p) if p.is_dir() => p.join(name),
                         Some(p) => p.clone(),
-                        None => std::path::PathBuf::from(format!("{} {}.jpg", hit.kind, hit.title)),
+                        None => std::path::PathBuf::from(name),
                     };
                     let saved = covers::download(&hit, &dest, covers::cookie(&cfg).as_deref())?;
                     eprintln!(

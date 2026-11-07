@@ -15,6 +15,30 @@ import {
   type Title,
 } from "./api";
 
+type CoverRole = "cover" | "poster" | "disc";
+
+type TabState = {
+  query: string;
+  source: string;
+  hits: CoverHit[];
+  selected: CoverHit | null;
+  busy: boolean;
+};
+
+const ROLE_LABEL: Record<CoverRole, string> = {
+  cover: "Cover",
+  poster: "Poster",
+  disc: "Disc label",
+};
+
+/// Which result best fits a role: a disc label for disc, a front cover for
+/// cover (never a disc), and anything for a poster.
+function fitsRole(role: CoverRole, h: CoverHit): boolean {
+  if (role === "disc") return h.kind === "disc";
+  if (role === "poster") return h.source === "tmdb" || h.kind === "cover";
+  return h.kind === "cover";
+}
+
 const CODECS = [
   { id: "x265", label: "x265 (HEVC, CPU)" },
   { id: "x264", label: "x264 (AVC, CPU)" },
@@ -56,11 +80,14 @@ export default function App() {
   const [movie, setMovie] = useState<string | null>(null);
   const [placeholders, setPlaceholders] = useState<[string, string][]>([]);
   const [covers, setCovers] = useState(true);
-  const [coverQuery, setCoverQuery] = useState("");
-  const [coverSource, setCoverSource] = useState("all");
-  const [coverHits, setCoverHits] = useState<CoverHit[]>([]);
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
-  const [coverBusy, setCoverBusy] = useState(false);
+  const [coverTab, setCoverTab] = useState<CoverRole>("cover");
+  const [tabs, setTabs] = useState<Record<CoverRole, TabState>>({
+    cover: { query: "", source: "all", hits: [], selected: null, busy: false },
+    poster: { query: "", source: "tmdb", hits: [], selected: null, busy: false },
+    disc: { query: "", source: "all", hits: [], selected: null, busy: false },
+  });
+  const [savingCovers, setSavingCovers] = useState(false);
   const [preview, setPreview] = useState("");
   const [progress, setProgress] = useState<RipProgress | null>(null);
   const [isoProgress, setIsoProgress] = useState<IsoProgress | null>(null);
@@ -107,6 +134,12 @@ export default function App() {
       setDisc(info);
       setTitle(info.main_title ?? info.titles[0]?.index ?? null);
       setMovie(info.name || null);
+      const q = info.name || "";
+      setTabs((t) => ({
+        cover: { ...t.cover, query: q },
+        poster: { ...t.poster, query: q },
+        disc: { ...t.disc, query: q },
+      }));
     } catch (e) { setDisc(null); setError(String(e)); }
     finally { setBusy(null); }
   };
@@ -181,23 +214,32 @@ export default function App() {
     } catch (e) { setError(String(e)); setBusy(null); }
   };
 
-  const searchCovers = async () => {
-    const q = coverQuery.trim();
+  const patchTab = (role: CoverRole, p: Partial<TabState>) =>
+    setTabs((t) => ({ ...t, [role]: { ...t[role], ...p } }));
+
+  const searchRole = async (role: CoverRole, selectBest = false) => {
+    const st = tabs[role];
+    const q = st.query.trim();
     if (!q) return;
-    setCoverBusy(true);
-    setCoverHits([]);
-    setThumbs({});
+    patchTab(role, { busy: true, hits: [] });
     try {
-      setCoverHits(await api.coversSearch(q, coverSource, 12));
-      setToast("Searched covers");
+      const hits = await api.coversSearch(q, st.source, 12);
+      patchTab(role, { hits });
+      if (selectBest) patchTab(role, { selected: hits.find((h) => fitsRole(role, h)) ?? null });
     } catch (e) { setError(String(e)); }
-    finally { setCoverBusy(false); }
+    finally { patchTab(role, { busy: false }); }
   };
 
+  const autoFillAll = () => {
+    for (const role of ["cover", "poster", "disc"] as CoverRole[]) void searchRole(role, true);
+  };
+
+  // Load thumbnails for the active tab.
+  const activeHits = tabs[coverTab].hits;
   useEffect(() => {
     let alive = true;
     (async () => {
-      for (const h of coverHits.slice(0, 18)) {
+      for (const h of activeHits.slice(0, 18)) {
         if (!alive) return;
         if (thumbs[h.preview_url]) continue;
         try {
@@ -207,16 +249,38 @@ export default function App() {
       }
     })();
     return () => { alive = false; };
-  }, [coverHits]);
+  }, [activeHits]);
 
-  const saveCover = async (h: CoverHit) => {
+  // Where the files go: beside the rip's output, else the output folder.
+  const coverTarget = useMemo(() => {
+    const out = preview || "";
+    const slash = out.lastIndexOf("/");
+    const dir = slash > 0 ? out.slice(0, slash) : cfg?.output_dir ?? "";
+    const base = (slash >= 0 ? out.slice(slash + 1) : out).replace(/\.[^.]+$/, "");
+    const stem = base || sanitize(movie || disc?.name || "cover");
+    return { dir, stem };
+  }, [preview, cfg, movie, disc]);
+
+  const chosen = (["cover", "poster", "disc"] as CoverRole[])
+    .map((r) => ({ role: r, hit: tabs[r].selected }))
+    .filter((x): x is { role: CoverRole; hit: CoverHit } => !!x.hit);
+
+  const saveChosen = async () => {
+    if (chosen.length === 0) return;
+    setSavingCovers(true);
     try {
-      const r = await api.saveCover(h.source, h.id, cfg?.output_dir ?? null, h.title);
+      const saved = await api.saveCovers(
+        coverTarget.dir,
+        coverTarget.stem,
+        chosen.map((c) => ({ role: c.role, source: c.hit.source, id: c.hit.id, title: c.hit.title })),
+      );
+      const wm = saved.filter((s) => !s.original).length;
       setToast(
-        `Saved ${r.path.split("/").pop()} · ${r.width}x${r.height} · ` +
-          (r.original ? "original" : r.watermarked ? "watermarked preview" : "downscaled"),
+        `Saved ${saved.map((s) => s.role).join(", ")} to ${coverTarget.dir.split("/").pop()}` +
+          (wm > 0 ? ` (${wm} watermarked preview${wm > 1 ? "s" : ""})` : " (originals)"),
       );
     } catch (e) { setError(String(e)); }
+    finally { setSavingCovers(false); }
   };
 
   const cancel = async () => { try { await api.cancelRip(); } catch { /* ignore */ } setBusy(null); };
@@ -285,7 +349,13 @@ export default function App() {
                       </div>
                     ))}
               </div>
-              <button className="ghost sm" onClick={refresh}>Rescan</button>
+              <div className="row" style={{ gap: 6 }}>
+                <button className="ghost sm" disabled={optical.length === 0}
+                  onClick={async () => { try { setToast(await api.eject()); } catch (e) { setError(String(e)); } }}>
+                  Eject
+                </button>
+                <button className="ghost sm" onClick={refresh}>Rescan</button>
+              </div>
             </div>
 
             {optical.length === 0 && (
@@ -431,46 +501,77 @@ export default function App() {
           <section className="card">
             <div className="row between">
               <h2>Covers</h2>
-              <span className="sub">case covers + disc labels · HiResCovers / dvdcover.com / TMDB</span>
+              <span className="sub">pick each image, then save beside the rip</span>
             </div>
+
+            <div className="tabs" style={{ marginTop: 10 }}>
+              {(["cover", "poster", "disc"] as CoverRole[]).map((r) => (
+                <button key={r} className={coverTab === r ? "on" : ""} onClick={() => setCoverTab(r)}>
+                  {ROLE_LABEL[r]}
+                  {tabs[r].selected && <span className="tick"> ✓</span>}
+                </button>
+              ))}
+              <div className="spacer" />
+              <button className="ghost sm" onClick={autoFillAll} disabled={!tabs[coverTab].query.trim()}>
+                Auto pick
+              </button>
+            </div>
+
             <div className="row" style={{ marginTop: 10, gap: 8 }}>
-              <input className="grow" value={coverQuery} placeholder="Movie title"
-                onChange={(e) => setCoverQuery(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") searchCovers(); }} />
-              <select value={coverSource} onChange={(e) => setCoverSource(e.target.value)}>
+              <input className="grow" value={tabs[coverTab].query} placeholder="Movie title"
+                onChange={(e) => patchTab(coverTab, { query: e.target.value })}
+                onKeyDown={(e) => { if (e.key === "Enter") searchRole(coverTab); }} />
+              <select value={tabs[coverTab].source}
+                onChange={(e) => patchTab(coverTab, { source: e.target.value })}>
                 <option value="all">All sources</option>
                 <option value="hirescovers">HiResCovers</option>
                 <option value="dvdcover">dvdcover.com</option>
                 <option value="tmdb">TMDB poster</option>
               </select>
-              <button onClick={searchCovers} disabled={coverBusy || !coverQuery.trim()}>
-                {coverBusy ? "…" : "Search"}
+              <button onClick={() => searchRole(coverTab)} disabled={tabs[coverTab].busy || !tabs[coverTab].query.trim()}>
+                {tabs[coverTab].busy ? "…" : "Search"}
               </button>
             </div>
-            {coverHits.length > 0 && (
+
+            {activeHits.length > 0 && (
               <div className="covers">
-                {coverHits.map((h) => (
-                  <div key={`${h.source}-${h.id}`} className="cover" title={h.title}>
-                    <div className="thumb">
-                      {thumbs[h.preview_url]
-                        ? <img src={thumbs[h.preview_url]} alt={h.title} loading="lazy" />
-                        : <span className="spin" />}
+                {activeHits.map((h) => {
+                  const sel = tabs[coverTab].selected;
+                  const on = !!sel && sel.source === h.source && sel.id === h.id;
+                  return (
+                    <div key={`${h.source}-${h.id}`} className={`cover ${on ? "sel" : ""}`}
+                      title={h.title} onClick={() => patchTab(coverTab, { selected: h })}>
+                      <div className="thumb">
+                        {thumbs[h.preview_url]
+                          ? <img src={thumbs[h.preview_url]} alt={h.title} loading="lazy" />
+                          : <span className="spin" />}
+                      </div>
+                      <div className="cmeta">
+                        <div className="truncate">{h.title}</div>
+                        <div className="sub">{h.source} · {h.format} · {h.kind}</div>
+                      </div>
+                      {on && <div className="pick">selected for {ROLE_LABEL[coverTab]}</div>}
                     </div>
-                    <div className="cmeta">
-                      <div className="truncate">{h.title}</div>
-                      <div className="sub">{h.source} · {h.format} · {h.kind}</div>
-                    </div>
-                    <button className="ghost sm" onClick={() => saveCover(h)}>Save</button>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
-            {coverHits.length === 0 && !coverBusy && (
+
+            {activeHits.length === 0 && !tabs[coverTab].busy && (
               <p className="hint" style={{ marginTop: 10 }}>
-                Sets <code>BluForge</code> beside the rip. HiResCovers originals need a member
-                cookie; without one the public preview is saved.
+                {ROLE_LABEL[coverTab]}: search and click a result to choose it. HiResCovers
+                originals need a member cookie; without one the public preview is used.
               </p>
             )}
+
+            <div className="row between" style={{ marginTop: 12, gap: 8 }}>
+              <span className="sub mono truncate" title={`${coverTarget.dir}/${coverTarget.stem}`}>
+                → {coverTarget.dir ? `${coverTarget.dir.split("/").pop()}/${coverTarget.stem}` : "…"}
+              </span>
+              <button className="primary" disabled={chosen.length === 0 || savingCovers} onClick={saveChosen}>
+                {savingCovers ? "Saving…" : `Save ${chosen.length || ""} ${chosen.length === 1 ? "file" : "files"}`.trim()}
+              </button>
+            </div>
           </section>
 
           {error && <div className="err">⚠ {error}</div>}

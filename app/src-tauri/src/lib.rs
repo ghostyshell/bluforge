@@ -156,6 +156,7 @@ fn cover_thumb(url: String) -> Option<String> {
 /// Download one cover into `dest_dir` (defaults to the configured output dir).
 #[derive(Serialize)]
 struct SavedCover {
+    role: String,
     path: String,
     original: bool,
     watermarked: bool,
@@ -163,39 +164,55 @@ struct SavedCover {
     height: u32,
 }
 
-#[tauri::command]
-fn save_cover(
+/// One chosen image: which role it is for, and where it came from.
+#[derive(serde::Deserialize)]
+struct SaveItem {
+    /// "cover" | "poster" | "disc"
+    role: String,
     source: String,
     id: String,
-    dest_dir: Option<String>,
     title: Option<String>,
-) -> Result<SavedCover, String> {
+}
+
+/// Save the chosen cover / poster / disc label into `dest_dir`, named after the
+/// rip so they sit alongside it.
+#[tauri::command]
+fn save_covers(dest_dir: String, stem: String, items: Vec<SaveItem>) -> Result<Vec<SavedCover>, String> {
     let cfg = AppConfig::load();
-    let src = bluforge_core::CoverSource::parse(&source).ok_or("unknown source")?;
-    let hit = bluforge_core::covers::by_id(src, &id, &cfg.hirescovers_dir)
-        .map_err(|e| e.to_string())?
-        .or_else(|| {
-            let q = title?;
-            bluforge_core::covers::search(src, &q, 60, &cfg.hirescovers_dir)
-                .ok()?
-                .into_iter()
-                .find(|h| h.id == id)
-        })
-        .ok_or("cover not found")?;
-    let dir = dest_dir
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|| cfg.output_dir.clone());
-    let name = format!("{} {}.jpg", hit.kind, bluforge_core::covers::sanitize(&hit.title));
     let cookie = bluforge_core::covers::cookie(&cfg);
-    let saved = bluforge_core::covers::download(&hit, &dir.join(name), cookie.as_deref())
-        .map_err(|e| e.to_string())?;
-    Ok(SavedCover {
-        path: saved.path.display().to_string(),
-        original: saved.original,
-        watermarked: saved.info.watermarked,
-        width: saved.info.width,
-        height: saved.info.height,
-    })
+    let dir = std::path::PathBuf::from(&dest_dir);
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let mut out = Vec::new();
+    for it in items {
+        let src = bluforge_core::CoverSource::parse(&it.source).ok_or("unknown source")?;
+        let hit = bluforge_core::covers::by_id(src, &it.id, &cfg.hirescovers_dir)
+            .map_err(|e| e.to_string())?
+            .or_else(|| {
+                let q = it.title.clone()?;
+                bluforge_core::covers::search(src, &q, 60, &cfg.hirescovers_dir)
+                    .ok()?
+                    .into_iter()
+                    .find(|h| h.id == it.id)
+            })
+            .ok_or_else(|| format!("{}:{} not found", it.source, it.id))?;
+        let name = bluforge_core::covers::role_filename(&it.role, &stem);
+        let saved = bluforge_core::covers::download(&hit, &dir.join(name), cookie.as_deref())
+            .map_err(|e| e.to_string())?;
+        out.push(SavedCover {
+            role: it.role,
+            path: saved.path.display().to_string(),
+            original: saved.original,
+            watermarked: saved.info.watermarked,
+            width: saved.info.width,
+            height: saved.info.height,
+        });
+    }
+    Ok(out)
+}
+
+#[tauri::command]
+fn eject() -> Result<String, String> {
+    bluforge_core::device::eject().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -354,8 +371,9 @@ pub fn run() {
             reveal,
             covers_search,
             cover_thumb,
-            save_cover,
+            save_covers,
             preview_output,
+            eject,
             template_placeholders,
             tmdb_lookup
         ])

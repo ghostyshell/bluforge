@@ -111,6 +111,16 @@ pub fn fetch(url: &str, cookie: Option<&str>) -> Result<(Vec<u8>, String), CoreE
     get_bytes(url, cookie)
 }
 
+/// File name for a chosen image, given the rip's stem: the sidecars a rip
+/// writes, so the app and CLI store them identically.
+pub fn role_filename(role: &str, stem: &str) -> String {
+    match role {
+        "poster" => format!("{stem}.poster.jpg"),
+        "disc" => format!("{stem} - disc.jpg"),
+        _ => format!("{stem} - cover.jpg"),
+    }
+}
+
 /// Filesystem-safe form of a title.
 pub fn sanitize(s: &str) -> String {
     let t: String = s
