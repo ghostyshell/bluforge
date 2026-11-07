@@ -179,8 +179,12 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
             }
         }
         Cmd::Libs => {
+            bluforge_core::Disc::init_env();
+            let (aacs, bdplus) = bluforge_core::Disc::decryption_backend();
             println!("bluforge-core : {}", bluforge_core::version());
             println!("libbluray     : {}", bluforge_core::disc::library_version());
+            println!("AACS backend  : {}", aacs.as_deref().unwrap_or("(default)"));
+            println!("BD+ backend   : {}", bdplus.as_deref().unwrap_or("(default)"));
             println!("config dir    : {}", bluforge_core::config_dir().display());
         }
         Cmd::Iso {

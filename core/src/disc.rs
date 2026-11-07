@@ -106,9 +106,73 @@ pub struct Disc {
 unsafe impl Send for Disc {}
 
 impl Disc {
+    /// Point libbluray at the AACS / BD+ libraries before the first `bd_open`.
+    ///
+    /// libbluray `dlopen`s these *by name* and appends `.dylib`; Homebrew's
+    /// `/opt/homebrew/lib` is not on dyld's search path, so we resolve real
+    /// paths and export them. When MakeMKV is installed its `libmmbd` is
+    /// preferred for **both** AACS and BD+: it is libaacs/libbdplus ABI
+    /// compatible, does BD+ natively, and handles LibreDrive plus AACS bus
+    /// encryption (which plain libaacs cannot do on drives that enforce
+    /// revocation). Homebrew's libbdplus also ships without a BD+ VM config,
+    /// so libmmbd additionally covers that. Export `LIBAACS_PATH` /
+    /// `LIBBDPLUS_PATH` to override either choice.
+    pub fn init_env() {
+        use std::env;
+        use std::path::Path;
+
+        let have = |p: &str| Path::new(p).is_file();
+
+        let mmbd = [
+            "/Applications/MakeMKV.app/Contents/lib/libmmbd_new",
+            "/Applications/MakeMKV.app/Contents/lib/libmmbd_old",
+            "/usr/local/lib/libmmbd",
+            "/opt/homebrew/lib/libmmbd",
+        ]
+        .into_iter()
+        .find(|c| have(&format!("{c}.dylib")));
+
+        if env::var_os("LIBAACS_PATH").is_none() {
+            match mmbd {
+                Some(c) => env::set_var("LIBAACS_PATH", c),
+                None => {
+                    for c in ["/opt/homebrew/lib/libaacs", "/usr/local/lib/libaacs"] {
+                        if have(&format!("{c}.dylib")) {
+                            env::set_var("LIBAACS_PATH", c);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        if env::var_os("LIBBDPLUS_PATH").is_none() {
+            match mmbd {
+                Some(c) => env::set_var("LIBBDPLUS_PATH", c),
+                None => {
+                    for c in ["/opt/homebrew/lib/libbdplus", "/usr/local/lib/libbdplus"] {
+                        if have(&format!("{c}.dylib")) {
+                            env::set_var("LIBBDPLUS_PATH", c);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Which AACS / BD+ implementation libbluray will use, for diagnostics.
+    pub fn decryption_backend() -> (Option<String>, Option<String>) {
+        (
+            std::env::var("LIBAACS_PATH").ok(),
+            std::env::var("LIBBDPLUS_PATH").ok(),
+        )
+    }
+
     /// Open a disc at `path` (a mounted volume, an ISO, or a `/dev/rdiskX`).
     /// `keydb` points at a KEYDB.cfg consumed by libaacs.
     pub fn open(path: &Path, keydb: Option<&Path>) -> Result<Disc, CoreError> {
+        Self::init_env();
         #[cfg(have_bluray)]
         {
             let cpath = CString::new(path.to_string_lossy().as_bytes())
