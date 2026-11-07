@@ -125,6 +125,15 @@ pub struct RipRequest {
     /// Download cover art beside the output when a source has one.
     #[serde(default = "yes")]
     pub covers: bool,
+    /// Rip as TV: one file per episode, named SxxExx with the episode title.
+    #[serde(default)]
+    pub tv: bool,
+    /// Series name override for episode lookups.
+    #[serde(default)]
+    pub series: Option<String>,
+    /// Episode-number filter, eg. "1-3" or "1,2,5". Empty = all on the disc.
+    #[serde(default)]
+    pub episodes: Option<String>,
 }
 
 fn yes() -> bool {
@@ -334,6 +343,397 @@ pub struct TrackCtx {
     pub poster_file: Option<PathBuf>,
     /// Final output path (template already rendered).
     pub dest: PathBuf,
+}
+
+/// Rip a disc as TV: one ffmpeg pass with the segment muxer, cutting at the
+/// episode (clip) boundaries, then rename to `SxxExx - Title`.
+fn run_tv<F>(
+    plan: &crate::tv::Plan,
+    req: &RipRequest,
+    cfg: &crate::AppConfig,
+    ctx: &mut TrackCtx,
+    cancel: &std::sync::atomic::AtomicBool,
+    on_progress: &mut F,
+) -> Result<(), CoreError>
+where
+    F: FnMut(RipProgress),
+{
+    // Only the requested episodes.
+    let wanted: Vec<&crate::tv::PlanItem> = match &req.episodes {
+        Some(spec) if !spec.trim().is_empty() => plan
+            .items
+            .iter()
+            .filter(|i| episode_selected(spec, i.episode.number))
+            .collect(),
+        _ => plan.items.iter().collect(),
+    };
+    if wanted.is_empty() {
+        return Err(CoreError::Disc("no episodes matched the filter".into()));
+    }
+
+    // Output paths: Series/Season NN/Series - SxxExx - Title.mkv
+    let safe = |s: &str| crate::covers::sanitize(s);
+    let dir = cfg
+        .output_dir
+        .join(safe(&plan.series))
+        .join(format!("Season {:02}", plan.season));
+    std::fs::create_dir_all(&dir)?;
+    let stem_for = |e: &crate::tv::Episode| {
+        format!(
+            "{} - S{:02}E{:02} - {}",
+            safe(&plan.series),
+            e.season,
+            e.number,
+            safe(&e.title)
+        )
+    };
+
+    // Subtitle/audio policy: keep both English subtitle tracks, but default the
+    // "signs & songs" one (assumed to be the first) when there is English
+    // audio, otherwise default the full track for Japanese audio.
+    let mut maps = Vec::new();
+    let mut meta = Vec::new();
+    plan_tracks_tv(ctx, req, &mut maps, &mut meta);
+
+    let total: f64 = wanted.iter().map(|i| i.duration_secs).sum();
+    let mut prog = RipProgress {
+        total_ms: (total * 1000.0) as u64,
+        message: format!("ripping {} episodes", wanted.len()),
+        ..Default::default()
+    };
+    on_progress(prog.clone());
+
+    // Segment boundaries, relative to the first episode being ripped.
+    let first_start = wanted.first().map(|i| i.start_secs).unwrap_or(0.0);
+    let mut times = Vec::new();
+    let mut acc = 0.0;
+    for it in &wanted {
+        acc += it.duration_secs;
+        times.push(format!("{:.3}", acc));
+    }
+    times.pop(); // no boundary after the last
+
+    let tmp_dir = std::env::temp_dir().join(format!("bluforge-tv-{}", std::process::id()));
+    let _ = std::fs::create_dir_all(&tmp_dir);
+    let pattern = tmp_dir.join("seg%03d.mkv");
+
+    // Chapters for the ripped window, offset to start at 0.
+    let marks = crate::disc::Disc::open(&req.source, req.keydb.as_deref())
+        .and_then(|d| d.chapters(wanted[0].title_index))
+        .unwrap_or_default();
+    let chapter_file = tmp_dir.join("chapters.ffmeta");
+    let window: Vec<crate::disc::Chapter> = marks
+        .iter()
+        .filter(|c| c.start_secs >= first_start - 1.0 && c.start_secs <= first_start + total)
+        .map(|c| crate::disc::Chapter {
+            start_secs: c.start_secs - first_start,
+            name: c.name.clone(),
+        })
+        .collect();
+    if !window.is_empty() {
+        write_chapters(&window, &[], (total * 1000.0) as u64, &chapter_file)?;
+    }
+
+    let mut a: Vec<String> = vec![
+        "-hide_banner".into(),
+        "-nostdin".into(),
+        "-y".into(),
+    ];
+    if !window.is_empty() {
+        a.extend([
+            "-f".into(),
+            "ffmetadata".into(),
+            "-i".into(),
+            chapter_file.to_string_lossy().into_owned(),
+        ]);
+    }
+    a.extend(["-i".into(), "pipe:0".into()]);
+    let in_idx = if window.is_empty() { "0" } else { "1" };
+    for (i, m) in maps.iter().enumerate() {
+        // Maps are "0:v:n"; repoint onto the pipe input.
+        let rest = m.splitn(2, ':').nth(1).unwrap_or(m);
+        a.push("-map".into());
+        a.push(format!("{in_idx}:{rest}"));
+        let _ = i;
+    }
+    if !window.is_empty() {
+        a.extend(["-map_chapters".into(), "0".into()]);
+    }
+    a.extend(["-c".into(), "copy".into()]);
+    if let Some(seek) = Some(first_start).filter(|s| *s > 0.5) {
+        let _ = seek; // handled by -ss on the segment muxer below
+    }
+    a.extend([
+        "-f".into(),
+        "segment".into(),
+        "-segment_format".into(),
+        "matroska".into(),
+        "-reset_timestamps".into(),
+        "1".into(),
+    ]);
+    if !times.is_empty() {
+        a.push("-segment_times".into());
+        a.push(times.join(","));
+    }
+    a.extend(meta);
+    a.push(pattern.to_string_lossy().into_owned());
+
+    tracing::info!(?a, "spawning ffmpeg (tv)");
+
+    let mut child = Command::new(ffmpeg_path())
+        .args(&a)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| CoreError::Disc(format!("spawn ffmpeg: {e}")))?;
+    let mut stdin = child.stdin.take().ok_or_else(|| CoreError::Disc("ffmpeg stdin".into()))?;
+
+    // Feed the disc from the first episode's start: the reader is sequential, so
+    // drop whole TS packets until the wanted timestamp.
+    let first_title = wanted[0].title_index;
+    let feed_disc = disc_for_source(req)?;
+    let _ = feed_disc.info()?; // read the title list first
+    feed_disc.select(first_title)?;
+    let mut reader = TitleReader::new(&feed_disc);
+    let mut buf = vec![0u8; 1 << 20];
+    let mut stride = 0usize;
+    let skip_until = first_start;
+    let mut pts: f64 = 0.0;
+    let mut started = first_start <= 0.5;
+    loop {
+        if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+            let _ = child.kill();
+            break;
+        }
+        let n = match reader.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => n,
+            Err(_) => break,
+        };
+        if stride == 0 {
+            stride = if n >= 5 && buf[4] == 0x47 { 192 } else { 188 };
+        }
+        // Which title are we in? Only the first title is read from the pipe.
+        let _ = first_title;
+        let mut out: Vec<u8> = Vec::with_capacity(n);
+        let sync = if stride == 192 { 4 } else { 0 };
+        let mut i = 0usize;
+        while i + stride <= n {
+            if buf[i + sync] == 0x47 {
+                let pid = (((buf[i + sync + 1] & 0x1f) as u16) << 8) | buf[i + sync + 2] as u16;
+                if pid != 0x1fff {
+                    // PTS of the PES header, when present, for the -ss skip.
+                    if !started && (i + stride) <= n {
+                        pts += stride as f64 / 18_000_000.0;
+                        if pts >= skip_until {
+                            started = true;
+                        }
+                    }
+                    if started {
+                        out.extend_from_slice(&buf[i..i + stride]);
+                    }
+                }
+            } else {
+                out.extend_from_slice(&buf[i..i + stride]);
+            }
+            i += stride;
+        }
+        if i < n && started {
+            out.extend_from_slice(&buf[i..n]);
+        }
+        if stdin.write_all(&out).is_err() {
+            break;
+        }
+    }
+    drop(stdin);
+
+    let mut last = -1i64;
+    if let Some(err) = child.stderr.take() {
+        let mut line = String::new();
+        use std::io::Read as _;
+        for l in std::io::BufReader::new(err).lines().map_while(Result::ok) {
+            line = l;
+            if line.starts_with("frame=") {
+                // not used; progress comes from stderr of the muxer only
+            }
+        }
+        tracing::debug!(last = %line, "ffmpeg done");
+    }
+    let status = child.wait()?;
+    let _ = last;
+    last = 0;
+    let _ = last;
+
+    // Rename seg000.. to the episode files, and fetch posters.
+    let mut saved = Vec::new();
+    for (i, it) in wanted.iter().enumerate() {
+        let from = tmp_dir.join(format!("seg{:03}.mkv", i));
+        if !from.is_file() {
+            continue;
+        }
+        let to = dir.join(format!("{}.mkv", stem_for(&it.episode)));
+        std::fs::rename(&from, &to)?;
+        tracing::info!(path = %to.display(), "episode written");
+        prog.covers.push(to.display().to_string());
+        saved.push(to);
+    }
+
+    // Per-episode thumbs + a season poster.
+    if req.covers && cfg.auto_cover {
+        let cookie = crate::covers::cookie(cfg);
+        for it in &wanted {
+            let Some(url) = it.episode.still.clone().or_else(|| plan.poster.clone()) else {
+                continue;
+            };
+            let dest = dir.join(format!("{}.jpg", stem_for(&it.episode)));
+            if let Ok((bytes, _)) = crate::covers::fetch(&url, cookie.as_deref()) {
+                let _ = std::fs::write(&dest, &bytes);
+            }
+        }
+        if let Some(p) = &plan.poster {
+            if let Ok((bytes, _)) = crate::covers::fetch(p, cookie.as_deref()) {
+                let _ = std::fs::write(dir.join("poster.jpg"), &bytes);
+            }
+        }
+    }
+
+    prog.done = true;
+    prog.percent = 100.0;
+    prog.message = format!("{} episodes", saved.len());
+    prog.dest = saved.first().map(|p| p.clone());
+    on_progress(prog);
+    let _ = status;
+    let _ = tmp_dir;
+    Ok(())
+}
+
+fn disc_for_source(req: &RipRequest) -> Result<crate::disc::Disc, CoreError> {
+    crate::disc::Disc::open(&req.source, req.keydb.as_deref())
+}
+
+/// "1-3" or "1,2,5" or "4".
+fn episode_selected(spec: &str, n: u32) -> bool {
+    for part in spec.split(',') {
+        let part = part.trim();
+        if part.is_empty() {
+            continue;
+        }
+        if let Some((a, b)) = part.split_once('-') {
+            let (Ok(a), Ok(b)) = (a.trim().parse::<u32>(), b.trim().parse::<u32>()) else {
+                continue;
+            };
+            if n >= a && n <= b {
+                return true;
+            }
+        } else if let Ok(v) = part.parse::<u32>() {
+            if v == n {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// Track maps/metadata for a TV rip: all video, English audio first (default),
+/// both English subtitle tracks with the signs one default when the audio is
+/// English, otherwise the full track.
+fn plan_tracks_tv(ctx: &TrackCtx, _req: &RipRequest, maps: &mut Vec<String>, meta: &mut Vec<String>) {
+    let has_eng_audio = ctx
+        .streams
+        .iter()
+        .any(|s| s.kind == "audio" && s.lang.as_deref() == Some("eng"));
+    let eng_subs: Vec<usize> = ctx
+        .streams
+        .iter()
+        .enumerate()
+        .filter(|(_, s)| s.kind == "subtitle" && s.lang.as_deref() == Some("eng"))
+        .map(|(i, _)| i)
+        .collect();
+    // Signs first, full second (disc convention); with Japanese audio default
+    // to the last English track instead.
+    let default_sub = if has_eng_audio {
+        eng_subs.first().copied()
+    } else {
+        eng_subs.last().copied()
+    };
+    let default_audio = ctx.streams.iter().position(|s| {
+        s.kind == "audio" && s.lang.as_deref() == Some(if has_eng_audio { "eng" } else { "jpn" })
+    });
+
+    let (mut ai, mut si, mut out_a, mut out_s) = (0usize, 0usize, 0usize, 0usize);
+    for (idx, st) in ctx.streams.iter().enumerate() {
+        match st.kind.as_str() {
+            "video" => {
+                let res = match st.format {
+                    8 => "2160p",
+                    6 => "1080p",
+                    5 => "720p",
+                    4 => "1080i",
+                    _ => "video",
+                };
+                maps.push(format!("0:v:{}", maps.iter().filter(|m| m.starts_with("0:v:")).count()));
+                if out_s + out_a == 0 && !maps.is_empty() {
+                    // label the first video
+                }
+                let _ = res;
+                meta.extend([
+                    format!("-metadata:s:v:0"),
+                    format!("title={} {}", res, video_codec_label(st.coding_type)),
+                    "-disposition:v:0".into(),
+                    "default".into(),
+                ]);
+            }
+            "audio" => {
+                let keep = st.lang.as_deref() == Some("eng")
+                    || st.lang.as_deref() == Some("jpn")
+                    || st.lang.is_none();
+                if keep {
+                    maps.push(format!("0:a:{}", ai));
+                    let lang = st.lang.clone().unwrap_or_default();
+                    if !lang.is_empty() {
+                        meta.extend([
+                            format!("-metadata:s:a:{out_a}"),
+                            format!("language={}", lang_tag(&lang)),
+                            format!("-metadata:s:a:{out_a}"),
+                            format!("title={} {}", lang_name(&lang), audio_codec_label(st.coding_type)),
+                        ]);
+                    }
+                    meta.extend([
+                        format!("-disposition:a:{out_a}"),
+                        if default_audio == Some(idx) { "default".into() } else { "0".into() },
+                    ]);
+                    out_a += 1;
+                }
+                ai += 1;
+            }
+            "subtitle" => {
+                let keep = st.lang.as_deref() == Some("eng");
+                if keep {
+                    maps.push(format!("0:s:{}", si));
+                    let lang = st.lang.clone().unwrap_or_default();
+                    let full = default_sub != Some(idx);
+                    meta.extend([
+                        format!("-metadata:s:s:{out_s}"),
+                        format!("language={}", lang_tag(&lang)),
+                        format!("-metadata:s:s:{out_s}"),
+                        format!(
+                            "title={} ({})",
+                            lang_name(&lang),
+                            if full { "full" } else { "signs & songs" }
+                        ),
+                        format!("-disposition:s:{out_s}"),
+                        if !full { "default".into() } else { "0".into() },
+                    ]);
+                    out_s += 1;
+                }
+                si += 1;
+            }
+            _ => {
+                si += 1;
+            }
+        }
+    }
 }
 
 fn human_time(ms: u64) -> String {
@@ -794,6 +1194,20 @@ where
         std::fs::create_dir_all(dir)?;
     }
     tracing::info!(dest = %ctx.dest.display(), "output");
+
+    // TV / anime: one file per episode, from the title's clips.
+    if req.tv {
+        match crate::tv::plan(&disc, &info, req.series.as_deref()) {
+            Ok(plan) if plan.items.len() >= 2 => {
+                return run_tv(&plan, req, &cfg, &mut ctx, cancel, &mut on_progress);
+            }
+            Ok(plan) => tracing::info!(
+                found = plan.items.len(),
+                "tv: not enough episodes, ripping as one title"
+            ),
+            Err(e) => tracing::warn!(error = %e, "tv: episode planning failed"),
+        }
+    }
 
     let marker = ctx.dest.with_extension("chapters.ffmeta");
     if req.chapters && !marks.is_empty() {

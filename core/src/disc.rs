@@ -48,6 +48,13 @@ mod ffi {
         pub pid: u16,
     }
 
+    #[repr(C)]
+    #[derive(Clone, Copy)]
+    pub struct BfClip {
+        pub start_90k: u64,
+        pub duration_90k: u64,
+    }
+
     extern "C" {
         pub fn bf_open(path: *const c_char, keyfile: *const c_char) -> *mut c_void;
         pub fn bf_close(d: *mut c_void);
@@ -63,6 +70,7 @@ mod ffi {
         pub fn bf_version() -> *const c_char;
         pub fn bf_export_decrypted(d: *mut c_void, dest: *const c_char, out_files: *mut libc::c_long) -> c_int;
         pub fn bf_title_chapters(d: *mut c_void, title: u32, out: *mut BfChapter, max: c_int) -> c_int;
+        pub fn bf_title_clips(d: *mut c_void, title: u32, out: *mut BfClip, max: c_int) -> c_int;
         pub fn bf_title_streams(d: *mut c_void, title: u32, out: *mut BfStream, max: c_int) -> c_int;
     }
 }
@@ -104,6 +112,16 @@ pub struct Chapter {
     pub start_secs: f64,
     /// Name authored on the disc, when present (usually absent).
     pub name: Option<String>,
+}
+
+/// One clip of a title. Chained clips are separate clips, which is how a
+/// "play all" TV/anime disc stores its episodes.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Clip {
+    /// Offset within the title, seconds.
+    pub in_secs: f64,
+    pub out_secs: f64,
+    pub duration_secs: f64,
 }
 
 /// A title stream, used to label exported tracks.
@@ -350,6 +368,39 @@ impl Disc {
                         start_secs: c.start_secs,
                         name: if name.is_empty() { None } else { Some(name) },
                     }
+                })
+                .collect())
+        }
+        #[cfg(not(have_bluray))]
+        {
+            let _ = title;
+            Err(CoreError::Disc("built without libbluray".into()))
+        }
+    }
+
+    /// Clip boundaries of `title`. On a "play all" TV/anime disc each clip is
+    /// one episode, which is the only reliable episode delimiter.
+    pub fn clips(&self, title: u32) -> Result<Vec<Clip>, CoreError> {
+        #[cfg(have_bluray)]
+        unsafe {
+            let empty = ffi::BfClip {
+                start_90k: 0,
+                duration_90k: 0,
+            };
+            let mut buf = vec![empty; 512];
+            let n =
+                ffi::bf_title_clips(self.handle, title, buf.as_mut_ptr(), buf.len() as libc::c_int);
+            if n < 0 {
+                return Err(CoreError::Disc("cannot read clip info".into()));
+            }
+            let first = buf.first().map(|c| c.start_90k).unwrap_or(0);
+            Ok(buf[..n as usize]
+                .iter()
+                .map(|c| Clip {
+                    in_secs: c.start_90k.saturating_sub(first) as f64 / 90000.0,
+                    out_secs: c.start_90k.saturating_sub(first) as f64 / 90000.0
+                        + c.duration_90k as f64 / 90000.0,
+                    duration_secs: c.duration_90k as f64 / 90000.0,
                 })
                 .collect())
         }

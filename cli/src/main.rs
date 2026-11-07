@@ -29,6 +29,18 @@ enum Cmd {
     Disc {
         /// Path to a mounted disc, BDMV folder, or ISO.
         path: std::path::PathBuf,
+        /// Also dump every title's streams (codec, language, pid).
+        #[arg(long)]
+        streams: bool,
+        /// Also dump clip boundaries per title (episode splits on TV discs).
+        #[arg(long)]
+        clips: bool,
+        /// Detect TV/anime episodes (clip boundaries + TMDB titles) and show the plan.
+        #[arg(long)]
+        episodes: bool,
+        /// Override the series name used to look episodes up.
+        #[arg(long)]
+        series: Option<String>,
     },
     /// Rip a title to MKV/MP4 (remux by default, or `--encode`).
     Rip {
@@ -76,6 +88,15 @@ enum Cmd {
         /// Don't download cover art for the disc.
         #[arg(long)]
         no_covers: bool,
+        /// Rip as a TV/anime disc: one file per episode, SxxExx named from TMDB.
+        #[arg(long)]
+        tv: bool,
+        /// Series name for episode lookups (default: derived from the disc label).
+        #[arg(long)]
+        series: Option<String>,
+        /// Only these episodes, eg. "1-3" or "1,2,5".
+        #[arg(long)]
+        episodes: Option<String>,
     },
     /// Cover art: search and download case/disc covers.
     Covers {
@@ -217,7 +238,13 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
                 print_keys(cli.json, st)?;
             }
         },
-        Cmd::Disc { path } => {
+        Cmd::Disc {
+            path,
+            streams,
+            clips,
+            episodes,
+            series,
+        } => {
             let disc = bluforge_core::Disc::open(path, Some(&keys::keydb_path()))?;
             let info = disc.info()?;
             if cli.json {
@@ -231,6 +258,72 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
                 println!("libbluray : {}", info.library);
                 println!("AACS      : {} (ready: {})", info.aacs, info.aacs_ready);
                 println!("titles    : {}", info.titles.len());
+                if *episodes {
+                    let dbg = bluforge_core::tv::parse_label(&info.name).0;
+                    println!("tmdb tv id : {:?}", bluforge_core::tv::tmdb_tv_id(&dbg));
+                    println!("tmdb season: {:?}", bluforge_core::tv::tmdb_season(63926, 1).map(|e| e.len()));
+                    match bluforge_core::tv::lookup_series(&dbg, 1) {
+                        Ok(Some(sr)) => println!(
+                            "lookup    : {} (tmdb {:?}) eps={} poster={}",
+                            sr.name,
+                            sr.tmdb_id,
+                            sr.episodes.len(),
+                            sr.poster.is_some()
+                        ),
+                        Ok(None) => println!("lookup    : nothing for {dbg:?}"),
+                        Err(e) => println!("lookup    : ERROR {e}"),
+                    }
+                    match bluforge_core::tv::plan(&disc, &info, series.as_deref()) {
+                        Ok(p) => {
+                            println!(
+                                "series    : {} - season {} (disc {:?}, tmdb {:?}, mal {:?})",
+                                p.series, p.season, p.disc, p.tmdb_id, p.mal_id
+                            );
+                            println!("poster    : {:?}", p.poster);
+                            println!("episodes  : {}", p.items.len());
+                            for it in &p.items {
+                                let m = it.duration_secs as u64 / 60;
+                                let s2 = it.duration_secs as u64 % 60;
+                                println!(
+                                    "  S{:02}E{:02}  t#{} +{:>7.1}s  {:>2}:{:02}  {}  still={}",
+                                    it.episode.season,
+                                    it.episode.number,
+                                    it.title_index,
+                                    it.start_secs,
+                                    m,
+                                    s2,
+                                    it.episode.title,
+                                    it.episode.still.is_some()
+                                );
+                            }
+                        }
+                        Err(e) => println!("episodes  : ERROR {e}"),
+                    }
+                }
+                if *streams || *clips {
+                    for t in &info.titles {
+                        if *clips {
+                            let cl = disc.clips(t.index).unwrap_or_default();
+                            println!(
+                                "  #{} clips: {} [{}]",
+                                t.index,
+                                cl.len(),
+                                cl.iter()
+                                    .map(|c| format!("{:.1}", c.duration_secs))
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
+                            );
+                        }
+                        if *streams {
+                            for s in disc.streams(t.index).unwrap_or_default() {
+                                println!(
+                                    "  #{} stream {} pid={} lang={:?} coding={} fmt={}",
+                                    t.index, s.kind, s.pid, s.lang, s.coding_type, s.format
+                                );
+                            }
+                        }
+                    }
+                }
                 for t in &info.titles {
                     let h = t.duration_secs as u64 / 3600;
                     let m = (t.duration_secs as u64 % 3600) / 60;
@@ -302,6 +395,9 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
             audio,
             subs,
             no_covers,
+            tv,
+            series,
+            episodes,
         } => {
             use bluforge_core::{Container, EncodeSettings, RipMode, RipProgress, RipRequest, VideoCodec};
             let container_kind = if container.eq_ignore_ascii_case("mp4") {
@@ -349,6 +445,9 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
                     _ => bluforge_core::rip::SubSel::All,
                 },
                 covers: !*no_covers,
+                tv: *tv,
+                series: series.clone(),
+                episodes: episodes.clone(),
             };
             let cancel = std::sync::atomic::AtomicBool::new(false);
             let mut last = -1i64;

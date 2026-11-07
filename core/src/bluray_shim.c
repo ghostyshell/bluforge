@@ -145,6 +145,27 @@ static void bf_put_streams_uniq(const BLURAY_STREAM_INFO *src, int n, int kind,
     }
 }
 
+typedef struct {
+    uint64_t start_90k;    /* position within the title, 90kHz */
+    uint64_t duration_90k; /* clip length, 90kHz */
+} bf_clip_t;
+
+/* Clip boundaries of one title: each clip is one chained segment, which for a
+   "play all" TV disc is one episode. */
+int bf_title_clips(bf_disc_t *d, uint32_t title, bf_clip_t *out, int max) {
+    if (!d || !d->bd) return 0;
+    BLURAY_TITLE_INFO *ti = bd_get_title_info(d->bd, title, 0);
+    if (!ti) return 0;
+    int n = (int)ti->clip_count;
+    if (n > max) n = max;
+    for (int i = 0; i < n; i++) {
+        out[i].start_90k = ti->clips[i].start_time;
+        out[i].duration_90k = ti->clips[i].out_time - ti->clips[i].in_time;
+    }
+    bd_free_title_info(ti);
+    return n;
+}
+
 /* Video, audio and PG subtitle streams of one title, in disc order. */
 int bf_title_streams(bf_disc_t *d, uint32_t title, bf_stream_t *out, int max) {
     BLURAY_TITLE_INFO *ti = bd_get_title_info(d->bd, title, 0);

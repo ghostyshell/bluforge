@@ -13,6 +13,7 @@ pub mod keys;
 pub mod metadata;
 pub mod rip;
 pub mod template;
+pub mod tv;
 
 pub use config::AppConfig;
 pub use disc::{Chapter, Disc, DiscInfo, StreamInfo, Title};
