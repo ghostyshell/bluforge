@@ -57,6 +57,8 @@ impl Series {
 pub fn parse_label(label: &str) -> (String, Option<u32>, Option<u32>) {
     let mut words: Vec<String> = Vec::new();
     let (mut season, mut disc) = (None, None);
+    let mut want_season = false;
+    let mut want_disc = false;
     for tok in label.split(['_', '-', '.', ' ']).filter(|t| !t.is_empty()) {
         let up = tok.to_ascii_uppercase();
         let num = |s: &str| -> Option<u32> {
@@ -67,21 +69,41 @@ pub fn parse_label(label: &str) -> (String, Option<u32>, Option<u32>) {
                 d.parse().ok()
             }
         };
-        let is_disc_word = up == "DISC" || up == "DISK";
-        if up.starts_with('S') && num(&up).is_some() && up.len() <= 4 && season.is_none() {
-            season = num(&up);
-        } else if (up.starts_with('D') || is_disc_word) && num(&up).is_some() && up.len() <= 5 {
-            disc = num(&up);
-            if is_disc_word {
-                // "DISC" then a separate number
+        // "SEASON 3" / "DISC 2": the word and the number are separate tokens.
+        if up == "SEASON" || up == "VOL" || up == "VOLUME" || up == "PT" {
+            want_season = true;
+            continue;
+        }
+        if up == "DISC" || up == "DISK" {
+            want_disc = true;
+            continue;
+        }
+        if want_season {
+            if let Some(n) = num(&up) {
+                season = Some(n);
+                want_season = false;
                 continue;
             }
-        } else if up == "SEASON" || up == "VOL" || up == "VOLUME" || up == "PT" {
-            // kept, the following token carries the number
-            words.push(tok.to_string());
-        } else {
-            words.push(tok.to_string());
+            want_season = false;
         }
+        if want_disc {
+            if let Some(n) = num(&up) {
+                disc = Some(n);
+                want_disc = false;
+                continue;
+            }
+            want_disc = false;
+        }
+        // Compact "S1" / "D1" (and "S01D02" style is split on the letters here).
+        if up.starts_with('S') && num(&up).is_some() && up.len() <= 4 && season.is_none() {
+            season = num(&up);
+            continue;
+        }
+        if up.starts_with('D') && num(&up).is_some() && up.len() <= 4 && disc.is_none() {
+            disc = num(&up);
+            continue;
+        }
+        words.push(tok.to_string());
     }
     let name = words
         .iter()
@@ -229,14 +251,11 @@ pub fn tmdb_poster(tv_id: u64, season: u32) -> Option<String> {
         "https://www.themoviedb.org/tv/{tv_id}/season/{season}"
     ))
     .ok()?;
-    let mut rest = html.as_str();
-    while let Some(p) = rest.find("https://image.tmdb.org/t/p/w500") {
-        let v = &rest[p..];
-        let end = v.find(".jpg").map(|e| e + 4)?;
-        return Some(v[..end].to_string());
-    }
-    rest.to_string();
-    None
+    let rest = html.as_str();
+    let p = rest.find("https://image.tmdb.org/t/p/w500")?;
+    let v = &rest[p..];
+    let end = v.find(".jpg").map(|e| e + 4)?;
+    Some(v[..end].to_string())
 }
 
 /// MAL fallback (Jikan) - used when TMDB has nothing or is unreachable.
@@ -457,10 +476,9 @@ mod tests {
             parse_label("ONE_PUNCH_MAN_S1_D1"),
             ("One Punch Man".into(), Some(1), Some(1))
         );
-        assert_eq!(
-            parse_label("STAR_TREK_TNG_SEASON_3_DISC_2"),
-            ("Star Trek Tng Season 3".into(), Some(2), Some(2)).0
-        );
+        let (title, season, disc) = parse_label("STAR_TREK_TNG_SEASON_3_DISC_2");
+        assert_eq!(title, "Star Trek Tng");
+        assert_eq!((season, disc), (Some(3), Some(2)));
         assert_eq!(parse_label("BAND_OF_BROTHERS").1, None);
     }
 
