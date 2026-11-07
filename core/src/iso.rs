@@ -116,7 +116,9 @@ where
         .label
         .clone()
         .filter(|s| !s.trim().is_empty())
-        .unwrap_or_else(|| info.name.clone());
+        .unwrap_or_else(|| {
+            crate::device::source_name(&req.source.to_string_lossy(), &info.name)
+        });
     let label = sanitize_label(&label);
 
     let (work, temp) = match req.format {

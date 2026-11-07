@@ -49,13 +49,8 @@ fn open_disc(path: String) -> Result<DiscInfo, String> {
     let disc = bluforge_core::Disc::open(&p, Some(&bluforge_core::keys::keydb_path()))
         .map_err(|e| e.to_string())?;
     let mut info = disc.info().map_err(|e| e.to_string())?;
-    info.path = path;
-    if info.name.is_empty() {
-        info.name = p
-            .file_name()
-            .map(|s| s.to_string_lossy().into_owned())
-            .unwrap_or_default();
-    }
+    info.path = path.clone();
+    info.name = bluforge_core::device::source_name(&path, &info.name);
     Ok(info)
 }
 

@@ -168,9 +168,14 @@ export default function App() {
                 {optical.length === 0
                   ? <div className="sub">No optical drive detected</div>
                   : optical.map((d) => (
-                      <div key={d.bsd_name} className="sub">
-                        {d.vendor || d.product || "Optical drive"} · {d.bsd_name}
-                        {d.interconnect ? ` · ${d.interconnect}` : ""}
+                      <div key={d.bsd_name} className="row" style={{ gap: 8, alignItems: "center" }}>
+                        <span className="sub">
+                          {d.vendor || d.product || "Optical drive"} · {d.bsd_name}
+                          {d.interconnect ? ` · ${d.interconnect}` : ""}
+                        </span>
+                        <button className="ghost sm" onClick={() => setDiscPath(d.device_path ?? d.mount_point ?? "")}>
+                          use
+                        </button>
                       </div>
                     ))}
               </div>

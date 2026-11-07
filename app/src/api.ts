@@ -14,6 +14,7 @@ export type BlockDevice = {
   optical: boolean;
   interconnect: string | null;
   mount_point: string | null;
+  device_path: string | null;
   registry_path: string;
 };
 

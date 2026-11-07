@@ -343,7 +343,7 @@ mod mac {
                 let mp = it.next().unwrap_or("");
                 if let Some(name) = dev.strip_prefix("/dev/") {
                     for d in devs.iter_mut() {
-                        if d.bsd_name == name {
+                        if d.bsd_name == name || name.starts_with(&format!("{}s", d.bsd_name)) {
                             d.mount_point = Some(mp.to_string());
                         }
                     }
@@ -356,6 +356,33 @@ mod mac {
 #[cfg(target_os = "macos")]
 pub use mac::list;
 
+/// Mount point of any volume on the given device node, if currently mounted.
+pub fn mount_point_for_device(dev: &str) -> Option<String> {
+    list()
+        .into_iter()
+        .find(|d| d.device_path.as_deref() == Some(dev))
+        .and_then(|d| d.mount_point)
+}
+
+/// A human-readable name for a source: the disc's own name, else the volume
+/// name of the mounted device, else the path's file name.
+pub fn source_name(path: &str, disc_name: &str) -> String {
+    if !disc_name.is_empty() {
+        return disc_name.to_string();
+    }
+    if path.starts_with("/dev/") {
+        if let Some(mp) = mount_point_for_device(path) {
+            if let Some(f) = std::path::Path::new(&mp).file_name() {
+                return f.to_string_lossy().into_owned();
+            }
+        }
+    }
+    std::path::Path::new(path)
+        .file_name()
+        .map(|f| f.to_string_lossy().into_owned())
+        .unwrap_or_default()
+}
+
 /// List optical-class devices (drives + discs).
 pub fn list_optical() -> Vec<BlockDevice> {
     let all = list();
@@ -364,8 +391,7 @@ pub fn list_optical() -> Vec<BlockDevice> {
         .collect()
 }
 
-pub fn human_bytes(n: u64) -> String {
-    const U: [&str; 6] = ["B", "KB", "MB", "GB", "TB", "PB"];
+pub fn human_bytes(n: u64) -> String {    const U: [&str; 6] = ["B", "KB", "MB", "GB", "TB", "PB"];
     let mut v = n as f64;
     let mut i = 0;
     while v >= 1000.0 && i < U.len() - 1 {
