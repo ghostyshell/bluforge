@@ -31,7 +31,8 @@ fn get(url: &str) -> Result<String, CoreError> {
     Ok(body)
 }
 
-fn get_bytes(url: &str) -> Result<Vec<u8>, CoreError> {
+/// Download a URL to bytes.
+pub fn download(url: &str) -> Result<Vec<u8>, CoreError> {
     let resp = ureq::get(url)
         .set("User-Agent", UA)
         .timeout(Duration::from_secs(60))
@@ -292,17 +293,21 @@ pub fn chapter_names(
     }
 }
 
-/// A poster plus the identity it was matched to.
+/// A movie identity resolved on TMDB.
 #[derive(Debug, Clone)]
-pub struct Poster {
-    pub bytes: Vec<u8>,
-    pub movie: String,
+pub struct MovieRef {
+    pub title: String,
     pub year: Option<String>,
     pub tmdb_id: u64,
+    pub poster_url: Option<String>,
+    pub runtime_secs: Option<f64>,
 }
 
-/// Look up a movie poster on TMDB.
-pub fn poster(movie: &str, runtime_secs: f64) -> Result<Option<Poster>, CoreError> {
+/// Look up a movie on TMDB. `hint_runtime` (seconds) breaks ties between cuts.
+pub fn lookup_movie(movie: &str, hint_runtime: f64) -> Result<Option<MovieRef>, CoreError> {
+    if movie.trim().is_empty() {
+        return Ok(None);
+    }
     let q: String = movie
         .chars()
         .map(|c| if c == ' ' { '+' } else { c })
@@ -322,7 +327,9 @@ pub fn poster(movie: &str, runtime_secs: f64) -> Result<Option<Poster>, CoreErro
         let id: u64 = after[..idend].parse().unwrap_or(0);
         let tail = &after[idend..];
         let slug = if let Some(s) = tail.strip_prefix('-') {
-            let end = s.find(|c: char| !(c.is_ascii_alphanumeric() || c == '-')).unwrap_or(s.len());
+            let end = s
+                .find(|c: char| !(c.is_ascii_alphanumeric() || c == '-'))
+                .unwrap_or(s.len());
             s[..end].to_string()
         } else {
             String::new()
@@ -356,7 +363,7 @@ pub fn poster(movie: &str, runtime_secs: f64) -> Result<Option<Poster>, CoreErro
                 v += 40;
             }
         }
-        v as i32
+        v
     };
     let (id, slug) = cands
         .iter()
@@ -368,7 +375,8 @@ pub fn poster(movie: &str, runtime_secs: f64) -> Result<Option<Poster>, CoreErro
     let page = get(&format!("https://www.themoviedb.org/movie/{id}"))?;
 
     // <title>Name (Year) @ The Movie Database (TMDB)
-    let (mut name, mut year) = (String::new(), None);
+    let mut name = String::new();
+    let mut year = None;
     if let Some(p) = page.find("<title>") {
         let v = &page[p + 7..];
         let end = v.find('<').unwrap_or(v.len());
@@ -382,7 +390,36 @@ pub fn poster(movie: &str, runtime_secs: f64) -> Result<Option<Poster>, CoreErro
         }
     }
 
-    // Poster: prefer a w500 variant, else whatever is on the page.
+    // Runtime, when the page shows one ("2h 28m").
+    let mut runtime_secs = None;
+    for marker in ["class=\"runtime\"", "\"runtime\""] {
+        if let Some(p) = page.find(marker) {
+            let win = &page[p..page.len().min(p + 400)];
+            if let (Some(hp), Some(mp)) = (win.find('h'), win.find('m')) {
+                if hp < mp {
+                    let h = win[..hp]
+                        .chars()
+                        .rev()
+                        .take_while(|c| c.is_ascii_digit())
+                        .collect::<String>()
+                        .chars()
+                        .rev()
+                        .collect::<String>();
+                    let m = win[hp..mp]
+                        .chars()
+                        .filter(|c| c.is_ascii_digit())
+                        .collect::<String>();
+                    if let (Ok(h), Ok(m)) = (h.parse::<f64>(), m.parse::<f64>()) {
+                        runtime_secs = Some(h * 3600.0 + m * 60.0);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    let _ = hint_runtime;
+
+    // Poster: prefer a w500 variant.
     let mut poster_url = None;
     let mut rest = page.as_str();
     while let Some(pos) = rest.find("https://image.tmdb.org/t/p/") {
@@ -402,14 +439,38 @@ pub fn poster(movie: &str, runtime_secs: f64) -> Result<Option<Poster>, CoreErro
         }
         rest = &rest[pos + 22..];
     }
-    let Some(url) = poster_url else { return Ok(None) };
-    let bytes = get_bytes(&url)?;
 
-    let _ = runtime_secs;
-    Ok(Some(Poster {
-        bytes,
-        movie: name,
+    Ok(Some(MovieRef {
+        title: if name.is_empty() { movie.to_string() } else { name },
         year,
         tmdb_id: id,
+        poster_url,
+        runtime_secs,
+    }))
+}
+
+/// A poster plus the identity it was matched to.
+#[derive(Debug, Clone)]
+pub struct Poster {
+    pub bytes: Vec<u8>,
+    pub movie: String,
+    pub year: Option<String>,
+    pub tmdb_id: u64,
+}
+
+/// Look up a movie poster on TMDB.
+pub fn poster(movie: &str, runtime_secs: f64) -> Result<Option<Poster>, CoreError> {
+    let Some(m) = lookup_movie(movie, runtime_secs)? else {
+        return Ok(None);
+    };
+    let Some(url) = m.poster_url else {
+        return Ok(None);
+    };
+    let bytes = download(&url)?;
+    Ok(Some(Poster {
+        bytes,
+        movie: m.title,
+        year: m.year,
+        tmdb_id: m.tmdb_id,
     }))
 }

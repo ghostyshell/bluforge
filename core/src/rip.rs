@@ -8,7 +8,7 @@ use std::process::{Command, Stdio};
 use serde::{Deserialize, Serialize};
 
 use crate::disc::{Chapter, Disc, StreamInfo, TitleReader};
-use crate::{metadata, CoreError};
+use crate::{metadata, template, CoreError};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -71,7 +71,10 @@ pub struct RipRequest {
     /// Title index; `None` rips the disc's main title.
     #[serde(default)]
     pub title: Option<u32>,
-    pub output: PathBuf,
+    /// Exact output file, or a directory to render the output template into.
+    /// `None` uses the configured output folder and template.
+    #[serde(default)]
+    pub output: Option<PathBuf>,
     pub mode: RipMode,
     /// Embed chapter marks, named from ChapterDB when a matching entry exists.
     #[serde(default = "yes")]
@@ -98,6 +101,9 @@ pub struct RipProgress {
     pub done: bool,
     pub percent: f64,
     pub message: String,
+    /// Resolved output path, once known.
+    #[serde(default)]
+    pub dest: Option<PathBuf>,
 }
 
 pub fn ffmpeg_path() -> PathBuf {
@@ -154,7 +160,7 @@ fn codec_args(s: &EncodeSettings) -> Vec<String> {
 }
 
 /// ISO 639-2 language name, for track titles.
-fn lang_name(code: &str) -> String {
+pub fn lang_name(code: &str) -> String {
     match code.to_ascii_lowercase().as_str() {
         "eng" | "en" => "English",
         "fre" | "fra" | "fr" => "French",
@@ -213,7 +219,7 @@ fn lang_tag(code: &str) -> String {
     .to_string()
 }
 
-fn audio_codec_label(coding_type: u8) -> &'static str {
+pub fn audio_codec_label(coding_type: u8) -> &'static str {
     match coding_type {
         0x03 | 0x04 => "MPEG",
         0x80 => "LPCM",
@@ -228,7 +234,7 @@ fn audio_codec_label(coding_type: u8) -> &'static str {
     }
 }
 
-fn video_codec_label(coding_type: u8) -> &'static str {
+pub fn video_codec_label(coding_type: u8) -> &'static str {
     match coding_type {
         0x01 => "MPEG-1",
         0x02 => "MPEG-2",
@@ -269,6 +275,8 @@ pub struct TrackCtx {
     pub chapter_names: Vec<String>,
     pub chapters_file: Option<PathBuf>,
     pub poster_file: Option<PathBuf>,
+    /// Final output path (template already rendered).
+    pub dest: PathBuf,
 }
 
 fn build_args(req: &RipRequest, ctx: &TrackCtx) -> Vec<String> {
@@ -418,7 +426,7 @@ fn build_args(req: &RipRequest, ctx: &TrackCtx) -> Vec<String> {
     }
 
     a.extend(["-progress".into(), "pipe:1".into(), "-nostats".into()]);
-    a.push(req.output.to_string_lossy().into_owned());
+    a.push(ctx.dest.to_string_lossy().into_owned());
     a
 }
 
@@ -546,26 +554,31 @@ pub fn run<F>(req: &RipRequest, cancel: &std::sync::atomic::AtomicBool, mut on_p
 where
     F: FnMut(RipProgress),
 {
-    if let Some(dir) = req.output.parent() {
+    if let Some(dir) = req.output.as_ref().and_then(|p| p.parent()) {
         std::fs::create_dir_all(dir)?;
     }
     let disc = Disc::open(&req.source, req.keydb.as_deref())?;
     let info = disc.info()?;
     let title = req.title.or(info.main_title).unwrap_or(0);
     tracing::info!(title, main = ?info.main_title, "ripping title");
-    let total_ms = info
-        .titles
-        .iter()
-        .find(|t| t.index == title)
+    let title_info = info.titles.iter().find(|t| t.index == title);
+    let total_ms = title_info
         .map(|t| (t.duration_secs * 1000.0) as u64)
         .unwrap_or(0);
+    let runtime_secs = total_ms as f64 / 1000.0;
 
-    let fallback = req
-        .output
-        .file_stem()
-        .map(|s| s.to_string_lossy().into_owned())
-        .unwrap_or_default();
-    let movie = clean_movie_name(req.movie.as_deref().unwrap_or(&info.name), &fallback);
+    let cfg = crate::AppConfig::load();
+    let ext = match &req.mode {
+        RipMode::Remux { container } | RipMode::Encode { container, .. } => {
+            if matches!(container, Container::Mp4) {
+                "mp4"
+            } else {
+                "mkv"
+            }
+        }
+    };
+    let disc_name = clean_movie_name(&info.name, "Blu-ray");
+    let movie_query = clean_movie_name(req.movie.as_deref().unwrap_or(&info.name), "Blu-ray");
 
     let mut ctx = TrackCtx {
         streams: disc.streams(title).unwrap_or_default(),
@@ -576,29 +589,89 @@ where
     }
     ctx.default_audio = pick_default_audio(&ctx.streams);
 
-    let marker = req.output.with_extension("chapters.ffmeta");
-    if req.chapters {
-        let marks = disc.chapters(title).unwrap_or_default();
-        if !marks.is_empty() {
-            let names = metadata::chapter_names(&movie, total_ms as f64 / 1000.0, marks.len())
-                .unwrap_or(None)
-                .unwrap_or_default();
-            tracing::info!(marks = marks.len(), names = names.len(), %movie, "chapters");
-            write_chapters(&marks, &names, total_ms, &marker)?;
-            ctx.chapters_file = Some(marker.clone());
+    // TMDB is needed for the poster and/or for template placeholders.
+    let tpl = cfg.output_template.clone();
+    let wants_tmdb = req.poster || ["{title", "{year", "{tmdb"].iter().any(|k| tpl.contains(k));
+    let tmdb = if wants_tmdb {
+        match metadata::lookup_movie(&movie_query, runtime_secs) {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::warn!(error = %e, "tmdb lookup failed");
+                None
+            }
         }
+    } else {
+        None
+    };
+    let movie = tmdb
+        .as_ref()
+        .map(|m| m.title.clone())
+        .unwrap_or_else(|| movie_query.clone());
+
+    let marks = disc.chapters(title).unwrap_or_default();
+    let audio_stream = ctx
+        .default_audio
+        .and_then(|i| ctx.streams.iter().filter(|s| s.kind == "audio").nth(i));
+    let video_stream = ctx.streams.iter().find(|s| s.kind == "video");
+    let vars = template::Vars::build(
+        &disc_name,
+        &movie,
+        tmdb.as_ref().and_then(|m| m.year.as_deref()),
+        tmdb.as_ref().map(|m| m.tmdb_id),
+        title_info.and_then(|t| t.resolution.as_deref()),
+        title_info.and_then(|t| t.dynamic_range.as_deref()),
+        video_stream.map(|s| video_codec_label(s.coding_type)),
+        audio_stream
+            .and_then(|s| s.lang.as_deref())
+            .map(lang_name)
+            .as_deref(),
+        audio_stream.map(|s| audio_codec_label(s.coding_type)),
+        runtime_secs,
+        marks.len(),
+        title_info.map(|t| t.playlist).unwrap_or(0),
+        title,
+        ext,
+    );
+    // `None` (or a directory) means "use the configured folder + template".
+    ctx.dest = match &req.output {
+        Some(p) if p.is_dir() || p.to_string_lossy().ends_with('/') => {
+            p.join(template::render(&tpl, &vars, ext, "{title} - {resolution}"))
+        }
+        Some(p) => p.clone(),
+        None => cfg
+            .output_dir
+            .join(template::render(&tpl, &vars, ext, "{title} - {resolution}")),
+    };
+    if let Some(dir) = ctx.dest.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    tracing::info!(dest = %ctx.dest.display(), "output");
+
+    let marker = ctx.dest.with_extension("chapters.ffmeta");
+    if req.chapters && !marks.is_empty() {
+        let names = metadata::chapter_names(&movie, runtime_secs, marks.len())
+            .unwrap_or(None)
+            .unwrap_or_default();
+        tracing::info!(marks = marks.len(), names = names.len(), %movie, "chapters");
+        write_chapters(&marks, &names, total_ms, &marker)?;
+        ctx.chapters_file = Some(marker.clone());
     }
 
     if req.poster {
-        match metadata::poster(&movie, total_ms as f64 / 1000.0) {
-            Ok(Some(p)) => {
-                let dest = req.output.with_extension("poster.jpg");
-                std::fs::write(&dest, &p.bytes)?;
-                tracing::info!(?dest, tmdb = p.tmdb_id, year = ?p.year, "poster saved");
-                ctx.poster_file = Some(dest);
+        if let Some(m) = &tmdb {
+            if let Some(url) = &m.poster_url {
+                match metadata::download(url) {
+                    Ok(bytes) => {
+                        let dest = ctx.dest.with_extension("poster.jpg");
+                        std::fs::write(&dest, &bytes)?;
+                        tracing::info!(?dest, tmdb = m.tmdb_id, year = ?m.year, "poster saved");
+                        ctx.poster_file = Some(dest);
+                    }
+                    Err(e) => tracing::warn!(error = %e, "poster download failed"),
+                }
             }
-            Ok(None) => tracing::info!("no tmdb poster found"),
-            Err(e) => tracing::warn!(error = %e, "poster lookup failed"),
+        } else {
+            tracing::info!("no tmdb match - no poster");
         }
     }
 
@@ -666,6 +739,7 @@ where
     let mut prog = RipProgress {
         total_ms,
         message: "ripping".into(),
+        dest: Some(ctx.dest.clone()),
         ..Default::default()
     };
     on_progress(prog.clone());

@@ -29,6 +29,7 @@ export type KeyDbStatus = {
 export type AppConfig = {
   version: number;
   output_dir: string;
+  output_template: string;
   auto_update_keys: boolean;
   auto_check_updates: boolean;
   last_update_check: number | null;
@@ -54,6 +55,9 @@ export type DiscInfo = {
   titles: Title[];
   main_title: number | null;
   library: string;
+  video_codec: string | null;
+  audio_codec: string | null;
+  audio_lang: string | null;
 };
 
 export type Snapshot = {
@@ -72,6 +76,7 @@ export type RipProgress = {
   done: boolean;
   percent: number;
   message: string;
+  dest: string | null;
 };
 
 export type EncodeSettings = {
@@ -89,10 +94,37 @@ export type RipMode =
 export type RipRequest = {
   source: string;
   keydb: string | null;
-  title: number;
-  output: string;
+  title: number | null;
+  /** null = render the configured output template */
+  output: string | null;
   mode: RipMode;
+  /** Chapter names + marks (ChapterDB) */
+  chapters: boolean;
+  /** Fetch and attach a TMDB poster */
+  poster: boolean;
+  /** Movie title used for the metadata lookups */
+  movie: string | null;
 };
+
+export type PreviewVars = {
+  output_dir: string;
+  disc: string;
+  title: string;
+  year: string | null;
+  tmdb: number | null;
+  resolution: string | null;
+  hdr: string | null;
+  video_codec: string | null;
+  audio_lang: string | null;
+  audio_codec: string | null;
+  runtime_secs: number;
+  chapters: number;
+  playlist: number;
+  index: number;
+  ext: string;
+};
+
+export type MovieHit = { title: string; year: string | null; tmdb_id: number };
 
 export type UpdateInfo = { version: string | null; notes: string | null };
 
@@ -132,4 +164,9 @@ export const api = {
   checkUpdate: () => invoke<UpdateInfo>("check_update"),
   installUpdate: () => invoke<void>("install_update"),
   reveal: (path: string) => invoke<void>("reveal", { path }),
+  previewOutput: (template: string, vars: PreviewVars) =>
+    invoke<string>("preview_output", { template, vars }),
+  templatePlaceholders: () => invoke<[string, string][]>("template_placeholders"),
+  tmdbLookup: (movie: string, runtimeSecs: number) =>
+    invoke<MovieHit | null>("tmdb_lookup", { movie, runtimeSecs }),
 };

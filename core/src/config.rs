@@ -10,8 +10,11 @@ use crate::CoreError;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     pub version: u32,
-    /// Output folder root; per-job subfolders are created beneath this.
+    /// Output folder root; the output template is rendered beneath this.
     pub output_dir: PathBuf,
+    /// Output path template (see `core::template`).
+    #[serde(default = "default_template")]
+    pub output_template: String,
     /// Refresh KEYDB.cfg automatically at launch.
     pub auto_update_keys: bool,
     /// Check GitHub releases for a newer BluForge at launch.
@@ -20,15 +23,19 @@ pub struct AppConfig {
     pub last_update_check: Option<u64>,
 }
 
+pub fn default_template() -> String {
+    "{title} ({year})/{title} ({year}) - {resolution} {hdr}".to_string()
+}
+
 impl Default for AppConfig {
     fn default() -> Self {
         let output_dir = directories::UserDirs::new()
-            .and_then(|d| d.video_dir().map(|p| p.to_path_buf()))
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("BluForge");
+            .and_then(|d| d.download_dir().map(|p| p.to_path_buf()))
+            .unwrap_or_else(|| PathBuf::from("."));
         Self {
-            version: 1,
+            version: 2,
             output_dir,
+            output_template: default_template(),
             auto_update_keys: true,
             auto_check_updates: true,
             last_update_check: None,

@@ -105,7 +105,24 @@ subtitles off.
 
 `--no-chapters` / `--no-poster` skip the lookups; `--movie "<title>"` overrides
 the name used to search (default: the disc label). A failed lookup is never
-fatal.
+fatal. All of these are toggles in the app.
+
+### Output template
+
+Where files land is a template, editable in the app (`Output template`) and
+stored in the config:
+
+```
+{title} ({year})/{title} ({year}) - {resolution} {hdr}
+```
+
+`/` creates sub-folders. Movie and release data (`{title}`, `{year}`, `{tmdb}`)
+comes from TMDB; the rest comes from the disc (`{resolution}`, `{hdr}`,
+`{video_codec}`, `{audio_lang}`, `{audio_codec}`, `{runtime}`, `{chapters}`,
+`{playlist}`, `{index}`, `{disc}`). Unknown placeholders are kept verbatim so a
+typo is visible, and empty ones collapse cleanly (`Title ()` -> `Title`). The UI
+lists every placeholder and previews the rendered path live, using the same
+renderer as the ripper.
 
 ## Configuration & data
 

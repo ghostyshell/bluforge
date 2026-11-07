@@ -5,6 +5,7 @@ import {
   type DiscInfo,
   type EncodeSettings,
   type IsoProgress,
+  type MovieHit,
   type RipMode,
   type RipProgress,
   type Snapshot,
@@ -45,6 +46,11 @@ export default function App() {
   const [enc, setEnc] = useState<EncodeSettings>({
     codec: "x265", quality: 20, preset: "medium", ten_bit: true, aac_audio: false,
   });
+  const [chapters, setChapters] = useState(true);
+  const [poster, setPoster] = useState(true);
+  const [movie, setMovie] = useState<string | null>(null);
+  const [placeholders, setPlaceholders] = useState<[string, string][]>([]);
+  const [preview, setPreview] = useState("");
   const [progress, setProgress] = useState<RipProgress | null>(null);
   const [isoProgress, setIsoProgress] = useState<IsoProgress | null>(null);
   const [isoBusy, setIsoBusy] = useState(false);
@@ -89,6 +95,7 @@ export default function App() {
       const info = await api.openDisc(p);
       setDisc(info);
       setTitle(info.main_title ?? info.titles[0]?.index ?? null);
+      setMovie(info.name || null);
     } catch (e) { setDisc(null); setError(String(e)); }
     finally { setBusy(null); }
   };
@@ -97,19 +104,66 @@ export default function App() {
     ? { kind: "remux", container }
     : { kind: "encode", container, settings: enc };
 
-  const outputPath = useMemo(() => {
-    if (!cfg) return "";
-    const name = sanitize(disc?.name || "disc");
-    const t = title ?? 0;
-    const ext = container;
-    return `${cfg.output_dir.replace(/\/$/, "")}/${name}/${name}${disc && disc.titles.length > 1 ? ` - t${String(t).padStart(2, "0")}` : ""}.${ext}`;
-  }, [cfg, disc, title, container]);
+  const titleInfo = useMemo(
+    () => disc?.titles.find((x) => x.index === title) ?? null,
+    [disc, title],
+  );
+
+  // Live preview of the output path, rendered by the same code the ripper uses.
+  useEffect(() => {
+    api.templatePlaceholders().then(setPlaceholders).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    if (!cfg || !disc) { setPreview(""); return; }
+    (async () => {
+      const movieName = (movie ?? disc.name ?? "").trim();
+      let hit: MovieHit | null = null;
+      const wantsTmdb =
+        poster || ["{title", "{year", "{tmdb}"].some((k) => cfg.output_template.includes(k));
+      if (wantsTmdb && movieName) {
+        try { hit = await api.tmdbLookup(movieName, titleInfo?.duration_secs ?? 0); } catch { hit = null; }
+      }
+      if (!alive) return;
+      try {
+        const p = await api.previewOutput(cfg.output_template, {
+          output_dir: cfg.output_dir,
+          disc: disc.name || "Blu-ray",
+          title: hit?.title || movieName || disc.name || "Blu-ray",
+          year: hit?.year ?? null,
+          tmdb: hit?.tmdb_id ?? null,
+          resolution: titleInfo?.resolution ?? null,
+          hdr: titleInfo?.dynamic_range ?? null,
+          video_codec: disc.video_codec,
+          audio_lang: disc.audio_lang,
+          audio_codec: disc.audio_codec,
+          runtime_secs: titleInfo?.duration_secs ?? 0,
+          chapters: titleInfo?.chapters ?? 0,
+          playlist: titleInfo?.playlist ?? 0,
+          index: title ?? 0,
+          ext: container,
+        });
+        if (alive) setPreview(p);
+      } catch { if (alive) setPreview(""); }
+    })();
+    return () => { alive = false; };
+  }, [cfg, disc, title, titleInfo, container, movie, poster]);
 
   const startRip = async () => {
     if (!discPath || title == null) return;
-    setError(null); setBusy("ripping"); setProgress({ out_time_ms: 0, total_ms: 0, frames: 0, fps: 0, speed: "", done: false, percent: 0, message: "starting" });
+    setError(null); setBusy("ripping"); setProgress({ out_time_ms: 0, total_ms: 0, frames: 0, fps: 0, speed: "", done: false, percent: 0, message: "starting", dest: null });
     try {
-      await api.startRip({ source: discPath, keydb: snap?.keys?.path ?? null, title, output: outputPath, mode });
+      await api.startRip({
+        source: discPath,
+        keydb: snap?.keys?.path ?? null,
+        title,
+        output: null, // render the configured output template
+        mode,
+        chapters,
+        poster,
+        movie,
+      });
     } catch (e) { setError(String(e)); setBusy(null); }
   };
 
@@ -278,9 +332,25 @@ export default function App() {
               </div>
             )}
 
-            <div className="field" style={{ marginTop: 14 }}>
+            <div className="row wrap" style={{ marginTop: 14, gap: 16 }}>
+              <label className="check">
+                <input type="checkbox" checked={chapters} onChange={(e) => setChapters(e.target.checked)} />
+                Chapter names (ChapterDB)
+              </label>
+              <label className="check">
+                <input type="checkbox" checked={poster} onChange={(e) => setPoster(e.target.checked)} />
+                TMDB poster
+              </label>
+            </div>
+
+            <label className="field" style={{ marginTop: 12 }}>Movie title for lookups
+              <input value={movie ?? ""} placeholder={disc?.name ?? "movie title"}
+                onChange={(e) => setMovie(e.target.value)} />
+            </label>
+
+            <div className="field" style={{ marginTop: 12 }}>
               <span className="sub">Output file</span>
-              <div className="mono truncate" title={outputPath}>{outputPath || "—"}</div>
+              <div className="mono truncate" title={preview}>{preview || "—"}</div>
             </div>
           </section>
 
@@ -310,6 +380,25 @@ export default function App() {
               <input className="mono" value={cfg?.output_dir ?? ""} onChange={(e) => cfg && setCfg({ ...cfg, output_dir: e.target.value })}
                 onBlur={async () => { if (cfg) { await api.setConfig(cfg); setToast("Saved"); } }} />
             </label>
+            <label className="field" style={{ marginTop: 10 }}>Output template
+              <input className="mono" value={cfg?.output_template ?? ""} placeholder="{title} ({year})"
+                onChange={(e) => cfg && setCfg({ ...cfg, output_template: e.target.value })}
+                onBlur={async () => { if (cfg) { await api.setConfig(cfg); setToast("Saved"); } }} />
+            </label>
+            <div className="row wrap" style={{ gap: 6, marginTop: 8 }}>
+              {placeholders.map(([k, d]) => (
+                <button key={k} className="ghost sm" title={d}
+                  onClick={async () => {
+                    if (!cfg) return;
+                    const next = { ...cfg, output_template: cfg.output_template + "{" + k + "}" };
+                    setCfg(next);
+                    await api.setConfig(next);
+                  }}>
+                  {"{" + k + "}"}
+                </button>
+              ))}
+            </div>
+
             <label className="check" style={{ marginTop: 10 }}>
               <input type="checkbox" checked={cfg?.auto_update_keys ?? true}
                 onChange={async (e) => { if (cfg) { const n = { ...cfg, auto_update_keys: e.target.checked }; setCfg(n); await api.setConfig(n); } }} />
@@ -340,7 +429,7 @@ export default function App() {
                 <span>{progress.fps.toFixed(0)} fps</span>
                 <span>{(progress.speed || "").trim()}</span>
               </div>
-              {progress.done && <button className="ghost sm" style={{ marginTop: 8 }} onClick={() => api.reveal(outputPath)}>Reveal file</button>}
+              {progress.done && <button className="ghost sm" style={{ marginTop: 8 }} onClick={() => api.reveal(progress.dest ?? preview)}>Reveal file</button>}
             </div>
           )}
 

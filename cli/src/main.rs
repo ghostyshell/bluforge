@@ -240,12 +240,6 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
             } else {
                 Container::Mkv
             };
-            let ext = if container.eq_ignore_ascii_case("mp4") { "mp4" } else { "mkv" };
-            let dest = resolve_output(
-                output.as_deref(),
-                &bluforge_core::device::source_name(&source.to_string_lossy(), ""),
-                ext,
-            );
             let mode = if *encode {
                 let codec = match codec.as_str() {
                     "x264" => VideoCodec::X264,
@@ -270,7 +264,7 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
                 source: source.clone(),
                 keydb: Some(keys::keydb_path()),
                 title: *title,
-                output: dest.clone(),
+                output: output.clone(),
                 mode,
                 chapters: !*no_chapters,
                 poster: !*no_poster,
@@ -278,14 +272,18 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
             };
             let cancel = std::sync::atomic::AtomicBool::new(false);
             let mut last = -1i64;
+            let mut dest = String::new();
             bluforge_core::rip::run(&req, &cancel, |p: RipProgress| {
+                if let Some(d) = p.dest {
+                    dest = d.display().to_string();
+                }
                 let pct = p.percent as i64;
                 if pct != last {
                     last = pct;
                     eprint!("\r  {pct:>3}%  {:.0} fps  {}          ", p.fps, p.speed.trim());
                 }
             })?;
-            eprintln!("\nwrote {}", dest.display());
+            eprintln!("\nwrote {dest}");
         }
         Cmd::Config => {
             let cfg = AppConfig::load();
@@ -304,37 +302,6 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
         }
     }
     Ok(())
-}
-
-fn sanitize_fs(s: &str) -> String {
-    let mut t: String = s
-        .chars()
-        .map(|c| if "/\\:*?\"<>|".contains(c) { '-' } else { c })
-        .collect();
-    t = t.trim().trim_matches('.').to_string();
-    while t.contains("  ") {
-        t = t.replace("  ", " ");
-    }
-    t
-}
-
-/// Where to write the rip: an explicit file, a directory, or `~/Downloads`.
-fn resolve_output(
-    explicit: Option<&std::path::Path>,
-    disc_name: &str,
-    ext: &str,
-) -> std::path::PathBuf {
-    let stem = sanitize_fs(&disc_name.replace('_', " "));
-    let stem = if stem.is_empty() { "rip".to_string() } else { stem };
-    let file = format!("{stem}.{ext}");
-    match explicit {
-        Some(p) if p.is_dir() => p.join(file),
-        Some(p) => p.to_path_buf(),
-        None => {
-            let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
-            std::path::PathBuf::from(home).join("Downloads").join(file)
-        }
-    }
 }
 
 fn print_keys(json: bool, st: keys::KeyDbStatus) -> Result<(), bluforge_core::CoreError> {

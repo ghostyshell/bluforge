@@ -18,6 +18,81 @@ struct UpdateInfo {
     notes: Option<String>,
 }
 
+/// Values the UI has to hand when previewing an output path.
+#[derive(serde::Deserialize)]
+struct PreviewVars {
+    output_dir: String,
+    disc: String,
+    title: String,
+    year: Option<String>,
+    tmdb: Option<u64>,
+    resolution: Option<String>,
+    hdr: Option<String>,
+    video_codec: Option<String>,
+    audio_lang: Option<String>,
+    audio_codec: Option<String>,
+    runtime_secs: f64,
+    chapters: usize,
+    playlist: u32,
+    index: u32,
+    ext: String,
+}
+
+/// Render an output path exactly as the ripper would.
+#[tauri::command]
+fn preview_output(template: String, vars: PreviewVars) -> String {
+    let v = bluforge_core::TemplateVars::build(
+        &vars.disc,
+        &vars.title,
+        vars.year.as_deref(),
+        vars.tmdb,
+        vars.resolution.as_deref(),
+        vars.hdr.as_deref(),
+        vars.video_codec.as_deref(),
+        vars.audio_lang.as_deref(),
+        vars.audio_codec.as_deref(),
+        vars.runtime_secs,
+        vars.chapters,
+        vars.playlist,
+        vars.index,
+        &vars.ext,
+    );
+    let rel = bluforge_core::render_template(&template, &v, &vars.ext, "{title} - {resolution}");
+    std::path::PathBuf::from(&vars.output_dir)
+        .join(rel)
+        .display()
+        .to_string()
+}
+
+/// Placeholders offered for the output template: `(name, description)`.
+#[tauri::command]
+fn template_placeholders() -> Vec<(String, String)> {
+    bluforge_core::template::PLACEHOLDERS
+        .iter()
+        .map(|(a, b)| (a.to_string(), b.to_string()))
+        .collect()
+}
+
+#[derive(Serialize)]
+struct MovieHit {
+    title: String,
+    year: Option<String>,
+    tmdb_id: u64,
+}
+
+/// TMDB lookup for the template preview.
+#[tauri::command]
+fn tmdb_lookup(movie: String, runtime_secs: f64) -> Option<MovieHit> {
+    bluforge_core::lookup_movie(&movie, runtime_secs)
+        .ok()
+        .flatten()
+        .map(|m| MovieHit {
+            title: m.title,
+            year: m.year,
+            tmdb_id: m.tmdb_id,
+        })
+}
+
 #[tauri::command]
 fn snapshot() -> CoreSnapshot {
     bluforge_core::snapshot()
@@ -171,7 +246,10 @@ pub fn run() {
             export_iso,
             check_update,
             install_update,
-            reveal
+            reveal,
+            preview_output,
+            template_placeholders,
+            tmdb_lookup
         ])
         .setup(|app| {
             let _ = app.get_webview_window("main");

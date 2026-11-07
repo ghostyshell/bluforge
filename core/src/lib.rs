@@ -11,11 +11,13 @@ pub mod iso;
 pub mod keys;
 pub mod metadata;
 pub mod rip;
+pub mod template;
 
 pub use config::AppConfig;
 pub use disc::{Chapter, Disc, DiscInfo, StreamInfo, Title};
 pub use iso::{IsoFormat, IsoProgress, IsoRequest};
-pub use metadata::Poster;
+pub use metadata::{lookup_movie, Poster};
+pub use template::{render as render_template, Vars as TemplateVars};
 pub use rip::{Container, EncodeSettings, RipMode, RipProgress, RipRequest, VideoCodec};
 
 #[derive(Debug, thiserror::Error)]

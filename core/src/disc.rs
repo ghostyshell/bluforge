@@ -88,6 +88,13 @@ pub struct DiscInfo {
     pub titles: Vec<Title>,
     pub main_title: Option<u32>,
     pub library: String,
+    /// Codec/language summary of the main title, for output-template previews.
+    #[serde(default)]
+    pub video_codec: Option<String>,
+    #[serde(default)]
+    pub audio_codec: Option<String>,
+    #[serde(default)]
+    pub audio_lang: Option<String>,
 }
 
 /// One chapter entry mark on a title.
@@ -285,7 +292,14 @@ impl Disc {
                     audio_streams: t.audio_count as u32,
                 })
                 .collect();
+            let main_t = if main >= 0 { Some(main as u32) } else { None };
+            let streams = main_t.and_then(|m| self.streams(m).ok()).unwrap_or_default();
+            let vid = streams.iter().find(|s| s.kind == "video");
+            let aud = streams.iter().find(|s| s.kind == "audio");
             Ok(DiscInfo {
+                video_codec: vid.map(|s| crate::rip::video_codec_label(s.coding_type).to_string()),
+                audio_codec: aud.map(|s| crate::rip::audio_codec_label(s.coding_type).to_string()),
+                audio_lang: aud.and_then(|s| s.lang.as_deref()).map(crate::rip::lang_name),
                 name,
                 path: String::new(),
                 aacs: ffi::bf_has_aacs(self.handle) != 0,
