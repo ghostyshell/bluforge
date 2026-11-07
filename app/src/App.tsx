@@ -55,9 +55,11 @@ export default function App() {
     try {
       const s = await api.snapshot();
       setSnap(s);
-      // auto-select the first optical drive's media
-      const dev = s.optical.find((d) => d.mount_point);
-      if (dev?.mount_point) setDiscPath(dev.mount_point);
+      // auto-select the optical drive: prefer a mounted volume, else the raw
+      // device node (UHD/UDF often won't mount, libbluray can read /dev/rdiskN).
+      const dev = s.optical[0];
+      if (dev) setDiscPath(dev.mount_point ?? `/dev/r${dev.bsd_name}`);
+      else if (s.optical.length === 0) setDiscPath("");
     } catch (e) { setError(String(e)); }
   }, []);
 
