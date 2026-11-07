@@ -154,8 +154,22 @@ fn cover_thumb(url: String) -> Option<String> {
 }
 
 /// Download one cover into `dest_dir` (defaults to the configured output dir).
+#[derive(Serialize)]
+struct SavedCover {
+    path: String,
+    original: bool,
+    watermarked: bool,
+    width: u32,
+    height: u32,
+}
+
 #[tauri::command]
-fn save_cover(source: String, id: String, dest_dir: Option<String>, title: Option<String>) -> Result<String, String> {
+fn save_cover(
+    source: String,
+    id: String,
+    dest_dir: Option<String>,
+    title: Option<String>,
+) -> Result<SavedCover, String> {
     let cfg = AppConfig::load();
     let src = bluforge_core::CoverSource::parse(&source).ok_or("unknown source")?;
     let hit = bluforge_core::covers::by_id(src, &id, &cfg.hirescovers_dir)
@@ -175,7 +189,13 @@ fn save_cover(source: String, id: String, dest_dir: Option<String>, title: Optio
     let cookie = bluforge_core::covers::cookie(&cfg);
     let saved = bluforge_core::covers::download(&hit, &dir.join(name), cookie.as_deref())
         .map_err(|e| e.to_string())?;
-    Ok(saved.path.display().to_string())
+    Ok(SavedCover {
+        path: saved.path.display().to_string(),
+        original: saved.original,
+        watermarked: saved.info.watermarked,
+        width: saved.info.width,
+        height: saved.info.height,
+    })
 }
 
 #[tauri::command]

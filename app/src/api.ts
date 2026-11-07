@@ -190,7 +190,10 @@ export const api = {
     invoke<CoverHit[]>("covers_search", { query, source, limit }),
   coverThumb: (url: string) => invoke<string | null>("cover_thumb", { url }),
   saveCover: (source: string, id: string, destDir: string | null, title: string) =>
-    invoke<string>("save_cover", { source, id, destDir, title }),
+    invoke<{ path: string; original: boolean; watermarked: boolean; width: number; height: number }>(
+      "save_cover",
+      { source, id, destDir, title },
+    ),
   tmdbLookup: (movie: string, runtimeSecs: number) =>
     invoke<MovieHit | null>("tmdb_lookup", { movie, runtimeSecs }),
 };

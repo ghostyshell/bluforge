@@ -777,8 +777,12 @@ where
         ext,
     );
     // `None` (or a directory) means "use the configured folder + template".
+    // A path that is an existing dir, ends in `/`, or has no extension is a
+    // folder to render the template into; anything else is the exact file.
     ctx.dest = match &req.output {
-        Some(p) if p.is_dir() || p.to_string_lossy().ends_with('/') => {
+        Some(p)
+            if p.is_dir() || p.to_string_lossy().ends_with('/') || p.extension().is_none() =>
+        {
             p.join(template::render(&tpl, &vars, ext, "{title} - {resolution}"))
         }
         Some(p) => p.clone(),

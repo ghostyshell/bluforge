@@ -152,6 +152,33 @@ A rip saves a front cover (and a disc label, when one exists) next to the output
 as `<name> - cover.jpg` / `<name> - disc.jpg`, unless `--no-covers`. The app has
 the same search with thumbnails, and a *Cover art next to the rip* toggle.
 
+### Originals vs the free previews
+
+HiResCovers serves the member original through `secure_image.php`; everything
+else on the open web is a *derivative*. `covers inspect <file>` tells them apart
+from the bytes alone - no image viewer needed:
+
+```console
+$ bluforge covers inspect cover.jpg
+format  : jpeg 720x400
+creator : "CREATOR: gd-jpeg v1.0 (using IJG JPEG v62), quality = 85"
+verdict : watermarked preview (server re-encode)
+  - COM creator is GD (PHP re-encode) - server-generated
+  - only 720px on the long side (preview cap)
+  - no EXIF/ICC/Adobe markers
+  - 96 dpi (originals are 300)
+```
+
+The container is decomposed (SOF dimensions, JFIF density, APP0/1/2/13/14, COM)
+and the verdict is: *original upload* > *downscaled derivative* > *watermarked
+preview*. Downloads and the post-rip cover pick report which they got, and the
+picker prefers the best available.
+
+To get true originals, log in - either with credentials in the config
+(`covers login`) or by pasting a browser cookie (`covers cookie "<k=v; ...>"`);
+both verify the cookie against a known free pid before storing it. Without a
+valid cookie the public previews are used and labelled as such.
+
 ## Configuration & data
 
 * Config: `~/Library/Application Support/bluforge/config.json`

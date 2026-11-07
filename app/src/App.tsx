@@ -211,8 +211,11 @@ export default function App() {
 
   const saveCover = async (h: CoverHit) => {
     try {
-      const p = await api.saveCover(h.source, h.id, cfg?.output_dir ?? null, h.title);
-      setToast(`Saved ${p.split("/").pop()}`);
+      const r = await api.saveCover(h.source, h.id, cfg?.output_dir ?? null, h.title);
+      setToast(
+        `Saved ${r.path.split("/").pop()} · ${r.width}x${r.height} · ` +
+          (r.original ? "original" : r.watermarked ? "watermarked preview" : "downscaled"),
+      );
     } catch (e) { setError(String(e)); }
   };
 

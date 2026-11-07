@@ -601,7 +601,169 @@ pub struct Saved {
     /// False when the full-size original needed a login and the public preview
     /// was saved instead.
     pub full_size: bool,
+    /// False when the saved bytes are a watermarked preview.
+    pub original: bool,
     pub bytes: u64,
+    pub info: ImageInfo,
+}
+
+/// What a cover file actually is, derived from its metadata and by decomposing
+/// the JPEG container - no pixels needed.
+#[derive(Debug, Clone, Serialize)]
+pub struct ImageInfo {
+    pub path: PathBuf,
+    pub bytes: u64,
+    pub format: String,
+    pub width: u32,
+    pub height: u32,
+    pub dpi: Option<f64>,
+    /// COM segment creator string (eg. "CREATOR: gd-jpeg v1.0 ...").
+    pub creator: Option<String>,
+    pub has_exif: bool,
+    pub has_icc: bool,
+    pub has_adobe: bool,
+    /// Strong signal of a stamped server preview (a GD re-encode).
+    pub watermarked: bool,
+    /// Downscaled or re-encoded relative to the original upload (either signal).
+    pub derivative: bool,
+    pub reasons: Vec<String>,
+}
+
+fn u16be(b: &[u8], i: usize) -> u32 {
+    ((b[i] as u32) << 8) | b[i + 1] as u32
+}
+
+/// Decompose a JPEG/PNG and judge whether it is the original upload.
+///
+/// The HiResCovers full-size original is the file the member uploaded (large,
+/// usually 300 dpi, carrying EXIF/ICC/Adobe markers). The public preview is
+/// regenerated server-side by PHP's GD: it is downscaled, stamped with a
+/// watermark, and its COM segment says `CREATOR: gd-jpeg`.
+pub fn inspect(bytes: &[u8], path: &Path) -> ImageInfo {
+    let mut info = ImageInfo {
+        path: path.to_path_buf(),
+        bytes: bytes.len() as u64,
+        format: "unknown".into(),
+        width: 0,
+        height: 0,
+        dpi: None,
+        creator: None,
+        has_exif: false,
+        has_icc: false,
+        has_adobe: false,
+        watermarked: false,
+        derivative: false,
+        reasons: Vec::new(),
+    };
+
+    if bytes.len() > 8 && bytes[..8] == [0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A] {
+        info.format = "png".into();
+        info.width = ((bytes[16] as u32) << 24) | ((bytes[17] as u32) << 16)
+            | ((bytes[18] as u32) << 8)
+            | bytes[19] as u32;
+        info.height = ((bytes[20] as u32) << 24) | ((bytes[21] as u32) << 16)
+            | ((bytes[22] as u32) << 8)
+            | bytes[23] as u32;
+        info.reasons.push("png".into());
+        return info;
+    }
+
+    if bytes.len() < 4 || bytes[0] != 0xFF || bytes[1] != 0xD8 {
+        info.reasons.push("not a jpeg (no SOI)".into());
+        // (an HTML login page is the classic non-image response)
+        if bytes.starts_with(b"<") {
+            info.format = "html".into();
+            info.reasons.push("served an HTML page".into());
+            info.watermarked = true;
+        }
+        return info;
+    }
+    info.format = "jpeg".into();
+
+    let mut i = 2usize;
+    while i + 3 < bytes.len() {
+        if bytes[i] != 0xFF {
+            i += 1;
+            continue;
+        }
+        let m = bytes[i + 1];
+        if m == 0xD8 || m == 0x01 || (0xD0..=0xD7).contains(&m) {
+            i += 2;
+            continue;
+        }
+        if m == 0xDA {
+            break; // start of scan
+        }
+        let len = u16be(bytes, i + 2) as usize;
+        let payload = &bytes[(i + 4).min(bytes.len())..(i + 2 + len).min(bytes.len())];
+        match m {
+            0xE0 => {
+                // APP0/JFIF: density
+                if payload.starts_with(b"JFIF") && payload.len() >= 12 {
+                    let units = payload[7];
+                    let (xd, yd) = (u16be(payload, 8) as f64, u16be(payload, 10) as f64);
+                    if units == 1 {
+                        info.dpi = Some(xd);
+                    } else if units == 2 {
+                        info.dpi = Some(xd * 2.54);
+                    }
+                    let _ = yd;
+                }
+            }
+            0xE1 => info.has_exif = true,
+            0xE2 => info.has_icc = true,
+            0xED => info.has_adobe = true,   // APP13 = Photoshop IRB
+            0xEE => info.has_adobe = true,   // APP14 = Adobe
+            0xFE => {
+                let t = String::from_utf8_lossy(payload).trim().to_string();
+                if !t.is_empty() {
+                    info.creator = Some(t);
+                }
+            }
+            0xC0..=0xCF if m != 0xC4 && m != 0xC8 && m != 0xCC => {
+                if payload.len() >= 5 {
+                    info.height = u16be(payload, 1);
+                    info.width = u16be(payload, 3);
+                }
+            }
+            _ => {}
+        }
+        i += 2 + len.max(2);
+    }
+
+    // Judge it.
+    let long_side = info.width.max(info.height);
+    let creator_lc = info.creator.clone().unwrap_or_default().to_ascii_lowercase();
+    if creator_lc.contains("gd-jpeg") || creator_lc.contains("gd-") {
+        info.watermarked = true;
+        info.reasons
+            .push("COM creator is GD (PHP re-encode) - server-generated".into());
+    }
+    if long_side > 0 && long_side <= 1000 {
+        info.derivative = true;
+        info.reasons
+            .push(format!("only {long_side}px on the long side (preview cap)"));
+    }
+    if !info.has_exif && !info.has_icc && !info.has_adobe {
+        info.reasons.push("no EXIF/ICC/Adobe markers".into());
+    }
+    if let Some(d) = info.dpi {
+        if d < 150.0 {
+            info.derivative = true;
+            info.reasons.push(format!("{d:.0} dpi (originals are 300)"));
+        }
+    }
+    info.derivative |= info.watermarked;
+    if !info.derivative {
+        info.reasons.push("looks like the original upload".into());
+    }
+    info
+}
+
+/// Inspect a file on disk.
+pub fn inspect_file(path: &Path) -> Result<ImageInfo, CoreError> {
+    let bytes = std::fs::read(path)?;
+    Ok(inspect(&bytes, path))
 }
 
 fn looks_like_image(ctype: &str, body: &[u8]) -> bool {
@@ -632,16 +794,42 @@ pub fn download(hit: &CoverHit, dest: &Path, cookie: Option<&str>) -> Result<Sav
         "jpg"
     };
     let dest = dest.with_extension(ext);
+    let info = inspect(&body, &dest);
     if let Some(dir) = dest.parent() {
         std::fs::create_dir_all(dir)?;
     }
     let mut f = std::fs::File::create(&dest)?;
     f.write_all(&body)?;
+    if info.watermarked {
+        tracing::warn!(
+            path = %dest.display(),
+            width = info.width,
+            height = info.height,
+            "saved a watermarked preview; log in for the original"
+        );
+    } else if info.derivative {
+        tracing::info!(path = %dest.display(), "saved a downscaled derivative");
+    }
     Ok(Saved {
         path: dest,
         full_size: full,
+        original: !info.derivative,
         bytes: body.len() as u64,
+        info,
     })
+}
+
+/// Does this cookie actually unlock originals? Probes a known free pid and
+/// checks the reply really is the original (not a preview or a login page).
+pub fn verify_cookie(cookie: &str) -> Result<bool, CoreError> {
+    let (body, ctype) = get_bytes(
+        "https://www.hirescovers.net/gallery/secure_image.php?pid=9646",
+        Some(cookie),
+    )?;
+    if !looks_like_image(&ctype, &body) {
+        return Ok(false);
+    }
+    Ok(!inspect(&body, Path::new("probe")).watermarked)
 }
 
 /// The HiResCovers member cookie: the configured one, else whatever the
@@ -683,39 +871,59 @@ pub fn auto_covers(movie: &str, dest: &Path, cfg: &crate::AppConfig) -> Vec<Save
 
     let mut saved = Vec::new();
     for want in ["cover", "disc"] {
+        // Keep the best across sources: an original beats a downscaled
+        // derivative, which beats a watermarked preview.
+        let mut best: Option<(usize, Saved)> = None;
         for source in CoverSource::all() {
             let mut hits = Vec::new();
             for q in &queries {
-                hits = match search(source, q, 16, &cfg.hirescovers_dir) {
-                    Ok(h) => h,
-                    Err(_) => Vec::new(),
-                };
+                hits = search(source, q, 16, &cfg.hirescovers_dir).unwrap_or_default();
                 if hits.iter().any(|h| h.kind == want) {
                     break;
                 }
             }
-            let hits = hits;
-            let pick = hits
-                .iter()
-                .find(|h| h.kind == want && h.format != "dvd")
-                .or_else(|| hits.iter().find(|h| h.kind == want));
-            if let Some(hit) = pick {
+                let pick = hits
+                    .iter()
+                    .find(|h| h.kind == want && h.format != "dvd")
+                    .or_else(|| hits.iter().find(|h| h.kind == want));
+                let Some(hit) = pick else { continue };
                 let target = parent.join(format!("{stem} - {want}"));
-                match download(hit, &target, cookie.as_deref()) {
-                    Ok(s) => {
-                        tracing::info!(
-                            path = %s.path.display(),
-                            source = %hit.source,
-                            full = s.full_size,
-                            "cover saved"
-                        );
-                        saved.push(s);
-                        break;
+                let Ok(s) = download(hit, &target, cookie.as_deref()) else {
+                    continue;
+                };
+                let rank = if s.original {
+                    0
+                } else if !s.info.watermarked {
+                    1
+                } else {
+                    2
+                };
+                tracing::info!(
+                    path = %s.path.display(),
+                    source = %hit.source,
+                    width = s.info.width,
+                    height = s.info.height,
+                    rank,
+                    "cover saved"
+                );
+                let better = best.as_ref().map(|(r, _)| rank < *r).unwrap_or(true);
+                if better {
+                    if let Some((_, prev)) = best.take() {
+                        if prev.path != s.path {
+                            let _ = std::fs::remove_file(&prev.path);
+                        }
                     }
-                    Err(e) => tracing::debug!(error = %e, "cover download failed"),
+                    best = Some((rank, s));
+                } else if best.as_ref().map(|(_, b)| b.path != s.path).unwrap_or(false) {
+                    let _ = std::fs::remove_file(&s.path);
+                }
+                if rank == 0 {
+                    break;
                 }
             }
-        }
+            if let Some((_, s)) = best {
+                saved.push(s);
+            }
     }
     saved
 }
@@ -735,6 +943,63 @@ mod tests {
         assert!(looks_like_image("text/html", &[0xFF, 0xD8, 0x11]));
         assert!(looks_like_image("image/jpeg", b""));
         assert!(!looks_like_image("text/html", b"<html>"));
+    }
+
+    fn push_seg(v: &mut Vec<u8>, marker: u8, payload: &[u8]) {
+        v.push(0xFF);
+        v.push(marker);
+        v.extend_from_slice(&((payload.len() + 2) as u16).to_be_bytes());
+        v.extend_from_slice(payload);
+    }
+
+    /// Minimal JPEG with a chosen size/dpi/COM, enough for the container check.
+    fn jpeg(width: u16, height: u16, dpi: u16, com: Option<&str>, exif: bool) -> Vec<u8> {
+        let mut v = vec![0xFF, 0xD8];
+        let mut app0 = b"JFIF\x00\x01\x01\x01".to_vec();
+        app0.extend_from_slice(&dpi.to_be_bytes());
+        app0.extend_from_slice(&dpi.to_be_bytes());
+        app0.extend_from_slice(&[0, 0]);
+        push_seg(&mut v, 0xE0, &app0);
+        if exif {
+            push_seg(&mut v, 0xE1, b"Exif\0\0");
+        }
+        if let Some(c) = com {
+            push_seg(&mut v, 0xFE, c.as_bytes());
+        }
+        let mut sof = vec![8u8];
+        sof.extend_from_slice(&height.to_be_bytes());
+        sof.extend_from_slice(&width.to_be_bytes());
+        sof.extend_from_slice(&[3, 1, 0x22, 0, 2, 0x11, 1, 3, 0x11, 1]);
+        push_seg(&mut v, 0xC0, &sof);
+        v.extend_from_slice(&[0xFF, 0xDA, 0x00, 0x02]);
+        v
+    }
+
+    #[test]
+    fn flags_a_gd_preview_as_watermarked() {
+        // What hirescovers' previews actually look like: GD re-encode, 96 dpi, small.
+        let b = jpeg(720, 400, 96, Some("CREATOR: gd-jpeg v1.0 (using IJG JPEG v62), quality = 85"), false);
+        let i = inspect(&b, Path::new("x.jpg"));
+        assert!(i.watermarked, "reasons: {:?}", i.reasons);
+        assert_eq!((i.width, i.height), (720, 400));
+        assert!(i.creator.unwrap().contains("gd-jpeg"));
+        assert!(i.reasons.iter().any(|r| r.contains("GD")));
+    }
+
+    #[test]
+    fn accepts_a_large_300dpi_upload_as_original() {
+        let b = jpeg(3240, 2160, 300, None, true);
+        let i = inspect(&b, Path::new("orig.jpg"));
+        assert!(!i.watermarked, "reasons: {:?}", i.reasons);
+        assert_eq!((i.width, i.height), (3240, 2160));
+        assert!(i.has_exif);
+    }
+
+    #[test]
+    fn html_login_page_is_not_an_image() {
+        let i = inspect(b"<html><body>login</body></html>", Path::new("x.jpg"));
+        assert!(i.watermarked);
+        assert_eq!(i.format, "html");
     }
 
     #[test]

@@ -34,7 +34,8 @@ enum Cmd {
     Rip {
         /// Disc source: mounted volume, BDMV folder, ISO, or /dev/rdiskN.
         source: std::path::PathBuf,
-        /// Output file (.mkv or .mp4), or a directory. Defaults to ~/Downloads.
+        /// Output .mkv/.mp4 file, or a directory (anything without an
+        /// extension, or ending in /). Defaults to the configured folder.
         output: Option<std::path::PathBuf>,
         /// Title index (see `bluforge disc`). Default: the main title.
         #[arg(long)]
@@ -125,8 +126,17 @@ enum CoversCmd {
         #[arg(long)]
         title: Option<String>,
     },
+    /// Show what a cover file really is (original vs watermarked preview).
+    Inspect {
+        file: std::path::PathBuf,
+    },
     /// Log in to HiResCovers with the configured credentials.
     Login,
+    /// Store a HiResCovers member cookie pasted from a browser, and verify it.
+    Cookie {
+        /// `name=value; name=value` exactly as the browser shows it.
+        value: String,
+    },
 }
 
 
@@ -420,10 +430,18 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
                     };
                     let saved = covers::download(&hit, &dest, covers::cookie(&cfg).as_deref())?;
                     eprintln!(
-                        "wrote {} ({:.1} MB{})",
+                        "wrote {} ({}x{}, {:.1} MB) - {}",
                         saved.path.display(),
+                        saved.info.width,
+                        saved.info.height,
                         saved.bytes as f64 / 1e6,
-                        if saved.full_size { "" } else { ", preview - log in for full size" }
+                        if saved.original {
+                            "original".to_string()
+                        } else if saved.info.watermarked {
+                            format!("WATERMARKED PREVIEW: {}", saved.info.reasons.join("; "))
+                        } else {
+                            format!("downscaled derivative: {}", saved.info.reasons.join("; "))
+                        }
                     );
                 }
                 CoversCmd::Login => {
@@ -436,6 +454,56 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
                         .clone()
                         .ok_or_else(|| bluforge_core::CoreError::Config("no hirescovers_pass".into()))?;
                     let cookie = covers::login_hirescovers(&user, &pass)?;
+                    if covers::verify_cookie(&cookie).unwrap_or(false) {
+                        eprintln!("login ok: secure_image.php returned an original");
+                    } else {
+                        eprintln!("login did not unlock originals (check the credentials)");
+                    }
+                    let mut c = cfg.clone();
+                    c.hirescovers_cookie = Some(cookie);
+                    c.save()?;
+                    eprintln!("hirescovers cookie stored");
+                }
+                CoversCmd::Inspect { file } => {
+                    let info = covers::inspect_file(file)?;
+                    if cli.json {
+                        println!(
+                            "{}",
+                            serde_json::to_string_pretty(&info)
+                                .map_err(|e| bluforge_core::CoreError::Config(e.to_string()))?
+                        );
+                    } else {
+                        println!("file    : {}", info.path.display());
+                        println!("format  : {} {}x{}", info.format, info.width, info.height);
+                        println!("bytes   : {}", info.bytes);
+                        println!("dpi     : {:?}", info.dpi);
+                        println!("creator : {:?}", info.creator);
+                        println!(
+                            "markers : exif={} icc={} adobe={}",
+                            info.has_exif, info.has_icc, info.has_adobe
+                        );
+                        println!(
+                            "verdict : {}",
+                            if info.watermarked {
+                                "watermarked preview (server re-encode)"
+                            } else if info.derivative {
+                                "downscaled derivative (free-tier resize)"
+                            } else {
+                                "looks like the original upload"
+                            }
+                        );
+                        for r in &info.reasons {
+                            println!("  - {r}");
+                        }
+                    }
+                }
+                CoversCmd::Cookie { value } => {
+                    let cookie = value.trim().to_string();
+                    if covers::verify_cookie(&cookie).unwrap_or(false) {
+                        eprintln!("cookie works: secure_image.php returned an original");
+                    } else {
+                        eprintln!("WARNING: cookie did not unlock an original");
+                    }
                     let mut c = cfg.clone();
                     c.hirescovers_cookie = Some(cookie);
                     c.save()?;
