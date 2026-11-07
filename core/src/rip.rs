@@ -459,6 +459,10 @@ where
     a.extend([
         "-f".into(),
         "segment".into(),
+        // The muxer's default segment_time is 2s; without this it would cut the
+        // whole episode into 2s chunks. Cuts come from -segment_times.
+        "-segment_time".into(),
+        "999999".into(),
         "-segment_format".into(),
         "matroska".into(),
         "-reset_timestamps".into(),
