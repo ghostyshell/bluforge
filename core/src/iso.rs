@@ -116,20 +116,19 @@ fn build_iso(dir: &Path, dest: &Path, label: &str) -> Result<(), CoreError> {
     ))
 }
 
-/// A mounted volume whose device node is `dev` (or a partition of it).
-fn mounted_volume_for(dev: &str) -> Option<PathBuf> {
+/// The device node backing a mount point, if any.
+fn device_for_mount(mp: &str) -> Option<String> {
     let out = Command::new("mount").output().ok()?;
     let text = String::from_utf8_lossy(&out.stdout);
     for line in text.lines() {
-        // "/dev/disk5 on /Volumes/Deadpool (udf, ...)"
+        // "/dev/disk5 on /Volumes/DISC (udf, ...)"
         let mut it = line.split_whitespace();
-        let d = it.next().unwrap_or("");
+        let dev = it.next().unwrap_or("");
         if it.next() != Some("on") {
             continue;
         }
-        let mp = it.next().unwrap_or("");
-        if d == dev || d.starts_with(&format!("{dev}s")) {
-            return Some(PathBuf::from(mp));
+        if it.next().unwrap_or("") == mp && dev.starts_with("/dev/disk") {
+            return Some(dev.to_string());
         }
     }
     None
@@ -137,15 +136,30 @@ fn mounted_volume_for(dev: &str) -> Option<PathBuf> {
 
 /// Pick the source used for the decrypted tree walk.
 ///
-/// A raw `/dev/rdiskN` is preferred: libbluray's decryption layer and MakeMKV's
-/// `libmmbd` both need the device, whereas a *mounted* volume is served by
-/// libbluray's overlay and yields the raw (still AACS-encrypted) bytes.
-/// (`bd_open_dir()` on a device/image is handled by the root probe in the shim.)
+/// The device is required: libbluray's decryption layer and MakeMKV's `libmmbd`
+/// both need it, whereas a *mounted* volume is served by libbluray's overlay and
+/// hands back the raw (still AACS-encrypted) bytes. So a mounted volume - or a
+/// `/dev/diskN` node - is mapped to its raw device. BD root enumeration on a
+/// device is handled by the root probe in the shim.
 fn export_source(source: &Path) -> Result<PathBuf, CoreError> {
-    Ok(source.to_path_buf())
+    let s = source.to_string_lossy();
+    if s.starts_with("/dev/rdisk") {
+        return Ok(source.to_path_buf());
+    }
+    let dev = if s.starts_with("/dev/disk") {
+        Some(s.to_string())
+    } else {
+        device_for_mount(&s)
+    };
+    match dev {
+        Some(d) => {
+            let raw = d.replacen("/dev/disk", "/dev/rdisk", 1);
+            eprintln!("bf_export: {} -> {raw}", source.display());
+            Ok(PathBuf::from(raw))
+        }
+        None => Ok(source.to_path_buf()),
+    }
 }
-
-#[allow(dead_code)]
 
 /// Run a decrypted ISO/folder export. `on_progress` is called from this thread.
 pub fn run<F>(req: &IsoRequest, mut on_progress: F) -> Result<(), CoreError>
