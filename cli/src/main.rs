@@ -30,6 +30,34 @@ enum Cmd {
         /// Path to a mounted disc, BDMV folder, or ISO.
         path: std::path::PathBuf,
     },
+    /// Rip a title to MKV/MP4 (remux by default, or `--encode`).
+    Rip {
+        /// Disc source: mounted volume, BDMV folder, ISO, or /dev/rdiskN.
+        source: std::path::PathBuf,
+        /// Output file (.mkv or .mp4).
+        output: std::path::PathBuf,
+        /// Title index (see `bluforge disc`).
+        #[arg(long, default_value_t = 0)]
+        title: u32,
+        /// Re-encode video instead of lossless remux.
+        #[arg(long)]
+        encode: bool,
+        /// Encoder: x265 | x264 | hevc_videotoolbox | h264_videotoolbox.
+        #[arg(long, default_value = "x265")]
+        codec: String,
+        /// Quality (CRF / VideoToolbox q).
+        #[arg(long, default_value_t = 20)]
+        quality: u32,
+        /// x264/x265 preset.
+        #[arg(long, default_value = "medium")]
+        preset: String,
+        /// Container: mkv | mp4.
+        #[arg(long, default_value = "mkv")]
+        container: String,
+        /// 10-bit (software encoders only).
+        #[arg(long)]
+        ten_bit: bool,
+    },
     /// Show linked library versions.
     Libs,
     /// Show effective configuration and paths.
@@ -141,6 +169,61 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
             println!("bluforge-core : {}", bluforge_core::version());
             println!("libbluray     : {}", bluforge_core::disc::library_version());
             println!("config dir    : {}", bluforge_core::config_dir().display());
+        }
+        Cmd::Rip {
+            source,
+            output,
+            title,
+            encode,
+            codec,
+            quality,
+            preset,
+            container,
+            ten_bit,
+        } => {
+            use bluforge_core::{Container, EncodeSettings, RipMode, RipProgress, RipRequest, VideoCodec};
+            let container = if container.eq_ignore_ascii_case("mp4") {
+                Container::Mp4
+            } else {
+                Container::Mkv
+            };
+            let mode = if *encode {
+                let codec = match codec.as_str() {
+                    "x264" => VideoCodec::X264,
+                    "hevc_videotoolbox" => VideoCodec::HevcVideotoolbox,
+                    "h264_videotoolbox" => VideoCodec::H264Videotoolbox,
+                    _ => VideoCodec::X265,
+                };
+                RipMode::Encode {
+                    container,
+                    settings: EncodeSettings {
+                        codec,
+                        quality: *quality,
+                        preset: Some(preset.clone()),
+                        ten_bit: *ten_bit,
+                        aac_audio: false,
+                    },
+                }
+            } else {
+                RipMode::Remux { container }
+            };
+            let req = RipRequest {
+                source: source.clone(),
+                keydb: Some(keys::keydb_path()),
+                title: *title,
+                output: output.clone(),
+                mode,
+            };
+            let cancel = std::sync::atomic::AtomicBool::new(false);
+            let mut last = -1i64;
+            bluforge_core::rip::run(&req, &cancel, |p: RipProgress| {
+                let pct = p.percent as i64;
+                if pct != last {
+                    last = pct;
+                    eprint!("\r  {pct:>3}%  {:.0} fps  {}          ", p.fps, p.speed.trim());
+                }
+            })?;
+            eprintln!("\nwrote {}", output.display());
         }
         Cmd::Config => {
             let cfg = AppConfig::load();
