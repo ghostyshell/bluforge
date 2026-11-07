@@ -565,13 +565,27 @@ where
     last = 0;
     let _ = last;
 
-    // Rename seg000.. to the episode files, and fetch posters.
+    // The segment muxer numbers its output by timestamp, not 0..n, so collect
+    // whatever it wrote and order it by that number.
+    let mut segs: Vec<std::path::PathBuf> = std::fs::read_dir(&tmp_dir)
+        .map(|d| {
+            d.filter_map(|e| e.ok().map(|e| e.path()))
+                .filter(|p| p.extension().map(|x| x == "mkv").unwrap_or(false))
+                .collect()
+        })
+        .unwrap_or_default();
+    segs.sort_by_key(|p| {
+        p.file_stem()
+            .and_then(|s| s.to_string_lossy().trim_start_matches("seg").parse::<u64>().ok())
+            .unwrap_or(0)
+    });
+
+    // Rename them to the episode files, and fetch posters.
     let mut saved = Vec::new();
     for (i, it) in wanted.iter().enumerate() {
-        let from = tmp_dir.join(format!("seg{:03}.mkv", i));
-        if !from.is_file() {
+        let Some(from) = segs.get(i).cloned() else {
             continue;
-        }
+        };
         let to = dir.join(format!("{}.mkv", stem_for(&it.episode)));
         std::fs::rename(&from, &to)?;
         tracing::info!(path = %to.display(), "episode written");
