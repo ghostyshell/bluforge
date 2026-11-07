@@ -38,8 +38,14 @@ app/            Tauri v2 desktop app (React + TypeScript frontend)
   src-tauri/      Rust commands bridging the UI to core
 ```
 
-Decryption is **pure Rust orchestration over libaacs / libbdplus / libbluray**
-(no MakeMKV dependency). ffmpeg is used only for muxing/encoding, never decryption.
+Decryption is Rust orchestration over libbluray plus an AACS/BD+ backend: by
+default `libaacs` + `libbdplus` from Homebrew. If **MakeMKV** is installed its
+`libmmbd` is preferred instead, since it is ABI-compatible and additionally
+handles LibreDrive, AACS bus encryption and BD+ (Homebrew's libbdplus ships no
+BD+ VM config, and some drives reject libaacs's built-in host certificate).
+`bluforge libs` prints the backend actually in use; override either choice with
+`LIBAACS_PATH` / `LIBBDPLUS_PATH`. ffmpeg is used only for muxing/encoding,
+never decryption.
 
 ## Build & run
 
@@ -91,6 +97,17 @@ setting `TAURI_SIGNING_PRIVATE_KEY` when running `npm run tauri build`.
 
 ## macOS note
 
-macOS 26+ no longer ships a CD/DVD SCSI peripheral driver, so drives must attach
-directly (avoid unpowered hubs) and be readable as a normal block device. BluForge
-enumerates via IOKit and reads discs through libbluray.
+macOS binds optical drives through its SCSI multimedia driver, which only
+matches a device that reports SCSI peripheral type 5. Some USB-SATA bridges make
+the drive enumerate as a generic type-0 mass-storage device - in practice this
+happens when the drive sits behind a hub, and the drive then looks absent
+(`drutil` and `system_profiler SPDiscBurning` show nothing). **Plug the drive
+straight into the Mac.**
+
+Reading a disc also needs the terminal (or the app) to have **Full Disk Access**,
+otherwise TCC blocks `open()` on removable volumes, and raw `/dev/rdiskN` access
+needs membership of the `operator` group.
+
+## License
+
+MIT - see [LICENSE](LICENSE).
