@@ -412,7 +412,7 @@ where
 
     let mut maps = Vec::new();
     let mut meta = Vec::new();
-    plan_tracks_tv(ctx, req, signs_pid, &mut maps, &mut meta);
+    plan_tracks_tv(ctx, cfg.tv_subs == "signs", signs_pid, &mut maps, &mut meta);
 
     let total: f64 = wanted.iter().map(|i| i.duration_secs).sum();
     let mut prog = RipProgress {
@@ -862,7 +862,7 @@ fn episode_selected(spec: &str, n: u32) -> bool {
 /// English, otherwise the full track.
 fn plan_tracks_tv(
     ctx: &TrackCtx,
-    _req: &RipRequest,
+    signs_only: bool,
     signs_pid: Option<u16>,
     maps: &mut Vec<String>,
     meta: &mut Vec<String>,
@@ -939,7 +939,13 @@ fn plan_tracks_tv(
                 ai += 1;
             }
             "subtitle" => {
-                let keep = st.lang.as_deref() == Some("eng");
+                // "signs" mode keeps just the default track on an English-audio
+                // disc, so the file carries no redundant full subtitles.
+                let signs_only_skip = signs_only
+                    && has_eng_audio
+                    && signs_idx.is_some()
+                    && signs_idx != Some(idx);
+                let keep = st.lang.as_deref() == Some("eng") && !signs_only_skip;
                 if keep {
                     maps.push(format!("0:s:{}", si));
                     let lang = st.lang.clone().unwrap_or_default();

@@ -553,6 +553,14 @@ export default function App() {
                 ))}
               </div>
             )}
+            <div className="row" style={{ marginTop: 10, gap: 12 }}>
+              <label className="field">Subtitles on TV rips
+                <select value={cfg?.tv_subs ?? "all"} onChange={(e) => setCfg({ tv_subs: e.target.value })}>
+                  <option value="all">Keep every track (signs default)</option>
+                  <option value="signs">Signs &amp; songs only (English audio)</option>
+                </select>
+              </label>
+            </div>
             <p className="hint" style={{ marginTop: 10 }}>
               Split on the disc's clip boundaries. Subtitle default is the signs &amp; songs track
               (probed by event count), full English if there is no English audio. Episodes land at

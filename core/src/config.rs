@@ -18,6 +18,10 @@ pub struct AppConfig {
     /// Output template used when ripping a disc as TV/anime episodes.
     #[serde(default = "default_tv_template")]
     pub tv_template: String,
+    /// Subtitle tracks on TV rips: "all" keeps every track, "signs" keeps only
+    /// the signs-&-songs track when there is English audio (else full English).
+    #[serde(default = "default_tv_subs")]
+    pub tv_subs: String,
     /// Refresh KEYDB.cfg automatically at launch.
     pub auto_update_keys: bool,
     /// Check GitHub releases for a newer BluForge at launch.
@@ -48,6 +52,10 @@ pub fn default_hirescovers_dir() -> PathBuf {
     PathBuf::from(home).join("Code/hirescovers")
 }
 
+pub fn default_tv_subs() -> String {
+    "all".to_string()
+}
+
 pub fn default_tv_template() -> String {
     "{series}/Season {season:02}/{series} - S{season:02}E{episode:02} - {episode_title}".to_string()
 }
@@ -66,6 +74,7 @@ impl Default for AppConfig {
             output_dir,
             output_template: default_template(),
             tv_template: default_tv_template(),
+            tv_subs: default_tv_subs(),
             auto_update_keys: true,
             auto_check_updates: true,
             last_update_check: None,

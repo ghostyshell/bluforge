@@ -30,6 +30,8 @@ export type AppConfig = {
   version: number;
   output_dir: string;
   output_template: string;
+  tv_template: string;
+  tv_subs: string;
   auto_update_keys: boolean;
   auto_check_updates: boolean;
   last_update_check: number | null;

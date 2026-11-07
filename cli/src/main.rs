@@ -97,6 +97,9 @@ enum Cmd {
         /// Only these episodes, eg. "1-3" or "1,2,5".
         #[arg(long)]
         episodes: Option<String>,
+        /// TV subtitles: all (default) or signs (signs & songs only).
+        #[arg(long, default_value = "all")]
+        tv_subs: String,
     },
     /// Cover art: search and download case/disc covers.
     Covers {
@@ -398,6 +401,7 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
             tv,
             series,
             episodes,
+            tv_subs,
         } => {
             use bluforge_core::{Container, EncodeSettings, RipMode, RipProgress, RipRequest, VideoCodec};
             let container_kind = if container.eq_ignore_ascii_case("mp4") {
@@ -449,6 +453,11 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
                 series: series.clone(),
                 episodes: episodes.clone(),
             };
+            if tv_subs != "all" {
+                let mut c = AppConfig::load();
+                c.tv_subs = tv_subs.clone();
+                c.save()?;
+            }
             let cancel = std::sync::atomic::AtomicBool::new(false);
             let mut last = -1i64;
             let mut dest = String::new();
