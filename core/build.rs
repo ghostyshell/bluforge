@@ -1,0 +1,57 @@
+use std::env;
+
+fn main() {
+    println!("cargo:rerun-if-changed=src/bluray_shim.c");
+    println!("cargo:rerun-if-env-changed=BLURAY_PREFIX");
+
+    let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+
+    // Try to locate libbluray (with libaacs/libbdplus as its runtime deps).
+    let probe = if target_os == "macos" {
+        let prefix = env::var("BLURAY_PREFIX").unwrap_or_else(|_| "/opt/homebrew".into());
+        Ok::<(Vec<String>, Vec<String>, Vec<String>), std::io::Error>((
+            vec![format!("{prefix}/include")],
+            vec![format!("{prefix}/lib")],
+            vec!["bluray".into()],
+        ))
+    } else {
+        match pkg_config::Config::new().probe("libbluray") {
+            Ok(l) => Ok((
+                l.include_paths.iter().map(|p| p.display().to_string()).collect(),
+                l.link_paths.iter().map(|p| p.display().to_string()).collect(),
+                l.libs.clone(),
+            )),
+            Err(e) => Err(std::io::Error::other(e.to_string())),
+        }
+    };
+
+    println!("cargo::rustc-check-cfg=cfg(have_bluray)");
+
+    match probe {
+        Ok((includes, link_paths, libs)) => {
+            let mut b = cc::Build::new();
+            b.file("src/bluray_shim.c");
+            for inc in &includes {
+                b.include(inc);
+            }
+            b.warnings(false);
+            b.compile("bfbluray");
+
+            for path in &link_paths {
+                println!("cargo:rustc-link-search=native={path}");
+                if target_os == "macos" {
+                    println!("cargo:rustc-link-arg=-Wl,-rpath,{path}");
+                } else {
+                    println!("cargo:rustc-link-arg=-Wl,-rpath,{path}");
+                }
+            }
+            for lib in &libs {
+                println!("cargo:rustc-link-lib=dylib={lib}");
+            }
+            println!("cargo:rustc-cfg=have_bluray");
+        }
+        Err(e) => {
+            println!("cargo:warning=libbluray not found, disc features disabled: {e}");
+        }
+    }
+}

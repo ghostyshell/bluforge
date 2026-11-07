@@ -1,0 +1,21 @@
+[package]
+name = "bluforge-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+libc.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+# key database fetching / storage
+ureq = { version = "2", features = ["tls"] }
+zip = { version = "2", default-features = false, features = ["deflate"] }
+directories = "5"
+
+[build-dependencies]
+cc = "1"
+pkg-config = "0.3"
