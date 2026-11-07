@@ -225,6 +225,12 @@ int bf_read(bf_disc_t *d, uint8_t *buf, int len) {
     return bd_read(d->bd, buf, len);
 }
 
+/* Seek the current title to a 90 kHz timestamp. libbluray resolves this to a
+ * clip + byte offset, so skipping to episode 8 does not read the whole disc. */
+void bf_seek(bf_disc_t *d, uint64_t ticks) {
+    bd_seek(d->bd, ticks);
+}
+
 const char *bf_version(void) {
     static char v[32];
     int a = 0, b = 0, c = 0;

@@ -67,6 +67,7 @@ mod ffi {
         pub fn bf_aacs_error(d: *mut c_void) -> c_int;
         pub fn bf_select_title(d: *mut c_void, title: u32) -> c_int;
         pub fn bf_read(d: *mut c_void, buf: *mut u8, len: c_int) -> c_int;
+        pub fn bf_seek(d: *mut c_void, ticks: u64);
         pub fn bf_version() -> *const c_char;
         pub fn bf_export_decrypted(d: *mut c_void, dest: *const c_char, out_files: *mut libc::c_long) -> c_int;
         pub fn bf_title_chapters(d: *mut c_void, title: u32, out: *mut BfChapter, max: c_int) -> c_int;
@@ -471,6 +472,26 @@ impl Disc {
         #[cfg(not(have_bluray))]
         {
             let _ = title;
+            Err(CoreError::Disc("built without libbluray".into()))
+        }
+    }
+
+    /// Seek the selected title to `secs` into its own timeline (90 kHz units in
+    /// libbluray). Used to jump straight to an episode instead of reading the
+    /// whole play-all title from the start.
+    pub fn seek(&self, secs: f64) -> Result<(), CoreError> {
+        #[cfg(have_bluray)]
+        {
+            if self.handle.is_null() || secs <= 0.0 {
+                return Ok(());
+            }
+            let ticks = (secs * 90_000.0).round() as u64;
+            unsafe { ffi::bf_seek(self.handle, ticks) };
+            Ok(())
+        }
+        #[cfg(not(have_bluray))]
+        {
+            let _ = secs;
             Err(CoreError::Disc("built without libbluray".into()))
         }
     }

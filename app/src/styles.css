@@ -45,6 +45,8 @@ body {
   padding: 16px 22px; border-bottom: 1px solid var(--border);
   -webkit-app-region: drag;
 }
+/* clear the traffic lights on macOS by dropping the header content below them */
+html[data-os="mac"] .header { padding-top: 34px; padding-bottom: 10px; }
 .header .brand { display: flex; align-items: center; gap: 10px; font-weight: 650; letter-spacing: .2px; }
 .header .logo {
   width: 26px; height: 26px; border-radius: 7px;

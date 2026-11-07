@@ -352,7 +352,7 @@ fn run_tv<F>(
     req: &RipRequest,
     cfg: &crate::AppConfig,
     ctx: &mut TrackCtx,
-    cancel: &std::sync::atomic::AtomicBool,
+    _cancel: &std::sync::atomic::AtomicBool,
     on_progress: &mut F,
 ) -> Result<(), CoreError>
 where
@@ -378,15 +378,6 @@ where
         .join(safe(&plan.series))
         .join(format!("Season {:02}", plan.season));
     std::fs::create_dir_all(&dir)?;
-    let stem_for = |e: &crate::tv::Episode| {
-        format!(
-            "{} - S{:02}E{:02} - {}",
-            safe(&plan.series),
-            e.season,
-            e.number,
-            safe(&e.title)
-        )
-    };
 
     // Subtitle/audio policy: keep both English subtitle tracks, but default the
     // "signs & songs" one (assumed to be the first) when there is English
@@ -397,7 +388,7 @@ where
         &req.source,
         req.keydb.as_deref(),
         wanted[0].title_index,
-        400 * 1024 * 1024,
+        200 * 1024 * 1024,
     )
     .unwrap_or_default()
     .into_iter()
@@ -492,6 +483,13 @@ where
 
     // Feed on a thread so the main one can parse -progress.
     let first_title = wanted[0].title_index;
+    let video_pid = ctx
+        .streams
+        .iter()
+        .find(|s| s.kind == "video")
+        .map(|s| s.pid)
+        .unwrap_or(0x1011);
+    let stop_ticks = ((first_start + total) * 90_000.0) as u64;
     let feed_source = req.source.clone();
     let feed_keydb = req.keydb.clone();
     let feeder = std::thread::spawn(move || {
@@ -502,12 +500,11 @@ where
         if disc.info().is_err() || disc.select(first_title).is_err() {
             return;
         }
+        // Seek to the first episode instead of reading the title from the top.
+        let _ = disc.seek(first_start);
         let mut reader = TitleReader::new(&disc);
         let mut buf = vec![0u8; 1 << 20];
         let mut stride = 0usize;
-        let skip_until = first_start;
-        let mut pts: f64 = 0.0;
-        let mut started = first_start <= 0.5;
         loop {
             let n = match reader.read(&mut buf) {
                 Ok(0) => break,
@@ -520,29 +517,49 @@ where
             let mut out: Vec<u8> = Vec::with_capacity(n);
             let sync = if stride == 192 { 4 } else { 0 };
             let mut i = 0usize;
+            let mut past_end = false;
             while i + stride <= n {
-                if buf[i + sync] == 0x47 {
-                    let pid = (((buf[i + sync + 1] & 0x1f) as u16) << 8) | buf[i + sync + 2] as u16;
+                let p = i + sync;
+                if buf[p] == 0x47 {
+                    let pid = (((buf[p + 1] & 0x1f) as u16) << 8) | buf[p + 2] as u16;
                     if pid != 0x1fff {
-                        if !started {
-                            pts += stride as f64 / 1_350_000.0;
-                            if pts >= skip_until {
-                                started = true;
+                        // Read the PTS out of each PES header on the video pid: it
+                        // is the only trustworthy clock here (byte counting drifts
+                        // with the variable bitrate).
+                        if pid == video_pid && buf[p + 1] & 0x40 != 0 {
+                            let afc = (buf[p + 3] >> 4) & 3;
+                            let mut off = p + 4;
+                            if afc == 3 {
+                                off += 1 + buf[p + 4] as usize;
+                            }
+                            if off + 14 <= i + stride
+                                && buf[off] == 0
+                                && buf[off + 1] == 0
+                                && buf[off + 2] == 1
+                                && buf[off + 7] & 0x80 != 0
+                            {
+                                let pts = ((buf[off + 9] as u64 & 0x0e) << 29)
+                                    | ((buf[off + 10] as u64) << 22)
+                                    | ((buf[off + 11] as u64 & 0xfe) << 14)
+                                    | ((buf[off + 12] as u64) << 7)
+                                    | ((buf[off + 13] as u64) >> 1);
+                                if pts >= stop_ticks {
+                                    past_end = true;
+                                    break;
+                                }
                             }
                         }
-                        if started {
-                            out.extend_from_slice(&buf[i..i + stride]);
-                        }
+                        out.extend_from_slice(&buf[i..i + stride]);
                     }
                 } else {
                     out.extend_from_slice(&buf[i..i + stride]);
                 }
                 i += stride;
             }
-            if i < n && started {
+            if i < n {
                 out.extend_from_slice(&buf[i..n]);
             }
-            if stdin.write_all(&out).is_err() {
+            if stdin.write_all(&out).is_err() || past_end {
                 break;
             }
         }
@@ -726,10 +743,6 @@ where
     let _ = status;
     let _ = tmp_dir;
     Ok(())
-}
-
-fn disc_for_source(req: &RipRequest) -> Result<crate::disc::Disc, CoreError> {
-    crate::disc::Disc::open(&req.source, req.keydb.as_deref())
 }
 
 /// Count subtitle *event starts* per pid over the first `budget` bytes of a
@@ -949,8 +962,8 @@ fn plan_tracks_tv(
                 if keep {
                     maps.push(format!("0:s:{}", si));
                     let lang = st.lang.clone().unwrap_or_default();
-                    let full = Some(idx) != default_sub || (has_eng_audio && signs_pid.is_none() && false);
-                    let full = if has_eng_audio { signs_idx != Some(idx) } else { signs_idx == Some(idx) };
+                    let is_default = Some(idx) == default_sub;
+                    let label = if Some(idx) == signs_idx { "signs & songs" } else { "full" };
                     meta.extend([
                         format!("-metadata:s:s:{out_s}"),
                         format!("language={}", lang_tag(&lang)),
@@ -958,10 +971,10 @@ fn plan_tracks_tv(
                         format!(
                             "title={} ({})",
                             lang_name(&lang),
-                            if full { "full" } else { "signs & songs" }
+                            label
                         ),
                         format!("-disposition:s:{out_s}"),
-                        if !full { "default".into() } else { "0".into() },
+                        if is_default { "default".into() } else { "0".into() },
                     ]);
                     out_s += 1;
                 }
