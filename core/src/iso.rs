@@ -63,27 +63,16 @@ fn which(bin: &str) -> Option<PathBuf> {
     None
 }
 
-/// Build a UDF image from a directory, preferring `mkisofs` (UDF-only) and
-/// falling back to macOS `hdiutil`.
+/// Build a UDF image from a directory, preferring macOS `hdiutil` (it handles
+/// files >4 GB) and falling back to `mkisofs`/`genisoimage`.
+///
+/// The fallback needs `-iso-level 3`: without it `mkisofs` *silently skips*
+/// every file >=4 GB ("too large ... - ignoring"), which produced an image
+/// missing the main movie.
 fn build_iso(dir: &Path, dest: &Path, label: &str) -> Result<(), CoreError> {
-    if let Some(mk) = which("mkisofs").or_else(|| which("genisoimage")) {
-        let out = Command::new(mk)
-            .arg("-udf")
-            .arg("-V")
-            .arg(label)
-            .arg("-o")
-            .arg(dest)
-            .arg(dir)
-            .output()
-            .map_err(|e| CoreError::Disc(format!("mkisofs: {e}")))?;
-        if !out.status.success() {
-            return Err(CoreError::Disc(format!(
-                "mkisofs failed: {}",
-                String::from_utf8_lossy(&out.stderr)
-            )));
-        }
-        return Ok(());
-    }
+    let _ = std::fs::remove_file(dest);
+    let mut last_error: Option<String> = None;
+
     if which("hdiutil").is_some() {
         let out = Command::new("hdiutil")
             .args(["makehybrid", "-udf", "-udf-volume-name", label, "-iso-volume-name", label])
@@ -92,25 +81,79 @@ fn build_iso(dir: &Path, dest: &Path, label: &str) -> Result<(), CoreError> {
             .arg(dir)
             .output()
             .map_err(|e| CoreError::Disc(format!("hdiutil: {e}")))?;
-        if !out.status.success() {
-            return Err(CoreError::Disc(format!(
-                "hdiutil failed: {}",
-                String::from_utf8_lossy(&out.stderr)
-            )));
+        if out.status.success() {
+            return Ok(());
         }
-        return Ok(());
+        last_error = Some(format!(
+            "hdiutil failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        ));
     }
+
+    if let Some(mk) = which("mkisofs").or_else(|| which("genisoimage")) {
+        let out = Command::new(mk)
+            .arg("-udf")
+            .arg("-iso-level")
+            .arg("3")
+            .arg("-V")
+            .arg(label)
+            .arg("-o")
+            .arg(dest)
+            .arg(dir)
+            .output()
+            .map_err(|e| CoreError::Disc(format!("mkisofs: {e}")))?;
+        if out.status.success() {
+            return Ok(());
+        }
+        last_error = Some(format!(
+            "mkisofs failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        ));
+    }
+
     Err(CoreError::Disc(
-        "no ISO builder found (install cdrtools for mkisofs)".into(),
+        last_error.unwrap_or_else(|| "no ISO builder found (install cdrtools for mkisofs)".into()),
     ))
 }
+
+/// A mounted volume whose device node is `dev` (or a partition of it).
+fn mounted_volume_for(dev: &str) -> Option<PathBuf> {
+    let out = Command::new("mount").output().ok()?;
+    let text = String::from_utf8_lossy(&out.stdout);
+    for line in text.lines() {
+        // "/dev/disk5 on /Volumes/Deadpool (udf, ...)"
+        let mut it = line.split_whitespace();
+        let d = it.next().unwrap_or("");
+        if it.next() != Some("on") {
+            continue;
+        }
+        let mp = it.next().unwrap_or("");
+        if d == dev || d.starts_with(&format!("{dev}s")) {
+            return Some(PathBuf::from(mp));
+        }
+    }
+    None
+}
+
+/// Pick the source used for the decrypted tree walk.
+///
+/// A raw `/dev/rdiskN` is preferred: libbluray's decryption layer and MakeMKV's
+/// `libmmbd` both need the device, whereas a *mounted* volume is served by
+/// libbluray's overlay and yields the raw (still AACS-encrypted) bytes.
+/// (`bd_open_dir()` on a device/image is handled by the root probe in the shim.)
+fn export_source(source: &Path) -> Result<PathBuf, CoreError> {
+    Ok(source.to_path_buf())
+}
+
+#[allow(dead_code)]
 
 /// Run a decrypted ISO/folder export. `on_progress` is called from this thread.
 pub fn run<F>(req: &IsoRequest, mut on_progress: F) -> Result<(), CoreError>
 where
     F: FnMut(IsoProgress),
 {
-    let disc = Disc::open(&req.source, req.keydb.as_deref())?;
+    let source = export_source(&req.source)?;
+    let disc = Disc::open(&source, req.keydb.as_deref())?;
     let info = disc.info()?;
     let label = req
         .label

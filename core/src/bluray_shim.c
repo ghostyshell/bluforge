@@ -133,16 +133,18 @@ const char *bf_version(void) {
 
 static int bf_copy_file_dec(bf_disc_t *d, const char *path, const char *dest) {
     BD_FILE_H *f = bd_open_file_dec(d->bd, path);
-    if (!f) return -1;
+    if (!f) { fprintf(stderr, "bf_export: cannot open %s\n", path); return -1; }
     FILE *o = fopen(dest, "wb");
-    if (!o) { f->close(f); return -1; }
+    if (!o) { fprintf(stderr, "bf_export: cannot create %s\n", dest); f->close(f); return -1; }
     uint8_t *buf = (uint8_t *)malloc(6144);
     int rc = 0;
+    int64_t total = 0;
     for (;;) {
         int64_t n = f->read(f, buf, 6144);
-        if (n < 0) { rc = -1; break; }
+        if (n < 0) { fprintf(stderr, "bf_export: read error in %s after %lld bytes\n", path, (long long)total); rc = -1; break; }
         if (n == 0) break;
-        if (fwrite(buf, 1, (size_t)n, o) != (size_t)n) { rc = -1; break; }
+        if (fwrite(buf, 1, (size_t)n, o) != (size_t)n) { fprintf(stderr, "bf_export: write error on %s after %lld bytes\n", dest, (long long)total); rc = -1; break; }
+        total += n;
     }
     free(buf);
     fclose(o);
@@ -153,7 +155,7 @@ static int bf_copy_file_dec(bf_disc_t *d, const char *path, const char *dest) {
 static int bf_export_dir(bf_disc_t *d, const char *rel, const char *dest,
                          int depth, long *files) {
     BD_DIR_H *dir = bd_open_dir(d->bd, rel);
-    if (!dir) return -1;
+    if (!dir) { fprintf(stderr, "bf_export: cannot open dir '%s'\n", rel); return -1; }
     BD_DIRENT e;
     int rc = 0;
     while (dir->read(dir, &e) == 0) {
@@ -162,7 +164,11 @@ static int bf_export_dir(bf_disc_t *d, const char *rel, const char *dest,
         if (depth == 0 && (!strcasecmp(e.d_name, "AACS") || !strcasecmp(e.d_name, "BDSVM")))
             continue;
         char child[1024], dchild[2048];
-        snprintf(child, sizeof(child), "%s/%s", rel, e.d_name);
+        if (rel[0]) {
+            snprintf(child, sizeof(child), "%s/%s", rel, e.d_name);
+        } else {
+            snprintf(child, sizeof(child), "%s", e.d_name);
+        }
         snprintf(dchild, sizeof(dchild), "%s/%s", dest, e.d_name);
         BD_DIR_H *sub = bd_open_dir(d->bd, child);
         if (sub) {
@@ -182,8 +188,27 @@ static int bf_export_dir(bf_disc_t *d, const char *rel, const char *dest,
 int bf_export_decrypted(bf_disc_t *d, const char *dest_dir, long *out_files) {
     struct stat st;
     if (stat(dest_dir, &st) != 0) mkdir(dest_dir, 0755);
+
+    /* The directory opener is source-dependent: the stdio reader for a mounted
+     * volume wants ".", while libbluray's UDF reader (used for ISO images and
+     * /dev/disk nodes) needs "" or "/". Probe for one that works. */
+    static const char *roots[] = { ".", "", "/", NULL };
+    const char *root = NULL;
+    for (int i = 0; roots[i]; i++) {
+        BD_DIR_H *t = bd_open_dir(d->bd, roots[i]);
+        if (t) {
+            t->close(t);
+            root = roots[i];
+            break;
+        }
+    }
+    if (!root) {
+        fprintf(stderr, "bf_export: no working root dir opener\n");
+        return -1;
+    }
+
     long files = 0;
-    int rc = bf_export_dir(d, ".", dest_dir, 0, &files);
+    int rc = bf_export_dir(d, root, dest_dir, 0, &files);
     if (out_files) *out_files = files;
     return rc;
 }
