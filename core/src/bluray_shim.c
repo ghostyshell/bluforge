@@ -91,6 +91,7 @@ typedef struct {
     uint8_t coding_type;  /* BD_*_CODING_TYPE */
     uint8_t format;       /* bd_video_format_e / bd_audio_format_e */
     uint8_t rate;
+    uint16_t pid;         /* mpeg-ts PID (used to dedupe view streams) */
 } bf_stream_t;
 
 /* Chapter entry marks (times + any authored names) of one title. */
@@ -121,7 +122,26 @@ static void bf_put_streams(const BLURAY_STREAM_INFO *src, int n, int kind,
         out[*c].coding_type = src[i].coding_type;
         out[*c].format = src[i].format;
         out[*c].rate = src[i].rate;
+        out[*c].pid = src[i].pid;
         (*c)++;
+    }
+}
+
+/* As bf_put_streams, but skips PIDs that are already listed (eg. a Dolby Vision
+   view stream also reported as a secondary video stream). */
+static void bf_put_streams_uniq(const BLURAY_STREAM_INFO *src, int n, int kind,
+                                bf_stream_t *out, int *c, int max) {
+    for (int i = 0; i < n && *c < max; i++) {
+        int dup = 0;
+        for (int j = 0; j < *c; j++) {
+            if (out[j].pid == src[i].pid) {
+                dup = 1;
+                break;
+            }
+        }
+        if (!dup) {
+            bf_put_streams(&src[i], 1, kind, out, c, max);
+        }
     }
 }
 
@@ -132,7 +152,11 @@ int bf_title_streams(bf_disc_t *d, uint32_t title, bf_stream_t *out, int max) {
     int c = 0;
     if (ti->clip_count > 0) {
         const BLURAY_CLIP_INFO *cl = &ti->clips[0];
+        /* Primary video, then any Dolby Vision / secondary video view (same
+           PID order ffmpeg will use), deduped by PID, then audio and subs. */
         bf_put_streams(cl->video_streams, cl->video_stream_count, 0, out, &c, max);
+        bf_put_streams_uniq(cl->sec_video_streams, cl->sec_video_stream_count, 0, out, &c, max);
+        bf_put_streams_uniq(cl->dv_streams, cl->dv_stream_count, 0, out, &c, max);
         bf_put_streams(cl->audio_streams, cl->audio_stream_count, 1, out, &c, max);
         bf_put_streams(cl->pg_streams, cl->pg_stream_count, 2, out, &c, max);
     }

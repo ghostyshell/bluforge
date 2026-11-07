@@ -45,6 +45,7 @@ mod ffi {
         pub coding_type: u8,
         pub format: u8,
         pub rate: u8,
+        pub pid: u16,
     }
 
     extern "C" {
@@ -117,6 +118,9 @@ pub struct StreamInfo {
     /// BD format code.
     pub format: u8,
     pub rate: u8,
+    /// mpeg-ts PID.
+    #[serde(default)]
+    pub pid: u16,
 }
 
 fn res_label(format: u8) -> Option<String> {
@@ -360,7 +364,14 @@ impl Disc {
     pub fn streams(&self, title: u32) -> Result<Vec<StreamInfo>, CoreError> {
         #[cfg(have_bluray)]
         unsafe {
-            let empty = ffi::BfStream { kind: 0, lang: [0; 4], coding_type: 0, format: 0, rate: 0 };
+            let empty = ffi::BfStream {
+                kind: 0,
+                lang: [0; 4],
+                coding_type: 0,
+                format: 0,
+                rate: 0,
+                pid: 0,
+            };
             let mut buf = vec![empty; 64];
             let n =
                 ffi::bf_title_streams(self.handle, title, buf.as_mut_ptr(), buf.len() as libc::c_int);
@@ -387,6 +398,7 @@ impl Disc {
                         coding_type: s.coding_type,
                         format: s.format,
                         rate: s.rate,
+                        pid: s.pid,
                     }
                 })
                 .collect())

@@ -501,6 +501,7 @@ fn build_args(req: &RipRequest, ctx: &TrackCtx) -> Vec<String> {
     let mut a: Vec<String> = vec![
         "-hide_banner".into(),
         "-nostdin".into(),
+        "-y".into(),
         "-i".into(),
         "pipe:0".into(),
     ];
@@ -722,7 +723,7 @@ where
         ..Default::default()
     };
     for s in &ctx.streams {
-        tracing::info!(kind = %s.kind, lang = ?s.lang, coding_type = s.coding_type, format = s.format, "stream");
+        tracing::info!(kind = %s.kind, lang = ?s.lang, pid = s.pid, coding_type = s.coding_type, format = s.format, "stream");
     }
     ctx.default_audio = pick_default_audio(&ctx.streams);
 
@@ -946,6 +947,7 @@ mod tests {
             coding_type: ct,
             format: fmt,
             rate: 0,
+            pid: 0,
         }
     }
 
