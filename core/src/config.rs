@@ -15,6 +15,9 @@ pub struct AppConfig {
     /// Output path template (see `core::template`).
     #[serde(default = "default_template")]
     pub output_template: String,
+    /// Output template used when ripping a disc as TV/anime episodes.
+    #[serde(default = "default_tv_template")]
+    pub tv_template: String,
     /// Refresh KEYDB.cfg automatically at launch.
     pub auto_update_keys: bool,
     /// Check GitHub releases for a newer BluForge at launch.
@@ -45,6 +48,10 @@ pub fn default_hirescovers_dir() -> PathBuf {
     PathBuf::from(home).join("Code/hirescovers")
 }
 
+pub fn default_tv_template() -> String {
+    "{series}/Season {season:02}/{series} - S{season:02}E{episode:02} - {episode_title}".to_string()
+}
+
 pub fn default_template() -> String {
     "{title} ({year})/{title} ({year}) - {resolution} {hdr}".to_string()
 }
@@ -58,6 +65,7 @@ impl Default for AppConfig {
             version: 2,
             output_dir,
             output_template: default_template(),
+            tv_template: default_tv_template(),
             auto_update_keys: true,
             auto_check_updates: true,
             last_update_check: None,

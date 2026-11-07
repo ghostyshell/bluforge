@@ -42,6 +42,20 @@ impl Vars {
         self.0.get(k).map(|s| s.as_str())
     }
 
+    /// Variables for a TV episode.
+    pub fn tv(series: &str, season: u32, episode: u32, title: &str, disc: Option<u32>) -> Vars {
+        let mut v = Vars::default();
+        v.set("series", series);
+        v.set("season", season.to_string());
+        v.set("episode", episode.to_string());
+        v.set("episode_title", title);
+        v.set("episode_title_clean", title);
+        if let Some(d) = disc {
+            v.set("disc", d.to_string());
+        }
+        v
+    }
+
     /// Build the standard variable set.
     #[allow(clippy::too_many_arguments)]
     pub fn build(
@@ -107,6 +121,20 @@ fn strip_bad(s: &str) -> String {
         .collect()
 }
 
+/// `{episode:02}` -> padded to width 2 with zeros (space-padded otherwise).
+fn pad(val: &str, flags: &str) -> String {
+    let width: usize = flags.trim_start_matches('0').parse().unwrap_or(0);
+    if width == 0 || val.len() >= width {
+        return val.to_string();
+    }
+    let fill = if flags.starts_with('0') && val.chars().all(|c| c.is_ascii_digit()) {
+        '0'
+    } else {
+        ' '
+    };
+    format!("{}{}", fill.to_string().repeat(width - val.len()), val)
+}
+
 /// Collapse artefacts left by empty variables (`Title ()`, ` - `, double spaces).
 fn tidy(seg: &str) -> String {
     let mut s = strip_bad(seg);
@@ -142,12 +170,19 @@ pub fn render(template: &str, vars: &Vars, ext: &str, fallback: &str) -> PathBuf
         let after = &rest[open + 1..];
         match after.find('}') {
             Some(close) => {
-                let key = &after[..close];
-                match vars.get(key) {
-                    Some(v) => out.push_str(v),
+                let raw = &after[..close];
+                let (key, flags) = match raw.split_once(':') {
+                    Some((k, f)) => (k, Some(f)),
+                    None => (raw, None),
+                };
+                match vars.get(key).map(|v| match flags {
+                    Some(f) => pad(v, f),
+                    None => v.to_string(),
+                }) {
+                    Some(v) => out.push_str(&v),
                     None => {
                         out.push('{');
-                        out.push_str(key);
+                        out.push_str(raw);
                         out.push('}');
                     }
                 }

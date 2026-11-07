@@ -80,6 +80,9 @@ export default function App() {
   const [movie, setMovie] = useState<string | null>(null);
   const [placeholders, setPlaceholders] = useState<[string, string][]>([]);
   const [covers, setCovers] = useState(true);
+  const [tvPlan, setTvPlan] = useState<Awaited<ReturnType<typeof api.tvPlan>> | null>(null);
+  const [tvSel, setTvSel] = useState<Record<number, boolean>>({});
+  const [tvBusy, setTvBusy] = useState(false);
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
   const [coverTab, setCoverTab] = useState<CoverRole>("cover");
   const [tabs, setTabs] = useState<Record<CoverRole, TabState>>({
@@ -210,6 +213,9 @@ export default function App() {
         audio,
         subs,
         covers,
+        tv: !!tvPlan,
+        series: tvPlan?.series ?? null,
+        episodes: tvPlan ? Object.entries(tvSel).filter(([, v]) => v).map(([k]) => k).join(",") : null,
       });
     } catch (e) { setError(String(e)); setBusy(null); }
   };
@@ -264,6 +270,19 @@ export default function App() {
   const chosen = (["cover", "poster", "disc"] as CoverRole[])
     .map((r) => ({ role: r, hit: tabs[r].selected }))
     .filter((x): x is { role: CoverRole; hit: CoverHit } => !!x.hit);
+
+  const detectEpisodes = async () => {
+    const src = isoPath.trim() || (optical[0] ? `/dev/r${optical[0].bsd_name}` : "");
+    if (!src) return;
+    setTvBusy(true);
+    try {
+      const p = await api.tvPlan(src);
+      setTvPlan(p);
+      setTvSel(Object.fromEntries(p.items.map((i) => [i.episode.number, true])));
+      setToast(`${p.items.length} episodes detected`);
+    } catch (e) { setError(String(e)); }
+    finally { setTvBusy(false); }
+  };
 
   const saveChosen = async () => {
     if (chosen.length === 0) return;
@@ -495,6 +514,50 @@ export default function App() {
               <span className="sub">Output file</span>
               <div className="mono truncate" title={preview}>{preview || "—"}</div>
             </div>
+          </section>
+
+          {/* TV / anime */}
+          <section className="card">
+            <div className="row between">
+              <h2>TV / anime</h2>
+              <span className="sub">one file per episode, SxxExx + title from TMDB</span>
+            </div>
+            <div className="row" style={{ marginTop: 10, gap: 8 }}>
+              <button onClick={detectEpisodes} disabled={tvBusy}>
+                {tvBusy ? "Detecting…" : "Detect episodes"}
+              </button>
+              {tvPlan && (
+                <>
+                  <span className="grow mono truncate">
+                    {tvPlan.series} · season {tvPlan.season}
+                    {tvPlan.disc ? ` · disc ${tvPlan.disc}` : ""} · {tvPlan.items.length} eps
+                  </span>
+                  <button className="ghost sm"
+                    onClick={() => setTvSel(Object.fromEntries(tvPlan.items.map((i) => [i.episode.number, true])))}>All</button>
+                  <button className="ghost sm" onClick={() => setTvSel({})}>None</button>
+                </>
+              )}
+            </div>
+            {tvPlan && (
+              <div className="eps">
+                {tvPlan.items.map((it) => (
+                  <label key={it.episode.number} className="ep">
+                    <input type="checkbox" checked={!!tvSel[it.episode.number]}
+                      onChange={(e) => setTvSel((s) => ({ ...s, [it.episode.number]: e.target.checked }))} />
+                    <span className="mono">
+                      S{String(it.episode.season).padStart(2, "0")}E{String(it.episode.number).padStart(2, "0")}
+                    </span>
+                    <span className="grow truncate">{it.episode.title}</span>
+                    <span className="sub mono">{Math.floor(it.duration_secs / 60)}m</span>
+                  </label>
+                ))}
+              </div>
+            )}
+            <p className="hint" style={{ marginTop: 10 }}>
+              Split on the disc's clip boundaries. Subtitle default is the signs &amp; songs track
+              (probed by event count), full English if there is no English audio. Episodes land at
+              the TV template below.
+            </p>
           </section>
 
           {/* Covers */}

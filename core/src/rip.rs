@@ -391,9 +391,28 @@ where
     // Subtitle/audio policy: keep both English subtitle tracks, but default the
     // "signs & songs" one (assumed to be the first) when there is English
     // audio, otherwise default the full track for Japanese audio.
+    // Which English subtitle track is signs-&-songs? Nothing on the disc says,
+    // so count events: the sparse one is signs.
+    let signs_pid = probe_sub_events(
+        &req.source,
+        req.keydb.as_deref(),
+        wanted[0].title_index,
+        400 * 1024 * 1024,
+    )
+    .unwrap_or_default()
+    .into_iter()
+    .filter(|(pid, _)| {
+        ctx.streams
+            .iter()
+            .any(|s| s.pid == *pid && s.lang.as_deref() == Some("eng"))
+    })
+    .min_by_key(|(_, c)| *c)
+    .map(|(pid, _)| pid);
+    tracing::info!(?signs_pid, "signs-&-songs subtitle track");
+
     let mut maps = Vec::new();
     let mut meta = Vec::new();
-    plan_tracks_tv(ctx, req, &mut maps, &mut meta);
+    plan_tracks_tv(ctx, req, signs_pid, &mut maps, &mut meta);
 
     let total: f64 = wanted.iter().map(|i| i.duration_secs).sum();
     let mut prog = RipProgress {
@@ -417,47 +436,21 @@ where
     let _ = std::fs::create_dir_all(&tmp_dir);
     let pattern = tmp_dir.join("seg%03d.mkv");
 
-    // Chapters for the ripped window, offset to start at 0.
+    // Chapters of the whole title; they are sliced per episode below.
     let marks = crate::disc::Disc::open(&req.source, req.keydb.as_deref())
         .and_then(|d| d.chapters(wanted[0].title_index))
         .unwrap_or_default();
-    let chapter_file = tmp_dir.join("chapters.ffmeta");
-    let window: Vec<crate::disc::Chapter> = marks
-        .iter()
-        .filter(|c| c.start_secs >= first_start - 1.0 && c.start_secs <= first_start + total)
-        .map(|c| crate::disc::Chapter {
-            start_secs: c.start_secs - first_start,
-            name: c.name.clone(),
-        })
-        .collect();
-    if !window.is_empty() {
-        write_chapters(&window, &[], (total * 1000.0) as u64, &chapter_file)?;
-    }
 
     let mut a: Vec<String> = vec![
         "-hide_banner".into(),
         "-nostdin".into(),
         "-y".into(),
+        "-i".into(),
+        "pipe:0".into(),
     ];
-    if !window.is_empty() {
-        a.extend([
-            "-f".into(),
-            "ffmetadata".into(),
-            "-i".into(),
-            chapter_file.to_string_lossy().into_owned(),
-        ]);
-    }
-    a.extend(["-i".into(), "pipe:0".into()]);
-    let in_idx = if window.is_empty() { "0" } else { "1" };
-    for (i, m) in maps.iter().enumerate() {
-        // Maps are "0:v:n"; repoint onto the pipe input.
-        let rest = m.splitn(2, ':').nth(1).unwrap_or(m);
+    for m in maps.iter() {
         a.push("-map".into());
-        a.push(format!("{in_idx}:{rest}"));
-        let _ = i;
-    }
-    if !window.is_empty() {
-        a.extend(["-map_chapters".into(), "0".into()]);
+        a.push(m.clone());
     }
     a.extend(["-c".into(), "copy".into()]);
     if let Some(seek) = Some(first_start).filter(|s| *s > 0.5) {
@@ -471,6 +464,7 @@ where
         "-reset_timestamps".into(),
         "1".into(),
     ]);
+    a.extend(["-t".into(), format!("{total:.3}")]); // only the wanted window
     if !times.is_empty() {
         a.push("-segment_times".into());
         a.push(times.join(","));
@@ -483,87 +477,80 @@ where
     let mut child = Command::new(ffmpeg_path())
         .args(&a)
         .stdin(Stdio::piped())
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
         .spawn()
         .map_err(|e| CoreError::Disc(format!("spawn ffmpeg: {e}")))?;
     let mut stdin = child.stdin.take().ok_or_else(|| CoreError::Disc("ffmpeg stdin".into()))?;
 
-    // Feed the disc from the first episode's start: the reader is sequential, so
-    // drop whole TS packets until the wanted timestamp.
+    // Feed on a thread so the main one can parse -progress.
     let first_title = wanted[0].title_index;
-    let feed_disc = disc_for_source(req)?;
-    let _ = feed_disc.info()?; // read the title list first
-    feed_disc.select(first_title)?;
-    let mut reader = TitleReader::new(&feed_disc);
-    let mut buf = vec![0u8; 1 << 20];
-    let mut stride = 0usize;
-    let skip_until = first_start;
-    let mut pts: f64 = 0.0;
-    let mut started = first_start <= 0.5;
-    loop {
-        if cancel.load(std::sync::atomic::Ordering::Relaxed) {
-            let _ = child.kill();
-            break;
-        }
-        let n = match reader.read(&mut buf) {
-            Ok(0) => break,
-            Ok(n) => n,
-            Err(_) => break,
+    let feed_source = req.source.clone();
+    let feed_keydb = req.keydb.clone();
+    let feeder = std::thread::spawn(move || {
+        let disc = match crate::disc::Disc::open(&feed_source, feed_keydb.as_deref()) {
+            Ok(d) => d,
+            Err(_) => return,
         };
-        if stride == 0 {
-            stride = if n >= 5 && buf[4] == 0x47 { 192 } else { 188 };
+        if disc.info().is_err() || disc.select(first_title).is_err() {
+            return;
         }
-        // Which title are we in? Only the first title is read from the pipe.
-        let _ = first_title;
-        let mut out: Vec<u8> = Vec::with_capacity(n);
-        let sync = if stride == 192 { 4 } else { 0 };
-        let mut i = 0usize;
-        while i + stride <= n {
-            if buf[i + sync] == 0x47 {
-                let pid = (((buf[i + sync + 1] & 0x1f) as u16) << 8) | buf[i + sync + 2] as u16;
-                if pid != 0x1fff {
-                    // PTS of the PES header, when present, for the -ss skip.
-                    if !started && (i + stride) <= n {
-                        pts += stride as f64 / 18_000_000.0;
-                        if pts >= skip_until {
-                            started = true;
+        let mut reader = TitleReader::new(&disc);
+        let mut buf = vec![0u8; 1 << 20];
+        let mut stride = 0usize;
+        let skip_until = first_start;
+        let mut pts: f64 = 0.0;
+        let mut started = first_start <= 0.5;
+        loop {
+            let n = match reader.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => n,
+                Err(_) => break,
+            };
+            if stride == 0 {
+                stride = if n >= 5 && buf[4] == 0x47 { 192 } else { 188 };
+            }
+            let mut out: Vec<u8> = Vec::with_capacity(n);
+            let sync = if stride == 192 { 4 } else { 0 };
+            let mut i = 0usize;
+            while i + stride <= n {
+                if buf[i + sync] == 0x47 {
+                    let pid = (((buf[i + sync + 1] & 0x1f) as u16) << 8) | buf[i + sync + 2] as u16;
+                    if pid != 0x1fff {
+                        if !started {
+                            pts += stride as f64 / 1_350_000.0;
+                            if pts >= skip_until {
+                                started = true;
+                            }
+                        }
+                        if started {
+                            out.extend_from_slice(&buf[i..i + stride]);
                         }
                     }
-                    if started {
-                        out.extend_from_slice(&buf[i..i + stride]);
-                    }
+                } else {
+                    out.extend_from_slice(&buf[i..i + stride]);
                 }
-            } else {
-                out.extend_from_slice(&buf[i..i + stride]);
+                i += stride;
             }
-            i += stride;
+            if i < n && started {
+                out.extend_from_slice(&buf[i..n]);
+            }
+            if stdin.write_all(&out).is_err() {
+                break;
+            }
         }
-        if i < n && started {
-            out.extend_from_slice(&buf[i..n]);
-        }
-        if stdin.write_all(&out).is_err() {
-            break;
-        }
-    }
-    drop(stdin);
+    });
 
-    let mut last = -1i64;
-    if let Some(err) = child.stderr.take() {
-        let mut line = String::new();
-        use std::io::Read as _;
-        for l in std::io::BufReader::new(err).lines().map_while(Result::ok) {
-            line = l;
-            if line.starts_with("frame=") {
-                // not used; progress comes from stderr of the muxer only
-            }
+    // Progress from the muxer, then wait for both sides.
+    if let Some(out) = child.stdout.take() {
+        use std::io::BufRead as _;
+        for line in std::io::BufReader::new(out).lines().map_while(Result::ok) {
+            parse_progress(&line, &mut prog);
+            on_progress(prog.clone());
         }
-        tracing::debug!(last = %line, "ffmpeg done");
     }
+    let _ = feeder.join();
     let status = child.wait()?;
-    let _ = last;
-    last = 0;
-    let _ = last;
 
     // The segment muxer numbers its output by timestamp, not 0..n, so collect
     // whatever it wrote and order it by that number.
@@ -580,33 +567,145 @@ where
             .unwrap_or(0)
     });
 
-    // Rename them to the episode files, and fetch posters.
+    // Anime (Japanese audio present) gets OP/ED/preview chapters labelled.
+    let anime = ctx
+        .streams
+        .iter()
+        .any(|s| s.kind == "audio" && s.lang.as_deref() == Some("jpn"));
+    // Per episode: name it from the TV template, write its own chapters, attach
+    // its still, and remux (local, so it is quick).
+    let cookie = crate::covers::cookie(cfg);
     let mut saved = Vec::new();
     for (i, it) in wanted.iter().enumerate() {
         let Some(from) = segs.get(i).cloned() else {
             continue;
         };
-        let to = dir.join(format!("{}.mkv", stem_for(&it.episode)));
-        std::fs::rename(&from, &to)?;
-        tracing::info!(path = %to.display(), "episode written");
-        prog.covers.push(to.display().to_string());
-        saved.push(to);
-    }
-
-    // Per-episode thumbs + a season poster.
-    if req.covers && cfg.auto_cover {
-        let cookie = crate::covers::cookie(cfg);
-        for it in &wanted {
-            let Some(url) = it.episode.still.clone().or_else(|| plan.poster.clone()) else {
-                continue;
-            };
-            let dest = dir.join(format!("{}.jpg", stem_for(&it.episode)));
-            if let Ok((bytes, _)) = crate::covers::fetch(&url, cookie.as_deref()) {
-                let _ = std::fs::write(&dest, &bytes);
-            }
+        let vars = crate::template::Vars::tv(
+            &plan.series,
+            it.episode.season,
+            it.episode.number,
+            &it.episode.title,
+            plan.disc,
+        );
+        let fallback = format!(
+            "{} - S{:02}E{:02} - {}",
+            plan.series, it.episode.season, it.episode.number, it.episode.title
+        );
+        let rel = crate::template::render(&cfg.tv_template, &vars, "mkv", &fallback);
+        let dest = cfg.output_dir.join(&rel);
+        if let Some(d) = dest.parent() {
+            std::fs::create_dir_all(d)?;
         }
+
+        // This episode's chapters, offset to its own start.
+        let ch: Vec<crate::disc::Chapter> = marks
+            .iter()
+            .filter(|c| {
+                c.start_secs >= it.start_secs - 1.0
+                    && c.start_secs < it.start_secs + it.duration_secs - 0.5
+            })
+            .map(|c| crate::disc::Chapter {
+                start_secs: c.start_secs - it.start_secs,
+                name: c.name.clone(),
+            })
+            .collect();
+        let mut ch = ch;
+        if anime {
+            label_anime_chapters(&mut ch, it.duration_secs);
+        }
+        if !ch.is_empty() {
+            tracing::info!(
+                ep = it.episode.number,
+                marks = %ch.iter().map(|c| format!("{:.0}:{}", c.start_secs, c.name.clone().unwrap_or_default())).collect::<Vec<_>>().join(" | "),
+                "episode chapters"
+            );
+        }
+        let meta_path = tmp_dir.join(format!("ep{i}.ffmeta"));
+        let have_ch = !ch.is_empty();
+        if have_ch {
+            write_chapters(&ch, &[], (it.duration_secs * 1000.0) as u64, &meta_path)?;
+        }
+
+        // Still, for the cover attachment (and the sidecar).
+        let still_path = tmp_dir.join(format!("ep{i}.jpg"));
+        let still_url = it.episode.still.clone().or_else(|| plan.poster.clone());
+        let have_still = still_url
+            .as_deref()
+            .map(|u| crate::covers::fetch(u, cookie.as_deref()).is_ok())
+            .unwrap_or(false)
+            && std::fs::write(
+                &still_path,
+                crate::covers::fetch(still_url.as_deref().unwrap(), cookie.as_deref())
+                    .map(|(b, _)| b)
+                    .unwrap_or_default(),
+            )
+            .is_ok();
+
+        let mut a2: Vec<String> = vec![
+            "-hide_banner".into(),
+            "-nostdin".into(),
+            "-y".into(),
+            "-i".into(),
+            from.to_string_lossy().into_owned(),
+        ];
+        if have_ch {
+            a2.extend([
+                "-f".into(),
+                "ffmetadata".into(),
+                "-i".into(),
+                meta_path.to_string_lossy().into_owned(),
+                "-map".into(),
+                "0".into(),
+                "-map_chapters".into(),
+                "1".into(),
+            ]);
+        } else {
+            a2.extend(["-map".into(), "0".into()]);
+        }
+        a2.extend(["-c".into(), "copy".into()]);
+        if have_still {
+            a2.extend([
+                "-attach".into(),
+                still_path.to_string_lossy().into_owned(),
+                "-metadata:s:t".into(),
+                "mimetype=image/jpeg".into(),
+                "-metadata:s:t".into(),
+                "filename=cover.jpg".into(),
+            ]);
+        }
+        a2.push(dest.to_string_lossy().into_owned());
+        let st = Command::new(ffmpeg_path())
+            .args(&a2)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .map_err(|e| CoreError::Disc(format!("remux episode: {e}")))?;
+        if !st.success() {
+            tracing::warn!(ep = it.episode.number, "episode remux failed");
+        }
+        let _ = std::fs::remove_file(&from);
+        tracing::info!(
+            path = %dest.display(),
+            chapters = ch.len(),
+            still = have_still,
+            "episode written"
+        );
+        prog.covers.push(dest.display().to_string());
+        saved.push(dest.clone());
+
+        // Sidecar thumb next to the episode, plus a season poster.
+        if req.covers && cfg.auto_cover && have_still {
+            let thumb = dest.with_extension("jpg");
+            let _ = std::fs::copy(&still_path, &thumb);
+        }
+    }
+    if req.covers && cfg.auto_cover {
         if let Some(p) = &plan.poster {
             if let Ok((bytes, _)) = crate::covers::fetch(p, cookie.as_deref()) {
+                let dir = saved
+                    .first()
+                    .and_then(|s| s.parent().map(|p| p.to_path_buf()))
+                    .unwrap_or_default();
                 let _ = std::fs::write(dir.join("poster.jpg"), &bytes);
             }
         }
@@ -624,6 +723,108 @@ where
 
 fn disc_for_source(req: &RipRequest) -> Result<crate::disc::Disc, CoreError> {
     crate::disc::Disc::open(&req.source, req.keydb.as_deref())
+}
+
+/// Count subtitle *event starts* per pid over the first `budget` bytes of a
+/// title. The signs-&-songs track carries far fewer than the full track, so the
+/// count tells them apart without any disc metadata (there is none).
+pub fn probe_sub_events(
+    source: &std::path::Path,
+    keydb: Option<&std::path::Path>,
+    title: u32,
+    budget: u64,
+) -> Result<Vec<(u16, u64)>, CoreError> {
+    let disc = crate::disc::Disc::open(source, keydb)?;
+    let info = disc.info()?;
+    let subs: Vec<u16> = disc
+        .streams(title)?
+        .into_iter()
+        .filter(|s| s.kind == "subtitle")
+        .map(|s| s.pid)
+        .collect();
+    if subs.is_empty() {
+        return Ok(Vec::new());
+    }
+    let _ = info;
+    disc.select(title)?;
+    let mut reader = TitleReader::new(&disc);
+    let mut buf = vec![0u8; 1 << 20];
+    let mut stride = 0usize;
+    let mut read = 0u64;
+    let mut counts: std::collections::HashMap<u16, u64> = subs.iter().map(|p| (*p, 0)).collect();
+    while read < budget {
+        let n = match reader.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => n,
+            Err(_) => break,
+        };
+        read += n as u64;
+        if stride == 0 {
+            stride = if n >= 5 && buf[4] == 0x47 { 192 } else { 188 };
+        }
+        let sync = if stride == 192 { 4 } else { 0 };
+        let mut i = 0usize;
+        while i + stride <= n {
+            if buf[i + sync] == 0x47 {
+                let pid = (((buf[i + sync + 1] & 0x1f) as u16) << 8) | buf[i + sync + 2] as u16;
+                if buf[i + sync + 1] & 0x40 != 0 {
+                    if let Some(c) = counts.get_mut(&pid) {
+                        *c += 1;
+                    }
+                }
+            }
+            i += stride;
+        }
+    }
+    let mut out: Vec<(u16, u64)> = counts.into_iter().collect();
+    out.sort_by_key(|(_, c)| *c);
+    tracing::info!(?out, budget, "subtitle event probe");
+    Ok(out)
+}
+
+/// Anime episodes have a fixed shape: a ~90s opening early, an ending in the
+/// last third, and a short next-episode preview at the very end. The disc's
+/// chapter marks land on those transitions, so label them. Only used when the
+/// disc carries Japanese audio (an anime sign).
+fn label_anime_chapters(ch: &mut [crate::disc::Chapter], duration: f64) {
+    if ch.len() < 3 || duration < 600.0 {
+        return;
+    }
+    // (index, gap to the next chapter, or to the end)
+    let gaps: Vec<(usize, f64)> = (0..ch.len())
+        .map(|i| {
+            let end = ch.get(i + 1).map(|c| c.start_secs).unwrap_or(duration);
+            (i, end - ch[i].start_secs)
+        })
+        .collect();
+
+    // Opening: ~90s block in the first third.
+    if let Some((i, _)) = gaps
+        .iter()
+        .find(|(i, g)| (75.0..=125.0).contains(g) && ch[*i].start_secs <= duration * 0.35)
+    {
+        ch[*i].name = Some("Opening".into());
+    }
+    // Ending: ~90s block in the last third (searched from the end).
+    if let Some((i, _)) = gaps
+        .iter()
+        .rev()
+        .find(|(i, g)| (70.0..=125.0).contains(g) && ch[*i].start_secs >= duration * 0.6)
+    {
+        if ch[*i].name.is_none() {
+            ch[*i].name = Some("Ending".into());
+        }
+    }
+    // Preview: short trailing block.
+    if let Some((i, _)) = gaps
+        .iter()
+        .rev()
+        .find(|(i, g)| (8.0..=75.0).contains(g) && ch[*i].start_secs >= duration * 0.75)
+    {
+        if ch[*i].name.is_none() {
+            ch[*i].name = Some("Preview (next episode)".into());
+        }
+    }
 }
 
 /// "1-3" or "1,2,5" or "4".
@@ -652,7 +853,13 @@ fn episode_selected(spec: &str, n: u32) -> bool {
 /// Track maps/metadata for a TV rip: all video, English audio first (default),
 /// both English subtitle tracks with the signs one default when the audio is
 /// English, otherwise the full track.
-fn plan_tracks_tv(ctx: &TrackCtx, _req: &RipRequest, maps: &mut Vec<String>, meta: &mut Vec<String>) {
+fn plan_tracks_tv(
+    ctx: &TrackCtx,
+    _req: &RipRequest,
+    signs_pid: Option<u16>,
+    maps: &mut Vec<String>,
+    meta: &mut Vec<String>,
+) {
     let has_eng_audio = ctx
         .streams
         .iter()
@@ -664,10 +871,13 @@ fn plan_tracks_tv(ctx: &TrackCtx, _req: &RipRequest, maps: &mut Vec<String>, met
         .filter(|(_, s)| s.kind == "subtitle" && s.lang.as_deref() == Some("eng"))
         .map(|(i, _)| i)
         .collect();
-    // Signs first, full second (disc convention); with Japanese audio default
-    // to the last English track instead.
+    // The probe picks the signs-&-songs track (fewest events); fall back to the
+    // first English track when we have no probe.
+    let signs_idx = signs_pid
+        .and_then(|pid| ctx.streams.iter().position(|s| s.pid == pid))
+        .filter(|i| eng_subs.contains(i));
     let default_sub = if has_eng_audio {
-        eng_subs.first().copied()
+        signs_idx.or_else(|| eng_subs.first().copied())
     } else {
         eng_subs.last().copied()
     };
@@ -726,7 +936,8 @@ fn plan_tracks_tv(ctx: &TrackCtx, _req: &RipRequest, maps: &mut Vec<String>, met
                 if keep {
                     maps.push(format!("0:s:{}", si));
                     let lang = st.lang.clone().unwrap_or_default();
-                    let full = default_sub != Some(idx);
+                    let full = Some(idx) != default_sub || (has_eng_audio && signs_pid.is_none() && false);
+                    let full = if has_eng_audio { signs_idx != Some(idx) } else { signs_idx == Some(idx) };
                     meta.extend([
                         format!("-metadata:s:s:{out_s}"),
                         format!("language={}", lang_tag(&lang)),

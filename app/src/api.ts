@@ -108,6 +108,10 @@ export type RipRequest = {
   subs: SubSel;
   /** Download cover art next to the output */
   covers: boolean;
+  /** Rip as TV: one file per episode. */
+  tv: boolean;
+  series: string | null;
+  episodes: string | null;
 };
 
 export type CoverHit = {
@@ -183,6 +187,20 @@ export const api = {
   checkUpdate: () => invoke<UpdateInfo>("check_update"),
   installUpdate: () => invoke<void>("install_update"),
   eject: () => invoke<string>("eject"),
+  tvPlan: (source: string) =>
+    invoke<{
+      series: string;
+      season: number;
+      disc: number | null;
+      tmdb_id: number | null;
+      poster: string | null;
+      items: {
+        title_index: number;
+        start_secs: number;
+        duration_secs: number;
+        episode: { season: number; number: number; title: string; still: string | null };
+      }[];
+    }>("tv_plan", { source }),
   reveal: (path: string) => invoke<void>("reveal", { path }),
   previewOutput: (template: string, vars: PreviewVars) =>
     invoke<string>("preview_output", { template, vars }),

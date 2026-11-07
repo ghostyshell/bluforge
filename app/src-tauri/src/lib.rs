@@ -210,6 +210,14 @@ fn save_covers(dest_dir: String, stem: String, items: Vec<SaveItem>) -> Result<V
     Ok(out)
 }
 
+/// Detect the episodes on a TV/anime disc (clip boundaries + TMDB titles).
+#[tauri::command]
+fn tv_plan(source: String) -> Result<bluforge_core::tv::Plan, String> {
+    let disc = bluforge_core::Disc::open(std::path::Path::new(&source), None).map_err(|e| e.to_string())?;
+    let info = disc.info().map_err(|e| e.to_string())?;
+    bluforge_core::tv::plan(&disc, &info, None).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 fn eject() -> Result<String, String> {
     bluforge_core::device::eject().map_err(|e| e.to_string())
@@ -374,6 +382,7 @@ pub fn run() {
             save_covers,
             preview_output,
             eject,
+            tv_plan,
             template_placeholders,
             tmdb_lookup
         ])
