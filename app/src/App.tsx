@@ -83,6 +83,7 @@ export default function App() {
   const [tvPlan, setTvPlan] = useState<Awaited<ReturnType<typeof api.tvPlan>> | null>(null);
   const [tvSel, setTvSel] = useState<Record<number, boolean>>({});
   const [tvBusy, setTvBusy] = useState(false);
+  const [tvError, setTvError] = useState<string | null>(null);
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
   const [coverTab, setCoverTab] = useState<CoverRole>("cover");
   const [tabs, setTabs] = useState<Record<CoverRole, TabState>>({
@@ -100,6 +101,13 @@ export default function App() {
   const [toast, setToast] = useState<string | null>(null);
   const [update, setUpdate] = useState<string | null>(null);
   const startedKeys = useRef(false);
+
+  // Toasts are transient; nothing else clears them.
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 2600);
+    return () => clearTimeout(t);
+  }, [toast]);
 
   const refresh = useCallback(async () => {
     try {
@@ -127,7 +135,11 @@ export default function App() {
       setProgress(p);
       if (p.done) { setBusy(null); setToast("Rip complete"); }
     });
-    return () => { un.then((f) => f()); };
+    const unErr = api.onRipError((msg) => {
+      setBusy(null);
+      setError(msg);
+    });
+    return () => { un.then((f) => f()); unErr.then((f) => f()); };
   }, [refresh]);
 
   const openDisc = async (p: string) => {
@@ -198,13 +210,19 @@ export default function App() {
   }, [cfg, disc, title, titleInfo, container, movie, poster]);
 
   const startRip = async () => {
-    if (!discPath || title == null) return;
+    // A TV rip does not need a title: the episode plan picks the title.
+    if (!discPath || (!tvPlan && title == null)) return;
+    // Decryption must read the raw device; a mounted optical volume returns
+    // still-encrypted bytes.
+    const dev = optical[0];
+    const onOptical = !!dev && (discPath === dev.mount_point || discPath === `/dev/r${dev.bsd_name}`);
+    const src = onOptical ? `/dev/r${dev.bsd_name}` : discPath;
     setError(null); setBusy("ripping"); setProgress({ out_time_ms: 0, total_ms: 0, frames: 0, fps: 0, speed: "", done: false, percent: 0, message: "starting", dest: null });
     try {
       await api.startRip({
-        source: discPath,
+        source: src,
         keydb: snap?.keys?.path ?? null,
-        title,
+        title: title ?? 0,
         output: null, // render the configured output template
         mode,
         chapters,
@@ -272,15 +290,27 @@ export default function App() {
     .filter((x): x is { role: CoverRole; hit: CoverHit } => !!x.hit);
 
   const detectEpisodes = async () => {
-    const src = isoPath.trim() || (optical[0] ? `/dev/r${optical[0].bsd_name}` : "");
-    if (!src) return;
+    // Prefer the raw device (works for UHD/encrypted discs that do not mount);
+    // fall back to whatever the drive card selected.
+    const dev = optical[0];
+    const raw = dev ? `/dev/r${dev.bsd_name}` : "";
+    const src = raw || discPath;
+    if (!src) { setError("no disc device found"); return; }
+    setError(null);
     setTvBusy(true);
     try {
-      const p = await api.tvPlan(src);
+      let p;
+      try {
+        p = await api.tvPlan(src);
+      } catch (e) {
+        // raw device blocked (permissions) but the volume is readable
+        if (src !== discPath && discPath) p = await api.tvPlan(discPath);
+        else throw e;
+      }
       setTvPlan(p);
       setTvSel(Object.fromEntries(p.items.map((i) => [i.episode.number, true])));
       setToast(`${p.items.length} episodes detected`);
-    } catch (e) { setError(String(e)); }
+    } catch (e) { setTvError(String(e)); setError(String(e)); }
     finally { setTvBusy(false); }
   };
 
@@ -538,6 +568,7 @@ export default function App() {
                 </>
               )}
             </div>
+            {tvError && <p className="err" style={{ marginTop: 8 }}>⚠ {tvError}</p>}
             {tvPlan && (
               <div className="eps">
                 {tvPlan.items.map((it) => (
@@ -691,6 +722,19 @@ export default function App() {
               ))}
             </div>
 
+            <label className="field" style={{ marginTop: 12 }}>TV / anime template
+              <input className="mono" value={cfg?.tv_template ?? ""}
+                placeholder="{series}/Season {season:02}/{series} - S{season:02}E{episode:02} - {episode_title}"
+                onChange={(e) => cfg && setCfg({ ...cfg, tv_template: e.target.value })}
+                onBlur={async () => { if (cfg) { await api.setConfig(cfg); setToast("Saved"); } }} />
+            </label>
+            <div className="row wrap" style={{ gap: 6, marginTop: 8 }}>
+              {["{series}", "{season:02}", "{episode:02}", "{episode_title}", "{episode_title_clean}", "{disc}"].map((p) => (
+                <button key={p} className="ghost sm" title="insert into the TV template"
+                  onClick={() => cfg && setCfg({ ...cfg, tv_template: cfg.tv_template + p })}>{p}</button>
+              ))}
+            </div>
+
             <label className="check" style={{ marginTop: 10 }}>
               <input type="checkbox" checked={cfg?.auto_update_keys ?? true}
                 onChange={async (e) => { if (cfg) { const n = { ...cfg, auto_update_keys: e.target.checked }; setCfg(n); await api.setConfig(n); } }} />
@@ -705,7 +749,7 @@ export default function App() {
 
           <div style={{ marginTop: 18 }}>
             {!busy
-              ? <button className="primary" style={{ width: "100%", justifyContent: "center" }} disabled={!discPath || title == null} onClick={startRip}>
+              ? <button className="primary" style={{ width: "100%", justifyContent: "center" }} disabled={!discPath || (!tvPlan && title == null)} onClick={startRip}>
                   Start rip
                 </button>
               : <button style={{ width: "100%", justifyContent: "center" }} onClick={cancel}>
@@ -761,7 +805,7 @@ export default function App() {
         </aside>
       </div>
 
-      {toast && <div className="toast" onAnimationEnd={() => setTimeout(() => setToast(null), 1600)}>{toast}</div>}
+      {toast && <div className="toast" role="status">{toast}</div>}
     </div>
   );
 }

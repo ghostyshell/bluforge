@@ -186,6 +186,8 @@ export const api = {
     listen<string>("iso://error", (e) => cb(e.payload)),
   onProgress: (cb: (p: RipProgress) => void): Promise<UnlistenFn> =>
     listen<RipProgress>("rip://progress", (e) => cb(e.payload)),
+  onRipError: (cb: (msg: string) => void): Promise<UnlistenFn> =>
+    listen<string>("rip://error", (e) => cb(e.payload)),
   checkUpdate: () => invoke<UpdateInfo>("check_update"),
   installUpdate: () => invoke<void>("install_update"),
   eject: () => invoke<string>("eject"),
