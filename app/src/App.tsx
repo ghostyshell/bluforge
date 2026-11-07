@@ -555,7 +555,8 @@ export default function App() {
             )}
             <div className="row" style={{ marginTop: 10, gap: 12 }}>
               <label className="field">Subtitles on TV rips
-                <select value={cfg?.tv_subs ?? "all"} onChange={(e) => setCfg({ tv_subs: e.target.value })}>
+                <select value={cfg?.tv_subs ?? "all"}
+                  onChange={(e) => setCfg((c) => (c ? { ...c, tv_subs: e.target.value } : c))}>
                   <option value="all">Keep every track (signs default)</option>
                   <option value="signs">Signs &amp; songs only (English audio)</option>
                 </select>
