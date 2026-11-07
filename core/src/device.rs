@@ -26,6 +26,8 @@ pub struct BlockDevice {
     /// Transport, e.g. `USB`, `SATA`, `Apple Fabric`, `Disk Image`.
     pub interconnect: Option<String>,
     pub mount_point: Option<String>,
+    /// Raw character-device path for the whole disk (`/dev/rdisk5`), if any.
+    pub device_path: Option<String>,
     /// IORegistry path of the owning service (stable-ish identifier).
     pub registry_path: String,
 }
@@ -299,6 +301,7 @@ mod mac {
                 let chain = walk(svc);
                 let bsd = prop_string(svc, "BSD Name");
                 if let Some(bsd_name) = bsd {
+                    let device_path = Some(format!("/dev/r{bsd_name}"));
                     out.push(BlockDevice {
                         bsd_name,
                         media_name: prop_string(svc, "Media Name")
@@ -313,6 +316,7 @@ mod mac {
                         optical: chain.optical,
                         interconnect: chain.interconnect,
                         mount_point: None,
+                        device_path,
                         registry_path: registry_path(svc),
                     });
                 }

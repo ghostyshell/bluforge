@@ -7,11 +7,13 @@ use std::path::PathBuf;
 pub mod config;
 pub mod device;
 pub mod disc;
+pub mod iso;
 pub mod keys;
 pub mod rip;
 
 pub use config::AppConfig;
 pub use disc::{Disc, DiscInfo, Title};
+pub use iso::{IsoFormat, IsoProgress, IsoRequest};
 pub use rip::{Container, EncodeSettings, RipMode, RipProgress, RipRequest, VideoCodec};
 
 #[derive(Debug, thiserror::Error)]

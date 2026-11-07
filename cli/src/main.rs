@@ -60,6 +60,19 @@ enum Cmd {
     },
     /// Show linked library versions.
     Libs,
+    /// Export a decrypted ISO (or `--folder`): all AACS/BD+ removed.
+    Iso {
+        /// Disc source: mounted volume, BDMV folder, ISO, or /dev/rdiskN.
+        source: std::path::PathBuf,
+        /// Output `.iso` file, or directory with `--folder`.
+        dest: std::path::PathBuf,
+        /// Write a plain decrypted folder instead of an image.
+        #[arg(long)]
+        folder: bool,
+        /// Volume label (defaults to the disc name).
+        #[arg(long)]
+        label: Option<String>,
+    },
     /// Show effective configuration and paths.
     Config,
 }
@@ -169,6 +182,30 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
             println!("bluforge-core : {}", bluforge_core::version());
             println!("libbluray     : {}", bluforge_core::disc::library_version());
             println!("config dir    : {}", bluforge_core::config_dir().display());
+        }
+        Cmd::Iso {
+            source,
+            dest,
+            folder,
+            label,
+        } => {
+            use bluforge_core::{IsoFormat, IsoProgress, IsoRequest};
+            let req = IsoRequest {
+                source: source.clone(),
+                keydb: Some(keys::keydb_path()),
+                dest: dest.clone(),
+                format: if *folder { IsoFormat::Folder } else { IsoFormat::Iso },
+                label: label.clone(),
+            };
+            let mut last = String::new();
+            bluforge_core::iso::run(&req, |p: IsoProgress| {
+                let line = format!("[{}] {:.0}% {}", p.stage, p.percent, p.message);
+                if line != last {
+                    last = line.clone();
+                    eprintln!("{line}");
+                }
+            })?;
+            eprintln!("wrote {}", dest.display());
         }
         Cmd::Rip {
             source,

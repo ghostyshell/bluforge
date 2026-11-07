@@ -5,7 +5,7 @@ use std::sync::Arc;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 
-use bluforge_core::{config::AppConfig, disc::DiscInfo, keys::KeyDbStatus, rip, CoreSnapshot};
+use bluforge_core::{config::AppConfig, disc::DiscInfo, iso, keys::KeyDbStatus, rip, CoreSnapshot};
 
 struct RpState {
     cancel: Arc<AtomicBool>,
@@ -91,6 +91,25 @@ fn cancel_rip(state: State<RpState>) {
 }
 
 #[tauri::command]
+fn export_iso(app: AppHandle, request: iso::IsoRequest) -> Result<(), String> {
+    let app2 = app.clone();
+    std::thread::spawn(move || {
+        let res = iso::run(&request, |p| {
+            let _ = app2.emit("iso://progress", p);
+        });
+        match res {
+            Ok(()) => {
+                let _ = app2.emit("iso://done", ());
+            }
+            Err(e) => {
+                let _ = app2.emit("iso://error", e.to_string());
+            }
+        }
+    });
+    Ok(())
+}
+
+#[tauri::command]
 async fn check_update(app: AppHandle) -> Result<UpdateInfo, String> {
     use tauri_plugin_updater::UpdaterExt;
     let updater = app.updater().map_err(|e| e.to_string())?;
@@ -154,6 +173,7 @@ pub fn run() {
             open_disc,
             start_rip,
             cancel_rip,
+            export_iso,
             check_update,
             install_update,
             reveal

@@ -42,6 +42,7 @@ mod ffi {
         pub fn bf_select_title(d: *mut c_void, title: u32) -> c_int;
         pub fn bf_read(d: *mut c_void, buf: *mut u8, len: c_int) -> c_int;
         pub fn bf_version() -> *const c_char;
+        pub fn bf_export_decrypted(d: *mut c_void, dest: *const c_char, out_files: *mut libc::c_long) -> c_int;
     }
 }
 
@@ -73,11 +74,14 @@ fn res_label(format: u8) -> Option<String> {
     // bd_video_format_e
     Some(
         match format {
-            1 => "480p",
-            2 => "576p",
-            3 => "720p",
-            4 => "1080p",
-            5 => "2160p",
+            1 => "480i",
+            2 => "576i",
+            3 => "480p",
+            4 => "1080i",
+            5 => "720p",
+            6 => "1080p",
+            7 => "576p",
+            8 => "2160p",
             _ => return None,
         }
         .to_string(),
@@ -192,8 +196,7 @@ impl Disc {
         }
     }
 
-    pub fn select(&self, title: u32) -> Result<(), CoreError> {
-        #[cfg(have_bluray)]
+    pub fn select(&self, title: u32) -> Result<(), CoreError> {        #[cfg(have_bluray)]
         unsafe {
             if ffi::bf_select_title(self.handle, title) == 0 {
                 return Err(CoreError::Disc(format!("cannot select title {title}")));
@@ -203,6 +206,27 @@ impl Disc {
         #[cfg(not(have_bluray))]
         {
             let _ = title;
+            Err(CoreError::Disc("built without libbluray".into()))
+        }
+    }
+
+    /// Export the full disc tree to `dest` with all encrypted streams decrypted
+    /// (for building a decrypted ISO / backup folder). Returns the file count.
+    pub fn export_decrypted(&self, dest: &Path) -> Result<u64, CoreError> {
+        #[cfg(have_bluray)]
+        unsafe {
+            let cdest = CString::new(dest.to_string_lossy().as_bytes())
+                .map_err(|e| CoreError::Disc(e.to_string()))?;
+            let mut files: libc::c_long = 0;
+            let rc = ffi::bf_export_decrypted(self.handle, cdest.as_ptr(), &mut files);
+            if rc != 0 {
+                return Err(CoreError::Disc("failed to export decrypted tree".into()));
+            }
+            Ok(files.max(0) as u64)
+        }
+        #[cfg(not(have_bluray))]
+        {
+            let _ = dest;
             Err(CoreError::Disc("built without libbluray".into()))
         }
     }

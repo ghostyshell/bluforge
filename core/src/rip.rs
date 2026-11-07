@@ -239,16 +239,44 @@ where
     let mut stdin = child.stdin.take().expect("stdin");
     let stdout = child.stdout.take().expect("stdout");
 
-    // Feed disc -> ffmpeg stdin.
+    // Feed disc -> ffmpeg stdin. libbluray emits 192-byte m2ts packets with
+    // null-packet (0x1fff) padding; ffmpeg misdetects those as a phantom
+    // stream, so we strip them on the way through.
     let feed = std::thread::spawn(move || -> Result<(), CoreError> {
         let mut reader = TitleReader::new(&disc);
         let mut buf = vec![0u8; 1 << 20];
+        let mut out: Vec<u8> = Vec::with_capacity(1 << 20);
+        let mut stride = 0usize;
         loop {
             let n = reader.read(&mut buf)?;
             if n == 0 {
                 break;
             }
-            if stdin.write_all(&buf[..n]).is_err() {
+            if stride == 0 {
+                stride = if n >= 5 && buf[4] == 0x47 {
+                    192
+                } else {
+                    188
+                };
+            }
+            out.clear();
+            let sync = if stride == 192 { 4 } else { 0 };
+            let mut i = 0;
+            while i + stride <= n {
+                if buf[i + sync] == 0x47 {
+                    let pid = (((buf[i + sync + 1] & 0x1f) as u16) << 8) | buf[i + sync + 2] as u16;
+                    if pid != 0x1fff {
+                        out.extend_from_slice(&buf[i..i + stride]);
+                    }
+                } else {
+                    out.extend_from_slice(&buf[i..i + stride]);
+                }
+                i += stride;
+            }
+            if i < n {
+                out.extend_from_slice(&buf[i..n]);
+            }
+            if stdin.write_all(&out).is_err() {
                 break;
             }
         }

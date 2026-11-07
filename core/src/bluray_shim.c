@@ -1,10 +1,14 @@
 // Thin C shim over libbluray so Rust does not have to mirror the (large,
 // version-sensitive) BLURAY_TITLE_INFO / BLURAY_STREAM_INFO struct layouts.
 #include <libbluray/bluray.h>
+#include <libbluray/filesystem.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 typedef struct {
     uint32_t index;
@@ -122,3 +126,65 @@ const char *bf_version(void) {
     snprintf(v, sizeof(v), "%d.%d.%d", a, b, c);
     return v;
 }
+
+/* ------------------------------------------------------------------ */
+/* Decrypted tree export (for building a decrypted ISO / backup folder) */
+/* ------------------------------------------------------------------ */
+
+static int bf_copy_file_dec(bf_disc_t *d, const char *path, const char *dest) {
+    BD_FILE_H *f = bd_open_file_dec(d->bd, path);
+    if (!f) return -1;
+    FILE *o = fopen(dest, "wb");
+    if (!o) { f->close(f); return -1; }
+    uint8_t *buf = (uint8_t *)malloc(6144);
+    int rc = 0;
+    for (;;) {
+        int64_t n = f->read(f, buf, 6144);
+        if (n < 0) { rc = -1; break; }
+        if (n == 0) break;
+        if (fwrite(buf, 1, (size_t)n, o) != (size_t)n) { rc = -1; break; }
+    }
+    free(buf);
+    fclose(o);
+    f->close(f);
+    return rc;
+}
+
+static int bf_export_dir(bf_disc_t *d, const char *rel, const char *dest,
+                         int depth, long *files) {
+    BD_DIR_H *dir = bd_open_dir(d->bd, rel);
+    if (!dir) return -1;
+    BD_DIRENT e;
+    int rc = 0;
+    while (dir->read(dir, &e) == 0) {
+        if (!strcmp(e.d_name, ".") || !strcmp(e.d_name, "..")) continue;
+        /* decrypted m2ts must not be AACS-decrypted again on re-open */
+        if (depth == 0 && (!strcasecmp(e.d_name, "AACS") || !strcasecmp(e.d_name, "BDSVM")))
+            continue;
+        char child[1024], dchild[2048];
+        snprintf(child, sizeof(child), "%s/%s", rel, e.d_name);
+        snprintf(dchild, sizeof(dchild), "%s/%s", dest, e.d_name);
+        BD_DIR_H *sub = bd_open_dir(d->bd, child);
+        if (sub) {
+            sub->close(sub);
+            mkdir(dchild, 0755);
+            rc |= bf_export_dir(d, child, dchild, depth + 1, files);
+        } else {
+            if (bf_copy_file_dec(d, child, dchild) != 0) rc = -1;
+            (*files)++;
+        }
+    }
+    dir->close(dir);
+    return rc;
+}
+
+/* Export the whole decrypted disc tree to dest_dir. 0 on success. */
+int bf_export_decrypted(bf_disc_t *d, const char *dest_dir, long *out_files) {
+    struct stat st;
+    if (stat(dest_dir, &st) != 0) mkdir(dest_dir, 0755);
+    long files = 0;
+    int rc = bf_export_dir(d, ".", dest_dir, 0, &files);
+    if (out_files) *out_files = files;
+    return rc;
+}
+

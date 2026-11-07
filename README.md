@@ -16,8 +16,8 @@ authoring with custom menus and burning.
 | Disc inspection (titles, streams, HDR, AACS state) via libbluray | ✅ |
 | Rip: MKV / MP4 remux (lossless) | ✅ |
 | Rip: x264 / x265 / VideoToolbox encode | ✅ |
+| Decrypted ISO / folder export | ✅ |
 | Desktop UI (Tauri v2) | ✅ |
-| Decrypted ISO output | 🚧 |
 | Blu-ray authoring + menus + burning | 🚧 |
 | Self-update wiring (Tauri updater) | ✅ (needs a signed release) |
 | Windows / Linux | 🚧 (macOS first; non-macOS device layer stubbed) |
@@ -31,6 +31,7 @@ core/           bluforge-core — framework-agnostic engine (Rust)
   disc.rs         libbluray FFI (titles, decrypted title streaming)
   bluray_shim.c   small C shim so Rust avoids libbluray struct layout churn
   rip.rs          ffmpeg orchestration (remux / encode) with progress
+  iso.rs          decrypted ISO / backup-folder export
   config.rs       persisted settings
 cli/            `bluforge` — headless CLI for testing the engine
 app/            Tauri v2 desktop app (React + TypeScript frontend)
@@ -51,6 +52,7 @@ cargo build --release
 ./target/release/bluforge keys update       # refresh AACS keys
 ./target/release/bluforge disc /Volumes/MY_DISC   # inspect titles
 ./target/release/bluforge libs
+./target/release/bluforge iso /Volumes/MY_DISC ~/movie.iso            # decrypted ISO
 
 # desktop app
 cd app && npm install
@@ -59,6 +61,19 @@ npm run tauri dev        # or: npm run tauri build
 
 `BLURAY_PREFIX` overrides the libbluray prefix (default `/opt/homebrew`).
 `BLUFORGE_FFMPEG` points at a specific ffmpeg binary.
+
+## Testing without a drive
+
+`scripts/mkbd.mjs` builds a tiny but spec-valid BDMV tree (index/MovieObject/
+PLAYLIST/CLIPINF/STREAM plus an ffmpeg-made H.264+AC3 clip) so the whole pipeline
+runs with no hardware:
+
+```sh
+node scripts/mkbd.mjs /tmp/testbd 8
+./target/release/bluforge disc /tmp/testbd
+./target/release/bluforge rip  /tmp/testbd /tmp/out.mkv --title 0
+./target/release/bluforge iso  /tmp/testbd /tmp/out.iso --label SINTEL
+```
 
 ## Configuration & data
 

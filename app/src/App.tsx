@@ -4,6 +4,7 @@ import {
   type AppConfig,
   type DiscInfo,
   type EncodeSettings,
+  type IsoProgress,
   type RipMode,
   type RipProgress,
   type Snapshot,
@@ -45,6 +46,8 @@ export default function App() {
     codec: "x265", quality: 20, preset: "medium", ten_bit: true, aac_audio: false,
   });
   const [progress, setProgress] = useState<RipProgress | null>(null);
+  const [isoProgress, setIsoProgress] = useState<IsoProgress | null>(null);
+  const [isoBusy, setIsoBusy] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -111,6 +114,36 @@ export default function App() {
   };
 
   const cancel = async () => { try { await api.cancelRip(); } catch { /* ignore */ } setBusy(null); };
+
+  useEffect(() => {
+    const us = [
+      api.onIsoProgress((p) => setIsoProgress(p)),
+      api.onIsoDone(() => { setIsoBusy(false); setToast("Decrypted ISO written"); }),
+      api.onIsoError((e) => { setIsoBusy(false); setError(e); }),
+    ];
+    return () => { us.forEach((u) => u.then((f) => f())); };
+  }, []);
+
+  const isoPath = useMemo(() => {
+    if (!cfg) return "";
+    const name = sanitize(disc?.name || "disc");
+    return `${cfg.output_dir.replace(/\/$/, "")}/${name}/${name}.iso`;
+  }, [cfg, disc]);
+
+  const exportIso = async (format: "iso" | "folder") => {
+    if (!discPath) return;
+    setError(null); setIsoBusy(true);
+    setIsoProgress({ stage: "starting", percent: 0, files: 0, message: "starting" });
+    try {
+      await api.exportIso({
+        source: discPath,
+        keydb: snap?.keys?.path ?? null,
+        dest: format === "iso" ? isoPath : isoPath.replace(/\.iso$/, ""),
+        format,
+        label: disc?.name ?? null,
+      });
+    } catch (e) { setError(String(e)); setIsoBusy(false); }
+  };
 
   const keys = snap?.keys;
   const optical = snap?.optical ?? [];
@@ -305,6 +338,36 @@ export default function App() {
               {progress.done && <button className="ghost sm" style={{ marginTop: 8 }} onClick={() => api.reveal(outputPath)}>Reveal file</button>}
             </div>
           )}
+
+          <section className="panel" style={{ marginTop: 16 }}>
+            <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+              <strong>Decrypted ISO</strong>
+              <span className="hint">AACS/BD+ removed, plays anywhere</span>
+            </div>
+            <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+              <button className="ghost" style={{ flex: 1, justifyContent: "center" }}
+                disabled={!discPath || isoBusy || !!busy} onClick={() => exportIso("iso")}>
+                Export .iso
+              </button>
+              <button className="ghost" style={{ flex: 1, justifyContent: "center" }}
+                disabled={!discPath || isoBusy || !!busy} onClick={() => exportIso("folder")}>
+                Export folder
+              </button>
+            </div>
+            {isoProgress && (
+              <div style={{ marginTop: 12 }}>
+                <div className="progress"><i style={{ width: `${isoProgress.percent}%` }} /></div>
+                <div className="stats" style={{ marginTop: 8 }}>
+                  <span>{isoProgress.percent.toFixed(0)}%</span>
+                  <span>{isoProgress.message}</span>
+                  {isoProgress.files > 0 && <span>{isoProgress.files} files</span>}
+                </div>
+                {isoProgress.stage === "done" && (
+                  <button className="ghost sm" style={{ marginTop: 8 }} onClick={() => api.reveal(isoPath)}>Reveal ISO</button>
+                )}
+              </div>
+            )}
+          </section>
 
           <p className="hint" style={{ marginTop: 18 }}>
             Keys: KEYDB.cfg is stored at <span className="mono">{keys?.path ?? "…"}</span> and refreshed automatically.

@@ -95,6 +95,21 @@ export type RipRequest = {
 
 export type UpdateInfo = { version: string | null; notes: string | null };
 
+export type IsoRequest = {
+  source: string;
+  keydb: string | null;
+  dest: string;
+  format: "iso" | "folder";
+  label: string | null;
+};
+
+export type IsoProgress = {
+  stage: string;
+  percent: number;
+  files: number;
+  message: string;
+};
+
 export const api = {
   snapshot: () => invoke<Snapshot>("snapshot"),
   keysStatus: () => invoke<KeyDbStatus>("keys_status"),
@@ -104,6 +119,13 @@ export const api = {
   openDisc: (path: string) => invoke<DiscInfo>("open_disc", { path }),
   startRip: (request: RipRequest) => invoke<void>("start_rip", { request }),
   cancelRip: () => invoke<void>("cancel_rip"),
+  exportIso: (request: IsoRequest) => invoke<void>("export_iso", { request }),
+  onIsoProgress: (cb: (p: IsoProgress) => void): Promise<UnlistenFn> =>
+    listen<IsoProgress>("iso://progress", (e) => cb(e.payload)),
+  onIsoDone: (cb: () => void): Promise<UnlistenFn> =>
+    listen("iso://done", () => cb()),
+  onIsoError: (cb: (e: string) => void): Promise<UnlistenFn> =>
+    listen<string>("iso://error", (e) => cb(e.payload)),
   onProgress: (cb: (p: RipProgress) => void): Promise<UnlistenFn> =>
     listen<RipProgress>("rip://progress", (e) => cb(e.payload)),
   checkUpdate: () => invoke<UpdateInfo>("check_update"),
