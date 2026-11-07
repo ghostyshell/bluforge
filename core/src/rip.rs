@@ -279,6 +279,11 @@ pub struct TrackCtx {
     pub dest: PathBuf,
 }
 
+fn human_time(ms: u64) -> String {
+    let s = ms / 1000;
+    format!("{}:{:02}:{:02}", s / 3600, (s % 3600) / 60, s % 60)
+}
+
 fn build_args(req: &RipRequest, ctx: &TrackCtx) -> Vec<String> {
     let mkv = matches!(
         &req.mode,
@@ -765,12 +770,30 @@ where
     if !status.success() {
         return Err(CoreError::Disc(format!("ffmpeg exited with {status}")));
     }
+    // A drive read error mid-stream makes libbluray end early; ffmpeg then still
+    // exits 0, so compare what we got against the title duration.
+    let short = total_ms > 0 && prog.out_time_ms + 2_000 < total_ms;
+    if short {
+        tracing::warn!(
+            got_ms = prog.out_time_ms,
+            want_ms = total_ms,
+            "output is shorter than the title - disc read error?"
+        );
+    }
     if let Some(cf) = &ctx.chapters_file {
         let _ = std::fs::remove_file(cf);
     }
     prog.done = true;
     prog.percent = 100.0;
-    prog.message = "done".into();
+    prog.message = if short {
+        format!(
+            "truncated: {} of {}",
+            human_time(prog.out_time_ms),
+            human_time(total_ms)
+        )
+    } else {
+        "done".into()
+    };
     on_progress(prog);
     Ok(())
 }
