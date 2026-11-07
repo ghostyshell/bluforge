@@ -79,6 +79,67 @@ int bf_titles(bf_disc_t *d, bf_title_t *out, int max) {
     return c;
 }
 
+typedef struct {
+    double   start_secs;
+    uint32_t duration_90k;
+    char     name[128];   /* empty when the playlist carries no chapter name */
+} bf_chapter_t;
+
+typedef struct {
+    int     kind;         /* 0 = video, 1 = audio, 2 = PG subtitle */
+    char    lang[4];      /* ISO 639-2, "" when unset */
+    uint8_t coding_type;  /* BD_*_CODING_TYPE */
+    uint8_t format;       /* bd_video_format_e / bd_audio_format_e */
+    uint8_t rate;
+} bf_stream_t;
+
+/* Chapter entry marks (times + any authored names) of one title. */
+int bf_title_chapters(bf_disc_t *d, uint32_t title, bf_chapter_t *out, int max) {
+    BLURAY_TITLE_INFO *ti = bd_get_title_info(d->bd, title, 0);
+    if (!ti) return 0;
+    int c = 0;
+    for (uint32_t i = 0; i < ti->chapter_count && c < max; i++) {
+        const BLURAY_TITLE_CHAPTER *ch = &ti->chapters[i];
+        memset(&out[c], 0, sizeof(out[c]));
+        out[c].start_secs = ch->start / 90000.0;
+        out[c].duration_90k = ch->duration;
+        if (ch->chapter_name) {
+            snprintf(out[c].name, sizeof(out[c].name), "%s", ch->chapter_name);
+        }
+        c++;
+    }
+    bd_free_title_info(ti);
+    return c;
+}
+
+static void bf_put_streams(const BLURAY_STREAM_INFO *src, int n, int kind,
+                           bf_stream_t *out, int *c, int max) {
+    for (int i = 0; i < n && *c < max; i++) {
+        memset(&out[*c], 0, sizeof(out[*c]));
+        out[*c].kind = kind;
+        memcpy(out[*c].lang, src[i].lang, sizeof(out[*c].lang) - 1);
+        out[*c].coding_type = src[i].coding_type;
+        out[*c].format = src[i].format;
+        out[*c].rate = src[i].rate;
+        (*c)++;
+    }
+}
+
+/* Video, audio and PG subtitle streams of one title, in disc order. */
+int bf_title_streams(bf_disc_t *d, uint32_t title, bf_stream_t *out, int max) {
+    BLURAY_TITLE_INFO *ti = bd_get_title_info(d->bd, title, 0);
+    if (!ti) return 0;
+    int c = 0;
+    if (ti->clip_count > 0) {
+        const BLURAY_CLIP_INFO *cl = &ti->clips[0];
+        bf_put_streams(cl->video_streams, cl->video_stream_count, 0, out, &c, max);
+        bf_put_streams(cl->audio_streams, cl->audio_stream_count, 1, out, &c, max);
+        bf_put_streams(cl->pg_streams, cl->pg_stream_count, 2, out, &c, max);
+    }
+    bd_free_title_info(ti);
+    return c;
+}
+
 const char *bf_disc_name(bf_disc_t *d) {
     const BLURAY_DISC_INFO *di = bd_get_disc_info(d->bd);
     if (!di) return "";

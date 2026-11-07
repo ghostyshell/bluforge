@@ -9,11 +9,13 @@ pub mod device;
 pub mod disc;
 pub mod iso;
 pub mod keys;
+pub mod metadata;
 pub mod rip;
 
 pub use config::AppConfig;
-pub use disc::{Disc, DiscInfo, Title};
+pub use disc::{Chapter, Disc, DiscInfo, StreamInfo, Title};
 pub use iso::{IsoFormat, IsoProgress, IsoRequest};
+pub use metadata::Poster;
 pub use rip::{Container, EncodeSettings, RipMode, RipProgress, RipRequest, VideoCodec};
 
 #[derive(Debug, thiserror::Error)]

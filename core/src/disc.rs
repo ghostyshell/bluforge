@@ -29,6 +29,24 @@ mod ffi {
         pub is_main: c_int,
     }
 
+    #[repr(C)]
+    #[derive(Clone, Copy)]
+    pub struct BfChapter {
+        pub start_secs: f64,
+        pub duration_90k: u64,
+        pub name: [c_char; 128],
+    }
+
+    #[repr(C)]
+    #[derive(Clone, Copy)]
+    pub struct BfStream {
+        pub kind: c_int,
+        pub lang: [c_char; 4],
+        pub coding_type: u8,
+        pub format: u8,
+        pub rate: u8,
+    }
+
     extern "C" {
         pub fn bf_open(path: *const c_char, keyfile: *const c_char) -> *mut c_void;
         pub fn bf_close(d: *mut c_void);
@@ -43,6 +61,8 @@ mod ffi {
         pub fn bf_read(d: *mut c_void, buf: *mut u8, len: c_int) -> c_int;
         pub fn bf_version() -> *const c_char;
         pub fn bf_export_decrypted(d: *mut c_void, dest: *const c_char, out_files: *mut libc::c_long) -> c_int;
+        pub fn bf_title_chapters(d: *mut c_void, title: u32, out: *mut BfChapter, max: c_int) -> c_int;
+        pub fn bf_title_streams(d: *mut c_void, title: u32, out: *mut BfStream, max: c_int) -> c_int;
     }
 }
 
@@ -68,6 +88,28 @@ pub struct DiscInfo {
     pub titles: Vec<Title>,
     pub main_title: Option<u32>,
     pub library: String,
+}
+
+/// One chapter entry mark on a title.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Chapter {
+    pub start_secs: f64,
+    /// Name authored on the disc, when present (usually absent).
+    pub name: Option<String>,
+}
+
+/// A title stream, used to label exported tracks.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StreamInfo {
+    /// "video" | "audio" | "subtitle"
+    pub kind: String,
+    /// ISO 639-2 code when the disc tags the stream.
+    pub lang: Option<String>,
+    /// BD coding type (e.g. TrueHD / DTS-HD / PG).
+    pub coding_type: u8,
+    /// BD format code.
+    pub format: u8,
+    pub rate: u8,
 }
 
 fn res_label(format: u8) -> Option<String> {
@@ -256,6 +298,88 @@ impl Disc {
         }
         #[cfg(not(have_bluray))]
         {
+            Err(CoreError::Disc("built without libbluray".into()))
+        }
+    }
+
+    /// Chapter entry marks of `title`. Times are authoritative (from the
+    /// playlist); names are only present when the disc authors them.
+    pub fn chapters(&self, title: u32) -> Result<Vec<Chapter>, CoreError> {
+        #[cfg(have_bluray)]
+        unsafe {
+            let empty = ffi::BfChapter { start_secs: 0.0, duration_90k: 0, name: [0; 128] };
+            let mut buf = vec![empty; 512];
+            let n = ffi::bf_title_chapters(
+                self.handle,
+                title,
+                buf.as_mut_ptr(),
+                buf.len() as libc::c_int,
+            );
+            if n < 0 {
+                return Err(CoreError::Disc("cannot read chapter marks".into()));
+            }
+            Ok(buf[..n as usize]
+                .iter()
+                .map(|c| {
+                    let bytes: Vec<u8> = c
+                        .name
+                        .iter()
+                        .take_while(|ch| **ch != 0)
+                        .map(|ch| *ch as u8)
+                        .collect();
+                    let name = String::from_utf8_lossy(&bytes).trim().to_string();
+                    Chapter {
+                        start_secs: c.start_secs,
+                        name: if name.is_empty() { None } else { Some(name) },
+                    }
+                })
+                .collect())
+        }
+        #[cfg(not(have_bluray))]
+        {
+            let _ = title;
+            Err(CoreError::Disc("built without libbluray".into()))
+        }
+    }
+
+    /// Video / audio / PG-subtitle streams of `title`, in disc order.
+    pub fn streams(&self, title: u32) -> Result<Vec<StreamInfo>, CoreError> {
+        #[cfg(have_bluray)]
+        unsafe {
+            let empty = ffi::BfStream { kind: 0, lang: [0; 4], coding_type: 0, format: 0, rate: 0 };
+            let mut buf = vec![empty; 64];
+            let n =
+                ffi::bf_title_streams(self.handle, title, buf.as_mut_ptr(), buf.len() as libc::c_int);
+            if n < 0 {
+                return Err(CoreError::Disc("cannot read stream info".into()));
+            }
+            Ok(buf[..n as usize]
+                .iter()
+                .map(|s| {
+                    let lang: String = s
+                        .lang
+                        .iter()
+                        .take_while(|c| **c != 0)
+                        .map(|c| *c as u8 as char)
+                        .collect();
+                    StreamInfo {
+                        kind: match s.kind {
+                            0 => "video",
+                            1 => "audio",
+                            _ => "subtitle",
+                        }
+                        .into(),
+                        lang: if lang.trim().is_empty() { None } else { Some(lang) },
+                        coding_type: s.coding_type,
+                        format: s.format,
+                        rate: s.rate,
+                    }
+                })
+                .collect())
+        }
+        #[cfg(not(have_bluray))]
+        {
+            let _ = title;
             Err(CoreError::Disc("built without libbluray".into()))
         }
     }

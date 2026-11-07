@@ -34,11 +34,11 @@ enum Cmd {
     Rip {
         /// Disc source: mounted volume, BDMV folder, ISO, or /dev/rdiskN.
         source: std::path::PathBuf,
-        /// Output file (.mkv or .mp4).
-        output: std::path::PathBuf,
-        /// Title index (see `bluforge disc`).
-        #[arg(long, default_value_t = 0)]
-        title: u32,
+        /// Output file (.mkv or .mp4), or a directory. Defaults to ~/Downloads.
+        output: Option<std::path::PathBuf>,
+        /// Title index (see `bluforge disc`). Default: the main title.
+        #[arg(long)]
+        title: Option<u32>,
         /// Re-encode video instead of lossless remux.
         #[arg(long)]
         encode: bool,
@@ -57,6 +57,15 @@ enum Cmd {
         /// 10-bit (software encoders only).
         #[arg(long)]
         ten_bit: bool,
+        /// Don't add ChapterDB chapter names.
+        #[arg(long)]
+        no_chapters: bool,
+        /// Don't fetch/save a TMDB poster.
+        #[arg(long)]
+        no_poster: bool,
+        /// Movie title for the metadata lookups (default: the disc name).
+        #[arg(long)]
+        movie: Option<String>,
     },
     /// Show linked library versions.
     Libs,
@@ -221,13 +230,22 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
             preset,
             container,
             ten_bit,
+            no_chapters,
+            no_poster,
+            movie,
         } => {
             use bluforge_core::{Container, EncodeSettings, RipMode, RipProgress, RipRequest, VideoCodec};
-            let container = if container.eq_ignore_ascii_case("mp4") {
+            let container_kind = if container.eq_ignore_ascii_case("mp4") {
                 Container::Mp4
             } else {
                 Container::Mkv
             };
+            let ext = if container.eq_ignore_ascii_case("mp4") { "mp4" } else { "mkv" };
+            let dest = resolve_output(
+                output.as_deref(),
+                &bluforge_core::device::source_name(&source.to_string_lossy(), ""),
+                ext,
+            );
             let mode = if *encode {
                 let codec = match codec.as_str() {
                     "x264" => VideoCodec::X264,
@@ -236,7 +254,7 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
                     _ => VideoCodec::X265,
                 };
                 RipMode::Encode {
-                    container,
+                    container: container_kind,
                     settings: EncodeSettings {
                         codec,
                         quality: *quality,
@@ -246,14 +264,17 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
                     },
                 }
             } else {
-                RipMode::Remux { container }
+                RipMode::Remux { container: container_kind }
             };
             let req = RipRequest {
                 source: source.clone(),
                 keydb: Some(keys::keydb_path()),
                 title: *title,
-                output: output.clone(),
+                output: dest.clone(),
                 mode,
+                chapters: !*no_chapters,
+                poster: !*no_poster,
+                movie: movie.clone(),
             };
             let cancel = std::sync::atomic::AtomicBool::new(false);
             let mut last = -1i64;
@@ -264,7 +285,7 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
                     eprint!("\r  {pct:>3}%  {:.0} fps  {}          ", p.fps, p.speed.trim());
                 }
             })?;
-            eprintln!("\nwrote {}", output.display());
+            eprintln!("\nwrote {}", dest.display());
         }
         Cmd::Config => {
             let cfg = AppConfig::load();
@@ -283,6 +304,37 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
         }
     }
     Ok(())
+}
+
+fn sanitize_fs(s: &str) -> String {
+    let mut t: String = s
+        .chars()
+        .map(|c| if "/\\:*?\"<>|".contains(c) { '-' } else { c })
+        .collect();
+    t = t.trim().trim_matches('.').to_string();
+    while t.contains("  ") {
+        t = t.replace("  ", " ");
+    }
+    t
+}
+
+/// Where to write the rip: an explicit file, a directory, or `~/Downloads`.
+fn resolve_output(
+    explicit: Option<&std::path::Path>,
+    disc_name: &str,
+    ext: &str,
+) -> std::path::PathBuf {
+    let stem = sanitize_fs(&disc_name.replace('_', " "));
+    let stem = if stem.is_empty() { "rip".to_string() } else { stem };
+    let file = format!("{stem}.{ext}");
+    match explicit {
+        Some(p) if p.is_dir() => p.join(file),
+        Some(p) => p.to_path_buf(),
+        None => {
+            let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+            std::path::PathBuf::from(home).join("Downloads").join(file)
+        }
+    }
 }
 
 fn print_keys(json: bool, st: keys::KeyDbStatus) -> Result<(), bluforge_core::CoreError> {

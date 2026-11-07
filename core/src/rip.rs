@@ -7,8 +7,8 @@ use std::process::{Command, Stdio};
 
 use serde::{Deserialize, Serialize};
 
-use crate::disc::{Disc, TitleReader};
-use crate::CoreError;
+use crate::disc::{Chapter, Disc, StreamInfo, TitleReader};
+use crate::{metadata, CoreError};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -68,9 +68,24 @@ pub struct RipRequest {
     /// Disc source: mounted volume, ISO, or device node.
     pub source: PathBuf,
     pub keydb: Option<PathBuf>,
-    pub title: u32,
+    /// Title index; `None` rips the disc's main title.
+    #[serde(default)]
+    pub title: Option<u32>,
     pub output: PathBuf,
     pub mode: RipMode,
+    /// Embed chapter marks, named from ChapterDB when a matching entry exists.
+    #[serde(default = "yes")]
+    pub chapters: bool,
+    /// Save a TMDB poster next to the output and attach it to the file (MKV).
+    #[serde(default = "yes")]
+    pub poster: bool,
+    /// Movie title used for metadata lookups (defaults to the disc name).
+    #[serde(default)]
+    pub movie: Option<String>,
+}
+
+fn yes() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -138,38 +153,270 @@ fn codec_args(s: &EncodeSettings) -> Vec<String> {
     v
 }
 
-fn build_args(req: &RipRequest) -> Vec<String> {
+/// ISO 639-2 language name, for track titles.
+fn lang_name(code: &str) -> String {
+    match code.to_ascii_lowercase().as_str() {
+        "eng" | "en" => "English",
+        "fre" | "fra" | "fr" => "French",
+        "spa" | "es" => "Spanish",
+        "ger" | "deu" | "de" => "German",
+        "ita" | "it" => "Italian",
+        "jpn" | "ja" => "Japanese",
+        "por" | "pt" => "Portuguese",
+        "rus" | "ru" => "Russian",
+        "chi" | "zho" | "zh" | "yue" => "Chinese",
+        "kor" | "ko" => "Korean",
+        "dut" | "nld" | "nl" => "Dutch",
+        "swe" | "sv" => "Swedish",
+        "nor" | "no" => "Norwegian",
+        "dan" | "da" => "Danish",
+        "fin" | "fi" => "Finnish",
+        "pol" | "pl" => "Polish",
+        "cze" | "ces" | "cs" => "Czech",
+        "hun" | "hu" => "Hungarian",
+        "tur" | "tr" => "Turkish",
+        "ara" | "ar" => "Arabic",
+        "hin" | "hi" => "Hindi",
+        "tha" | "th" => "Thai",
+        "ukr" | "uk" => "Ukrainian",
+        other => return other.to_uppercase(),
+    }
+    .to_string()
+}
+
+/// Language tag for the MKV `language` element (ISO 639-2).
+fn lang_tag(code: &str) -> String {
+    match code.to_ascii_lowercase().as_str() {
+        "en" => "eng",
+        "fr" => "fre",
+        "es" => "spa",
+        "de" => "ger",
+        "it" => "ita",
+        "ja" => "jpn",
+        "pt" => "por",
+        "ru" => "rus",
+        "zh" => "chi",
+        "ko" => "kor",
+        "nl" => "dut",
+        "sv" => "swe",
+        "no" => "nor",
+        "da" => "dan",
+        "fi" => "fin",
+        "pl" => "pol",
+        "cs" => "cze",
+        "hu" => "hun",
+        "tr" => "tur",
+        "ar" => "ara",
+        "hi" => "hin",
+        other => return other.to_string(),
+    }
+    .to_string()
+}
+
+fn audio_codec_label(coding_type: u8) -> &'static str {
+    match coding_type {
+        0x03 | 0x04 => "MPEG",
+        0x80 => "LPCM",
+        0x81 => "AC3",
+        0x82 => "DTS",
+        0x83 => "TrueHD",
+        0x84 => "E-AC3",
+        0x85 | 0x86 => "DTS-HD",
+        0xa1 => "E-AC3",
+        0xa2 => "DTS Express",
+        _ => "Audio",
+    }
+}
+
+fn video_codec_label(coding_type: u8) -> &'static str {
+    match coding_type {
+        0x01 => "MPEG-1",
+        0x02 => "MPEG-2",
+        0x1b => "H.264",
+        0x24 => "HEVC",
+        0xea => "VC-1",
+        _ => "Video",
+    }
+}
+
+/// Channel hint from the BD audio format code (only where it is unambiguous).
+fn audio_chans(format: u8) -> Option<&'static str> {
+    match format {
+        1 => Some("1.0"),
+        3 => Some("2.0"),
+        _ => None,
+    }
+}
+
+/// Secondary coding types are the disc's commentary / picture-in-picture tracks.
+fn is_secondary(coding_type: u8) -> bool {
+    coding_type == 0xa1 || coding_type == 0xa2
+}
+
+/// Lossless / primary audio coding types.
+fn is_primary_audio(coding_type: u8) -> bool {
+    matches!(coding_type, 0x80 | 0x83 | 0x85 | 0x86)
+}
+
+/// Disc-derived context used to label and flag the exported tracks.
+#[derive(Default, Clone)]
+pub struct TrackCtx {
+    /// Streams in disc order (video, then audio, then subtitle).
+    pub streams: Vec<StreamInfo>,
+    /// Index (within the audio streams) that should be the default track.
+    pub default_audio: Option<usize>,
+    /// Chapter names aligned to the disc's chapter marks, when known.
+    pub chapter_names: Vec<String>,
+    pub chapters_file: Option<PathBuf>,
+    pub poster_file: Option<PathBuf>,
+}
+
+fn build_args(req: &RipRequest, ctx: &TrackCtx) -> Vec<String> {
+    let mkv = matches!(
+        &req.mode,
+        RipMode::Remux { container: Container::Mkv }
+            | RipMode::Encode { container: Container::Mkv, .. }
+    );
+
     let mut a: Vec<String> = vec![
         "-hide_banner".into(),
         "-nostdin".into(),
         "-i".into(),
         "pipe:0".into(),
     ];
+    if let Some(cf) = &ctx.chapters_file {
+        a.extend(["-f".into(), "ffmetadata".into(), "-i".into(), cf.to_string_lossy().into_owned()]);
+    }
+
     match &req.mode {
-        RipMode::Remux { container } => {
-            match container {
-                Container::Mkv => {
-                    a.extend(["-map", "0", "-c", "copy", "-map_chapters", "0"].map(String::from));
-                }
-                Container::Mp4 => {
-                    a.extend(["-map", "0:v", "-map", "0:a", "-c", "copy"].map(String::from));
-                }
+        RipMode::Remux { container } => match container {
+            Container::Mkv => a.extend(["-map", "0", "-c", "copy"].map(String::from)),
+            Container::Mp4 => {
+                a.extend(["-map", "0:v", "-map", "0:a", "-c", "copy"].map(String::from))
             }
-        }
+        },
         RipMode::Encode { container, settings } => {
             a.extend(["-map".into(), "0:v:0".into(), "-map".into(), "0:a?".into()]);
+            if matches!(container, Container::Mkv) {
+                a.extend(["-map".into(), "0:s?".into()]);
+            }
             a.extend(codec_args(settings));
             if settings.aac_audio {
                 a.extend(["-c:a".into(), "aac".into(), "-b:a".into(), "640k".into()]);
             } else {
                 a.extend(["-c:a".into(), "copy".into()]);
             }
-            if matches!(container, Container::Mp4) {
-                // drop incompatible subtitle streams for mp4
+            if matches!(container, Container::Mkv) {
+                a.extend(["-c:s".into(), "copy".into()]);
+            } else {
                 a.extend(["-sn".into()]);
             }
         }
     }
+
+    if mkv {
+        if ctx.chapters_file.is_some() {
+            a.extend(["-map_chapters".into(), "1".into()]);
+        }
+        // Per-stream language + title, and default flags. Subtitles stay
+        // disabled by default (no `default` disposition); the chosen audio
+        // track - English, non-commentary - is the only default audio.
+        // Language of the default track, used to spot same-language commentary.
+        let primary_lang = ctx
+            .default_audio
+            .and_then(|i| {
+                ctx.streams
+                    .iter()
+                    .filter(|s| s.kind == "audio")
+                    .nth(i)
+            })
+            .and_then(|s| s.lang.clone())
+            .unwrap_or_default();
+        let (mut v, mut au, mut s) = (0usize, 0usize, 0usize);
+        for st in &ctx.streams {
+            let lang = st.lang.clone().unwrap_or_default();
+            match st.kind.as_str() {
+                "video" => {
+                    let res = match st.format {
+                        1 => "480i",
+                        2 => "576i",
+                        3 => "480p",
+                        4 => "1080i",
+                        5 => "720p",
+                        6 => "1080p",
+                        7 => "576p",
+                        8 => "2160p",
+                        _ => "video",
+                    };
+                    let label = format!("{res} {}", video_codec_label(st.coding_type));
+                    a.extend([
+                        format!("-metadata:s:v:{v}"),
+                        format!("title={}", label.trim()),
+                        format!("-metadata:s:v:{v}"),
+                        "language=und".into(),
+                        format!("-disposition:v:{v}"),
+                        "default".into(),
+                    ]);
+                    v += 1;
+                }
+                "audio" => {
+                    if lang.is_empty() {
+                        au += 1;
+                        continue;
+                    }
+                    let mut label = format!("{} {}", lang_name(&lang), audio_codec_label(st.coding_type));
+                    if let Some(ch) = audio_chans(st.format) {
+                        label.push(' ');
+                        label.push_str(ch);
+                    }
+                    if is_secondary(st.coding_type)
+                        || (audio_chans(st.format) == Some("2.0")
+                            && !is_primary_audio(st.coding_type)
+                            && !primary_lang.is_empty()
+                            && lang == primary_lang
+                            && ctx.default_audio != Some(au))
+                    {
+                        label.push_str(" (Commentary)");
+                    }
+                    a.extend([
+                        format!("-metadata:s:a:{au}"),
+                        format!("language={}", lang_tag(&lang)),
+                        format!("-metadata:s:a:{au}"),
+                        format!("title={label}"),
+                        format!("-disposition:a:{au}"),
+                        if ctx.default_audio == Some(au) { "default".into() } else { "0".into() },
+                    ]);
+                    au += 1;
+                }
+                _ => {
+                    if lang.is_empty() {
+                        s += 1;
+                        continue;
+                    }
+                    a.extend([
+                        format!("-metadata:s:s:{s}"),
+                        format!("language={}", lang_tag(&lang)),
+                        format!("-metadata:s:s:{s}"),
+                        format!("title={} (subtitles)", lang_name(&lang)),
+                        format!("-disposition:s:{s}"),
+                        "0".into(),
+                    ]);
+                    s += 1;
+                }
+            }
+        }
+        if let Some(poster) = &ctx.poster_file {
+            a.extend([
+                "-attach".into(),
+                poster.to_string_lossy().into_owned(),
+                "-metadata:s:t".into(),
+                "mimetype=image/jpeg".into(),
+                "-metadata:s:t".into(),
+                "filename=cover.jpg".into(),
+            ]);
+        }
+    }
+
     a.extend(["-progress".into(), "pipe:1".into(), "-nostats".into()]);
     a.push(req.output.to_string_lossy().into_owned());
     a
@@ -207,6 +454,92 @@ fn parse_progress(line: &str, p: &mut RipProgress) {
     }
 }
 
+/// Tidy a disc name into something a metadata site will match.
+fn clean_movie_name(s: &str, fallback: &str) -> String {
+    let mut t = s.replace('_', " ").trim().to_string();
+    for suf in [" - Blu-ray", " (Blu-ray)", " Blu-ray", " - BluRay"] {
+        if let Some(stripped) = t.strip_suffix(suf) {
+            t = stripped.trim().to_string();
+        }
+    }
+    while t.contains("  ") {
+        t = t.replace("  ", " ");
+    }
+    if t.is_empty() {
+        fallback.to_string()
+    } else {
+        t
+    }
+}
+
+/// The audio stream that should be the default: English and not commentary.
+fn pick_default_audio(streams: &[StreamInfo]) -> Option<usize> {
+    let audios: Vec<&StreamInfo> = streams.iter().filter(|s| s.kind == "audio").collect();
+    if let Some(i) = audios.iter().position(|s| {
+        matches!(s.lang.as_deref(), Some("eng") | Some("en")) && !is_secondary(s.coding_type)
+    }) {
+        return Some(i);
+    }
+    if let Some(i) = audios
+        .iter()
+        .position(|s| !is_secondary(s.coding_type) && s.lang.is_some())
+    {
+        return Some(i);
+    }
+    audios.iter().position(|s| s.lang.is_some())
+}
+
+fn ffmeta_escape(s: &str) -> String {
+    let mut o = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '\\' | '=' | ';' | '#' => {
+                o.push('\\');
+                o.push(c);
+            }
+            '\n' => o.push(' '),
+            _ => o.push(c),
+        }
+    }
+    o
+}
+
+/// Write an ffmetadata chapters file: disc times, ChapterDB names, generic
+/// fallback names, and any names authored on the disc.
+fn write_chapters(
+    marks: &[Chapter],
+    names: &[String],
+    title_end_ms: u64,
+    path: &Path,
+) -> Result<(), CoreError> {
+    let mut s = String::from(";FFMETADATA1\n");
+    for (i, m) in marks.iter().enumerate() {
+        let start = (m.start_secs * 1000.0).round().max(0.0) as u64;
+        let mut end = marks
+            .get(i + 1)
+            .map(|n| (n.start_secs * 1000.0).round() as u64)
+            .unwrap_or(title_end_ms);
+        if end <= start {
+            end = start + 1;
+        }
+        let name = names
+            .get(i)
+            .map(|n| n.trim().to_string())
+            .filter(|n| !n.is_empty())
+            .or_else(|| m.name.clone())
+            .unwrap_or_else(|| format!("Chapter {:02}", i + 1));
+        s.push_str(&format!(
+            "[CHAPTER]\nTIMEBASE=1/1000\nSTART={start}\nEND={end}\ntitle={}\n",
+            ffmeta_escape(&name)
+        ));
+    }
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    std::fs::write(path, s)?;
+    Ok(())
+}
+
 /// Run the rip. `on_progress` is called on the calling thread for each update.
 /// `cancel` is polled between progress lines; when set the ffmpeg child is killed.
 pub fn run<F>(req: &RipRequest, cancel: &std::sync::atomic::AtomicBool, mut on_progress: F) -> Result<(), CoreError>
@@ -218,15 +551,60 @@ where
     }
     let disc = Disc::open(&req.source, req.keydb.as_deref())?;
     let info = disc.info()?;
+    let title = req.title.or(info.main_title).unwrap_or(0);
+    tracing::info!(title, main = ?info.main_title, "ripping title");
     let total_ms = info
         .titles
         .iter()
-        .find(|t| t.index == req.title)
+        .find(|t| t.index == title)
         .map(|t| (t.duration_secs * 1000.0) as u64)
         .unwrap_or(0);
-    disc.select(req.title)?;
 
-    let args = build_args(req);
+    let fallback = req
+        .output
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let movie = clean_movie_name(req.movie.as_deref().unwrap_or(&info.name), &fallback);
+
+    let mut ctx = TrackCtx {
+        streams: disc.streams(title).unwrap_or_default(),
+        ..Default::default()
+    };
+    for s in &ctx.streams {
+        tracing::info!(kind = %s.kind, lang = ?s.lang, coding_type = s.coding_type, format = s.format, "stream");
+    }
+    ctx.default_audio = pick_default_audio(&ctx.streams);
+
+    let marker = req.output.with_extension("chapters.ffmeta");
+    if req.chapters {
+        let marks = disc.chapters(title).unwrap_or_default();
+        if !marks.is_empty() {
+            let names = metadata::chapter_names(&movie, total_ms as f64 / 1000.0, marks.len())
+                .unwrap_or(None)
+                .unwrap_or_default();
+            tracing::info!(marks = marks.len(), names = names.len(), %movie, "chapters");
+            write_chapters(&marks, &names, total_ms, &marker)?;
+            ctx.chapters_file = Some(marker.clone());
+        }
+    }
+
+    if req.poster {
+        match metadata::poster(&movie, total_ms as f64 / 1000.0) {
+            Ok(Some(p)) => {
+                let dest = req.output.with_extension("poster.jpg");
+                std::fs::write(&dest, &p.bytes)?;
+                tracing::info!(?dest, tmdb = p.tmdb_id, year = ?p.year, "poster saved");
+                ctx.poster_file = Some(dest);
+            }
+            Ok(None) => tracing::info!("no tmdb poster found"),
+            Err(e) => tracing::warn!(error = %e, "poster lookup failed"),
+        }
+    }
+
+    disc.select(title)?;
+
+    let args = build_args(req, &ctx);
     tracing::info!(?args, "spawning ffmpeg");
     let mut child = Command::new(ffmpeg_path())
         .args(&args)
@@ -312,6 +690,9 @@ where
     }
     if !status.success() {
         return Err(CoreError::Disc(format!("ffmpeg exited with {status}")));
+    }
+    if let Some(cf) = &ctx.chapters_file {
+        let _ = std::fs::remove_file(cf);
     }
     prog.done = true;
     prog.percent = 100.0;
