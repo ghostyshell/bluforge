@@ -104,7 +104,12 @@ export type RipRequest = {
   poster: boolean;
   /** Movie title used for the metadata lookups */
   movie: string | null;
+  audio: AudioSel;
+  subs: SubSel;
 };
+
+export type AudioSel = "all" | "main" | "english";
+export type SubSel = "all" | "english" | "none";
 
 export type PreviewVars = {
   output_dir: string;

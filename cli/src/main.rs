@@ -66,6 +66,12 @@ enum Cmd {
         /// Movie title for the metadata lookups (default: the disc name).
         #[arg(long)]
         movie: Option<String>,
+        /// Audio tracks to keep: all | main | english.
+        #[arg(long, default_value = "all")]
+        audio: String,
+        /// Subtitle tracks to keep: all | english | none.
+        #[arg(long, default_value = "all")]
+        subs: String,
     },
     /// Show linked library versions.
     Libs,
@@ -233,6 +239,8 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
             no_chapters,
             no_poster,
             movie,
+            audio,
+            subs,
         } => {
             use bluforge_core::{Container, EncodeSettings, RipMode, RipProgress, RipRequest, VideoCodec};
             let container_kind = if container.eq_ignore_ascii_case("mp4") {
@@ -269,6 +277,16 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
                 chapters: !*no_chapters,
                 poster: !*no_poster,
                 movie: movie.clone(),
+                audio: match audio.as_str() {
+                    "main" => bluforge_core::rip::AudioSel::Main,
+                    "english" | "eng" => bluforge_core::rip::AudioSel::English,
+                    _ => bluforge_core::rip::AudioSel::All,
+                },
+                subs: match subs.as_str() {
+                    "english" | "eng" => bluforge_core::rip::SubSel::English,
+                    "none" => bluforge_core::rip::SubSel::None,
+                    _ => bluforge_core::rip::SubSel::All,
+                },
             };
             let cancel = std::sync::atomic::AtomicBool::new(false);
             let mut last = -1i64;

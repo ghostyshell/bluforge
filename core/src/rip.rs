@@ -51,6 +51,37 @@ pub enum Container {
     Mp4,
 }
 
+/// Which audio tracks to keep.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AudioSel {
+    All,
+    /// Only the track that would be the default (English, non-commentary).
+    Main,
+    English,
+}
+
+impl Default for AudioSel {
+    fn default() -> Self {
+        AudioSel::All
+    }
+}
+
+/// Which subtitle tracks to keep.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SubSel {
+    All,
+    English,
+    None,
+}
+
+impl Default for SubSel {
+    fn default() -> Self {
+        SubSel::All
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum RipMode {
@@ -85,6 +116,12 @@ pub struct RipRequest {
     /// Movie title used for metadata lookups (defaults to the disc name).
     #[serde(default)]
     pub movie: Option<String>,
+    /// Audio tracks to keep.
+    #[serde(default)]
+    pub audio: AudioSel,
+    /// Subtitle tracks to keep.
+    #[serde(default)]
+    pub subs: SubSel,
 }
 
 fn yes() -> bool {
@@ -254,6 +291,20 @@ fn audio_chans(format: u8) -> Option<&'static str> {
     }
 }
 
+/// TrueHD / DTS-HD carry an embedded lossy core, which ffmpeg exposes as an
+/// *extra* audio stream of the same PID. That shifts every later ffmpeg audio
+/// index, so mapping/labelling has to account for it.
+fn has_core(coding_type: u8) -> bool {
+    matches!(coding_type, 0x83 | 0x85 | 0x86)
+}
+
+fn core_codec_label(coding_type: u8) -> &'static str {
+    match coding_type {
+        0x83 => "AC3",
+        _ => "DTS",
+    }
+}
+
 /// Secondary coding types are the disc's commentary / picture-in-picture tracks.
 fn is_secondary(coding_type: u8) -> bool {
     coding_type == 0xa1 || coding_type == 0xa2
@@ -284,6 +335,162 @@ fn human_time(ms: u64) -> String {
     format!("{}:{:02}:{:02}", s / 3600, (s % 3600) / 60, s % 60)
 }
 
+/// Decide which streams to map, and the `-metadata`/`-disposition` arguments for
+/// them. Output stream indices are counted separately from input ones because
+/// filtering shifts them.
+fn plan_tracks(ctx: &TrackCtx, audio: AudioSel, subs: SubSel) -> (Vec<String>, Vec<String>) {
+    let mut maps: Vec<String> = Vec::new();
+    let mut meta: Vec<String> = Vec::new();
+
+    let primary_lang = ctx
+        .default_audio
+        .and_then(|i| ctx.streams.iter().filter(|s| s.kind == "audio").nth(i))
+        .and_then(|s| s.lang.clone())
+        .unwrap_or_default();
+    let is_eng = |l: &str| matches!(l, "eng" | "en");
+
+    // Keep at least one audio track even if the filter matches nothing.
+    let any_eng = ctx
+        .streams
+        .iter()
+        .any(|s| s.kind == "audio" && s.lang.as_deref().map(is_eng).unwrap_or(false));
+    let audio_sel = if audio == AudioSel::English && !any_eng {
+        AudioSel::Main
+    } else {
+        audio
+    };
+
+    let (mut v, mut ai, mut si) = (0usize, 0usize, 0usize);
+    let (mut out_v, mut out_a, mut out_s) = (0usize, 0usize, 0usize);
+    let mut cores_before = 0usize;
+    for st in &ctx.streams {
+        let lang = st.lang.clone().unwrap_or_default();
+        match st.kind.as_str() {
+            "video" => {
+                let res = match st.format {
+                    1 => "480i",
+                    2 => "576i",
+                    3 => "480p",
+                    4 => "1080i",
+                    5 => "720p",
+                    6 => "1080p",
+                    7 => "576p",
+                    8 => "2160p",
+                    _ => "video",
+                };
+                let label = format!("{res} {}", video_codec_label(st.coding_type));
+                maps.push(format!("0:v:{v}"));
+                if out_v == 0 {
+                    meta.extend([
+                        format!("-metadata:s:v:{out_v}"),
+                        format!("title={}", label.trim()),
+                        format!("-metadata:s:v:{out_v}"),
+                        "language=und".into(),
+                        format!("-disposition:v:{out_v}"),
+                        "default".into(),
+                    ]);
+                }
+                out_v += 1;
+                v += 1;
+            }
+            "audio" => {
+                let ff = ai + cores_before;
+                let keep = match audio_sel {
+                    AudioSel::All => true,
+                    AudioSel::Main => ctx.default_audio == Some(ai),
+                    AudioSel::English => is_eng(&lang),
+                };
+                if keep {
+                    maps.push(format!("0:a:{ff}"));
+                    if !lang.is_empty() {
+                        let mut label =
+                            format!("{} {}", lang_name(&lang), audio_codec_label(st.coding_type));
+                        if let Some(ch) = audio_chans(st.format) {
+                            label.push(' ');
+                            label.push_str(ch);
+                        }
+                        if is_secondary(st.coding_type)
+                            || (audio_chans(st.format) == Some("2.0")
+                                && !is_primary_audio(st.coding_type)
+                                && !primary_lang.is_empty()
+                                && lang == primary_lang
+                                && ctx.default_audio != Some(ai))
+                        {
+                            label.push_str(" (Commentary)");
+                        }
+                        meta.extend([
+                            format!("-metadata:s:a:{out_a}"),
+                            format!("language={}", lang_tag(&lang)),
+                            format!("-metadata:s:a:{out_a}"),
+                            format!("title={label}"),
+                        ]);
+                    }
+                    meta.extend([
+                        format!("-disposition:a:{out_a}"),
+                        if ctx.default_audio == Some(ai) { "default".into() } else { "0".into() },
+                    ]);
+                    out_a += 1;
+                    // With `all`, also keep the embedded lossy core.
+                    if has_core(st.coding_type) {
+                        maps.push(format!("0:a:{}", ff + 1));
+                        if !lang.is_empty() {
+                            meta.extend([
+                                format!("-metadata:s:a:{out_a}"),
+                                format!("language={}", lang_tag(&lang)),
+                                format!("-metadata:s:a:{out_a}"),
+                                format!(
+                                    "title={} {} (core)",
+                                    lang_name(&lang),
+                                    core_codec_label(st.coding_type)
+                                ),
+                            ]);
+                        }
+                        meta.extend([format!("-disposition:a:{out_a}"), "0".into()]);
+                        out_a += 1;
+                    }
+                }
+                if has_core(st.coding_type) {
+                    cores_before += 1;
+                }
+                ai += 1;
+            }
+            _ => {
+                let keep = match subs {
+                    SubSel::All => true,
+                    SubSel::English => is_eng(&lang),
+                    SubSel::None => false,
+                };
+                if keep {
+                    maps.push(format!("0:s:{si}"));
+                    if !lang.is_empty() {
+                        meta.extend([
+                            format!("-metadata:s:s:{out_s}"),
+                            format!("language={}", lang_tag(&lang)),
+                            format!("-metadata:s:s:{out_s}"),
+                            format!("title={} (subtitles)", lang_name(&lang)),
+                        ]);
+                    }
+                    // Subtitles stay off by default.
+                    meta.extend([format!("-disposition:s:{out_s}"), "0".into()]);
+                    out_s += 1;
+                }
+                si += 1;
+            }
+        }
+    }
+
+    (maps, meta)
+}
+
+fn map_args(maps: &[String]) -> Vec<String> {
+    let mut v = Vec::with_capacity(maps.len() * 2);
+    for m in maps {
+        v.push("-map".into());
+        v.push(m.clone());
+    }
+    v
+}
+
 fn build_args(req: &RipRequest, ctx: &TrackCtx) -> Vec<String> {
     let mkv = matches!(
         &req.mode,
@@ -301,17 +508,30 @@ fn build_args(req: &RipRequest, ctx: &TrackCtx) -> Vec<String> {
         a.extend(["-f".into(), "ffmetadata".into(), "-i".into(), cf.to_string_lossy().into_owned()]);
     }
 
+    let (mut maps, meta) = plan_tracks(ctx, req.audio, req.subs);
+    // MP4 cannot carry PGS subtitles.
+    if !mkv {
+        maps.retain(|m| !m.starts_with("0:s:"));
+    }
+
     match &req.mode {
         RipMode::Remux { container } => match container {
-            Container::Mkv => a.extend(["-map", "0", "-c", "copy"].map(String::from)),
+            Container::Mkv => {
+                a.extend(map_args(&maps));
+                a.extend(["-c".into(), "copy".into()]);
+            }
             Container::Mp4 => {
-                a.extend(["-map", "0:v", "-map", "0:a", "-c", "copy"].map(String::from))
+                a.extend(map_args(&maps));
+                a.extend(["-c".into(), "copy".into()]);
             }
         },
-        RipMode::Encode { container, settings } => {
-            a.extend(["-map".into(), "0:v:0".into(), "-map".into(), "0:a?".into()]);
-            if matches!(container, Container::Mkv) {
-                a.extend(["-map".into(), "0:s?".into()]);
+        RipMode::Encode { settings, .. } => {
+            a.push("-map".into());
+            a.push("0:v:0".into());
+            // audio/subtitle maps from the planner (skip its duplicate video map)
+            for m in maps.iter().filter(|m| !m.starts_with("0:v:")) {
+                a.push("-map".into());
+                a.push(m.clone());
             }
             a.extend(codec_args(settings));
             if settings.aac_audio {
@@ -319,10 +539,8 @@ fn build_args(req: &RipRequest, ctx: &TrackCtx) -> Vec<String> {
             } else {
                 a.extend(["-c:a".into(), "copy".into()]);
             }
-            if matches!(container, Container::Mkv) {
+            if mkv && maps.iter().any(|m| m.starts_with("0:s:")) {
                 a.extend(["-c:s".into(), "copy".into()]);
-            } else {
-                a.extend(["-sn".into()]);
             }
         }
     }
@@ -331,93 +549,7 @@ fn build_args(req: &RipRequest, ctx: &TrackCtx) -> Vec<String> {
         if ctx.chapters_file.is_some() {
             a.extend(["-map_chapters".into(), "1".into()]);
         }
-        // Per-stream language + title, and default flags. Subtitles stay
-        // disabled by default (no `default` disposition); the chosen audio
-        // track - English, non-commentary - is the only default audio.
-        // Language of the default track, used to spot same-language commentary.
-        let primary_lang = ctx
-            .default_audio
-            .and_then(|i| {
-                ctx.streams
-                    .iter()
-                    .filter(|s| s.kind == "audio")
-                    .nth(i)
-            })
-            .and_then(|s| s.lang.clone())
-            .unwrap_or_default();
-        let (mut v, mut au, mut s) = (0usize, 0usize, 0usize);
-        for st in &ctx.streams {
-            let lang = st.lang.clone().unwrap_or_default();
-            match st.kind.as_str() {
-                "video" => {
-                    let res = match st.format {
-                        1 => "480i",
-                        2 => "576i",
-                        3 => "480p",
-                        4 => "1080i",
-                        5 => "720p",
-                        6 => "1080p",
-                        7 => "576p",
-                        8 => "2160p",
-                        _ => "video",
-                    };
-                    let label = format!("{res} {}", video_codec_label(st.coding_type));
-                    a.extend([
-                        format!("-metadata:s:v:{v}"),
-                        format!("title={}", label.trim()),
-                        format!("-metadata:s:v:{v}"),
-                        "language=und".into(),
-                        format!("-disposition:v:{v}"),
-                        "default".into(),
-                    ]);
-                    v += 1;
-                }
-                "audio" => {
-                    if lang.is_empty() {
-                        au += 1;
-                        continue;
-                    }
-                    let mut label = format!("{} {}", lang_name(&lang), audio_codec_label(st.coding_type));
-                    if let Some(ch) = audio_chans(st.format) {
-                        label.push(' ');
-                        label.push_str(ch);
-                    }
-                    if is_secondary(st.coding_type)
-                        || (audio_chans(st.format) == Some("2.0")
-                            && !is_primary_audio(st.coding_type)
-                            && !primary_lang.is_empty()
-                            && lang == primary_lang
-                            && ctx.default_audio != Some(au))
-                    {
-                        label.push_str(" (Commentary)");
-                    }
-                    a.extend([
-                        format!("-metadata:s:a:{au}"),
-                        format!("language={}", lang_tag(&lang)),
-                        format!("-metadata:s:a:{au}"),
-                        format!("title={label}"),
-                        format!("-disposition:a:{au}"),
-                        if ctx.default_audio == Some(au) { "default".into() } else { "0".into() },
-                    ]);
-                    au += 1;
-                }
-                _ => {
-                    if lang.is_empty() {
-                        s += 1;
-                        continue;
-                    }
-                    a.extend([
-                        format!("-metadata:s:s:{s}"),
-                        format!("language={}", lang_tag(&lang)),
-                        format!("-metadata:s:s:{s}"),
-                        format!("title={} (subtitles)", lang_name(&lang)),
-                        format!("-disposition:s:{s}"),
-                        "0".into(),
-                    ]);
-                    s += 1;
-                }
-            }
-        }
+        a.extend(meta);
         if let Some(poster) = &ctx.poster_file {
             a.extend([
                 "-attach".into(),
@@ -801,4 +933,104 @@ where
 /// Convenience: does the disc at `path` look like a Blu-ray?
 pub fn is_bluray(path: &Path) -> bool {
     path.join("BDMV").is_dir() || path.join("bdmv").is_dir()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn st(kind: &str, lang: &str, ct: u8, fmt: u8) -> StreamInfo {
+        StreamInfo {
+            kind: kind.into(),
+            lang: if lang.is_empty() { None } else { Some(lang.into()) },
+            coding_type: ct,
+            format: fmt,
+            rate: 0,
+        }
+    }
+
+    /// 2160p + 1080p video, eng TrueHD (with core) + eng AC3 + fra AC3,
+    /// eng + fra subtitles.
+    fn sample() -> TrackCtx {
+        TrackCtx {
+            streams: vec![
+                st("video", "", 0x24, 8),
+                st("video", "", 0x24, 6),
+                st("audio", "eng", 0x83, 6),
+                st("audio", "eng", 0x81, 6),
+                st("audio", "fra", 0x81, 6),
+                st("subtitle", "eng", 0x90, 0),
+                st("subtitle", "fra", 0x90, 0),
+            ],
+            default_audio: Some(0),
+            ..Default::default()
+        }
+    }
+
+    /// The disposition following `spec` in the flat meta list.
+    fn dispo<'a>(meta: &'a [String], spec: &str) -> &'a str {
+        let i = meta.iter().position(|m| m == spec).expect("spec present");
+        &meta[i + 1]
+    }
+
+    #[test]
+    fn truehd_core_shifts_following_audio_indices() {
+        let (maps, meta) = plan_tracks(&sample(), AudioSel::All, SubSel::None);
+        // eng TrueHD a:0, its embedded core a:1, eng AC3 a:2, fra AC3 a:3
+        assert_eq!(
+            maps,
+            vec!["0:v:0", "0:v:1", "0:a:0", "0:a:1", "0:a:2", "0:a:3"]
+        );
+        assert_eq!(dispo(&meta, "-disposition:a:0"), "default");
+        assert_eq!(dispo(&meta, "-disposition:a:1"), "0");
+        // only the first audio is default
+        assert_eq!(meta.iter().filter(|m| *m == "default").count(), 2); // video + audio
+        assert!(meta.contains(&"title=English TrueHD".to_string()));
+        assert!(meta.contains(&"title=English AC3 (core)".to_string()));
+    }
+
+    #[test]
+    fn english_keeps_truehd_plus_core_and_english_ac3() {
+        let (maps, meta) = plan_tracks(&sample(), AudioSel::English, SubSel::None);
+        assert_eq!(maps, vec!["0:v:0", "0:v:1", "0:a:0", "0:a:1", "0:a:2"]);
+        assert!(!meta.contains(&"title=French AC3".to_string()));
+        assert!(!meta.iter().any(|m| m.starts_with("-metadata:s:s:")));
+    }
+
+    #[test]
+    fn main_audio_is_the_default_only() {
+        let (maps, meta) = plan_tracks(&sample(), AudioSel::Main, SubSel::None);
+        assert_eq!(maps, vec!["0:v:0", "0:v:1", "0:a:0", "0:a:1"]);
+        assert!(meta.contains(&"title=English TrueHD".to_string()));
+        assert!(!meta.contains(&"title=English AC3".to_string()));
+    }
+
+    #[test]
+    fn subtitles_are_mapped_and_never_default() {
+        let (maps, meta) = plan_tracks(&sample(), AudioSel::Main, SubSel::All);
+        assert_eq!(maps, vec!["0:v:0", "0:v:1", "0:a:0", "0:a:1", "0:s:0", "0:s:1"]);
+        assert_eq!(dispo(&meta, "-disposition:s:0"), "0");
+        assert_eq!(dispo(&meta, "-disposition:s:1"), "0");
+        assert!(meta.contains(&"title=English (subtitles)".to_string()));
+    }
+
+    #[test]
+    fn english_subs_only() {
+        let (maps, _) = plan_tracks(&sample(), AudioSel::Main, SubSel::English);
+        assert_eq!(maps, vec!["0:v:0", "0:v:1", "0:a:0", "0:a:1", "0:s:0"]);
+    }
+
+    #[test]
+    fn no_subs() {
+        let (maps, meta) = plan_tracks(&sample(), AudioSel::Main, SubSel::None);
+        assert!(!maps.iter().any(|m| m.starts_with("0:s:")));
+        assert!(!meta.iter().any(|m| m.starts_with("-metadata:s:s:")));
+    }
+
+    #[test]
+    fn video_is_labelled_once_and_default() {
+        let (_, meta) = plan_tracks(&sample(), AudioSel::Main, SubSel::None);
+        assert!(meta.contains(&"title=2160p HEVC".to_string()));
+        assert_eq!(meta.iter().filter(|m| m.starts_with("-metadata:s:v:")).count(), 2);
+    }
 }

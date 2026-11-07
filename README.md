@@ -103,9 +103,13 @@ titles for video, audio and subtitles, the English **non-commentary** audio trac
 marked default, and every subtitle explicitly non-default so players start with
 subtitles off.
 
+Track selection: `--audio all|main|english` and `--subs all|english|none`
+(defaults keep everything). Where a TrueHD / DTS-HD track is kept its embedded
+lossy core is kept alongside it; nothing else is.
+
 `--no-chapters` / `--no-poster` skip the lookups; `--movie "<title>"` overrides
 the name used to search (default: the disc label). A failed lookup is never
-fatal. All of these are toggles in the app.
+fatal. All of these are controls in the app.
 
 ### Output template
 

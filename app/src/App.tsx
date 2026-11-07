@@ -4,11 +4,13 @@ import {
   type AppConfig,
   type DiscInfo,
   type EncodeSettings,
+  type AudioSel,
   type IsoProgress,
   type MovieHit,
   type RipMode,
   type RipProgress,
   type Snapshot,
+  type SubSel,
   type Title,
 } from "./api";
 
@@ -46,6 +48,8 @@ export default function App() {
   const [enc, setEnc] = useState<EncodeSettings>({
     codec: "x265", quality: 20, preset: "medium", ten_bit: true, aac_audio: false,
   });
+  const [audio, setAudio] = useState<AudioSel>("all");
+  const [subs, setSubs] = useState<SubSel>("all");
   const [chapters, setChapters] = useState(true);
   const [poster, setPoster] = useState(true);
   const [movie, setMovie] = useState<string | null>(null);
@@ -163,6 +167,8 @@ export default function App() {
         chapters,
         poster,
         movie,
+        audio,
+        subs,
       });
     } catch (e) { setError(String(e)); setBusy(null); }
   };
@@ -332,7 +338,24 @@ export default function App() {
               </div>
             )}
 
-            <div className="row wrap" style={{ marginTop: 14, gap: 16 }}>
+            <div className="row wrap" style={{ marginTop: 12, gap: 16 }}>
+              <label className="field">Audio tracks
+                <select value={audio} onChange={(e) => setAudio(e.target.value as AudioSel)}>
+                  <option value="all">All tracks</option>
+                  <option value="main">Default track only</option>
+                  <option value="english">English only</option>
+                </select>
+              </label>
+              <label className="field">Subtitles
+                <select value={subs} onChange={(e) => setSubs(e.target.value as SubSel)}>
+                  <option value="all">All</option>
+                  <option value="english">English only</option>
+                  <option value="none">None</option>
+                </select>
+              </label>
+            </div>
+
+            <div className="row wrap" style={{ marginTop: 12, gap: 16 }}>
               <label className="check">
                 <input type="checkbox" checked={chapters} onChange={(e) => setChapters(e.target.checked)} />
                 Chapter names (ChapterDB)
