@@ -806,7 +806,7 @@ pub fn probe_sub_events(
 /// last third, and a short next-episode preview at the very end. The disc's
 /// chapter marks land on those transitions, so label them. Only used when the
 /// disc carries Japanese audio (an anime sign).
-fn label_anime_chapters(ch: &mut [crate::disc::Chapter], duration: f64) {
+pub fn label_anime_chapters(ch: &mut [crate::disc::Chapter], duration: f64) {
     if ch.len() < 3 || duration < 600.0 {
         return;
     }
@@ -818,31 +818,47 @@ fn label_anime_chapters(ch: &mut [crate::disc::Chapter], duration: f64) {
         })
         .collect();
 
-    // Opening: ~90s block in the first third.
-    if let Some((i, _)) = gaps
+    // Opening: a distinct ~90s OP chapter when the disc has one. Otherwise the
+    // first chapter carries a cold open plus the OP (2:35-4:00 on One Punch Man),
+    // so label that whole block instead of leaving it as "Chapter 01".
+    // Prefer a dedicated OP chapter after the cold open; a ~2 minute chapter at
+    // the very start is more likely the cold open itself.
+    let op = gaps
         .iter()
+        .skip(1)
         .find(|(i, g)| (75.0..=125.0).contains(g) && ch[*i].start_secs <= duration * 0.35)
-    {
-        ch[*i].name = Some("Opening".into());
+        .map(|(i, _)| *i)
+        .or_else(|| {
+            let g = gaps[0].1;
+            (ch[0].start_secs <= 5.0 && (75.0..=300.0).contains(&g)).then_some(0)
+        });
+    if let Some(i) = op {
+        ch[i].name = Some("Opening".into());
     }
-    // Ending: ~90s block in the last third (searched from the end).
-    if let Some((i, _)) = gaps
+    // Ending: the first ~90s block in the last third (the creditless ED is 91.2s
+    // on every episode of this disc). Taking the first rather than the last keeps
+    // an adjacent preview block from stealing the label.
+    let ending = gaps
         .iter()
-        .rev()
         .find(|(i, g)| (70.0..=125.0).contains(g) && ch[*i].start_secs >= duration * 0.6)
-    {
-        if ch[*i].name.is_none() {
-            ch[*i].name = Some("Ending".into());
+        .map(|(i, _)| *i);
+    if let Some(i) = ending {
+        if ch[i].name.is_none() {
+            ch[i].name = Some("Ending".into());
         }
     }
-    // Preview: short trailing block.
-    if let Some((i, _)) = gaps
-        .iter()
-        .rev()
-        .find(|(i, g)| (8.0..=75.0).contains(g) && ch[*i].start_secs >= duration * 0.75)
-    {
-        if ch[*i].name.is_none() {
-            ch[*i].name = Some("Preview (next episode)".into());
+    // Preview: the block right after the ending, else a short trailing block.
+    let preview = match ending {
+        Some(e) if e + 1 < ch.len() && (8.0..=100.0).contains(&gaps[e + 1].1) => Some(e + 1),
+        _ => gaps
+            .iter()
+            .rev()
+            .find(|(i, g)| (8.0..=75.0).contains(g) && ch[*i].start_secs >= duration * 0.75)
+            .map(|(i, _)| *i),
+    };
+    if let Some(i) = preview {
+        if ch[i].name.is_none() {
+            ch[i].name = Some("Preview (next episode)".into());
         }
     }
 }
@@ -1679,6 +1695,50 @@ mod tests {
         assert_eq!(maps, vec!["0:v:0", "0:v:1", "0:a:0", "0:a:1", "0:a:2"]);
         assert!(!meta.contains(&"title=French AC3".to_string()));
         assert!(!meta.iter().any(|m| m.starts_with("-metadata:s:s:")));
+    }
+
+    fn chapters_at(starts: &[f64]) -> Vec<crate::disc::Chapter> {
+        starts
+            .iter()
+            .map(|s| crate::disc::Chapter { start_secs: *s, name: None })
+            .collect()
+    }
+
+    fn name_at(ch: &[crate::disc::Chapter], i: usize) -> Option<String> {
+        ch.get(i).and_then(|c| c.name.clone())
+    }
+
+    #[test]
+    fn anime_labels_a_standalone_opening_chapter() {
+        // One Punch Man E01: 0, 99 (OP end), 891, 1331 (ED), 1420 (preview)
+        let mut ch = chapters_at(&[0.0, 99.0, 891.0, 1331.0, 1420.0]);
+        label_anime_chapters(&mut ch, 1461.0);
+        assert_eq!(name_at(&ch, 0).as_deref(), Some("Opening"));
+        assert_eq!(name_at(&ch, 3).as_deref(), Some("Ending"));
+        assert_eq!(name_at(&ch, 4).as_deref(), Some("Preview (next episode)"));
+    }
+
+    #[test]
+    fn anime_labels_a_cold_open_plus_opening_block() {
+        // E03/E04: the first chapter runs 2:35-4:00 (cold open + OP).
+        let mut ch = chapters_at(&[0.0, 239.0, 749.0, 1321.0, 1411.0]);
+        label_anime_chapters(&mut ch, 1461.0);
+        assert_eq!(name_at(&ch, 0).as_deref(), Some("Opening"));
+        assert_eq!(name_at(&ch, 3).as_deref(), Some("Ending"));
+        assert_eq!(name_at(&ch, 4).as_deref(), Some("Preview (next episode)"));
+
+        let mut ch = chapters_at(&[0.0, 155.0, 711.0, 1330.0, 1420.0]);
+        label_anime_chapters(&mut ch, 1461.0);
+        assert_eq!(name_at(&ch, 0).as_deref(), Some("Opening"));
+    }
+
+    #[test]
+    fn anime_prefers_a_separate_op_over_a_cold_open() {
+        // A 2:00 cold open followed by its own 90s OP chapter.
+        let mut ch = chapters_at(&[0.0, 120.0, 210.0, 900.0, 1331.0, 1420.0]);
+        label_anime_chapters(&mut ch, 1461.0);
+        assert_eq!(name_at(&ch, 0), None);
+        assert_eq!(name_at(&ch, 1).as_deref(), Some("Opening"));
     }
 
     #[test]

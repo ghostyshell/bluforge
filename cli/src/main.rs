@@ -41,6 +41,9 @@ enum Cmd {
         /// Override the series name used to look episodes up.
         #[arg(long)]
         series: Option<String>,
+        /// With --episodes: print each episode's chapter marks (dry run, no rip).
+        #[arg(long)]
+        chapters: bool,
     },
     /// Rip a title to MKV/MP4 (remux by default, or `--encode`).
     Rip {
@@ -247,6 +250,7 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
             clips,
             episodes,
             series,
+            chapters,
         } => {
             let disc = bluforge_core::Disc::open(path, Some(&keys::keydb_path()))?;
             let info = disc.info()?;
@@ -298,6 +302,48 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
                                     it.episode.title,
                                     it.episode.still.is_some()
                                 );
+                            }
+                            if *chapters {
+                                let first = p.items.first().map(|i| i.title_index).unwrap_or(0);
+                                let anime = disc
+                                    .streams(first)
+                                    .unwrap_or_default()
+                                    .iter()
+                                    .any(|s| s.kind == "audio" && s.lang.as_deref() == Some("jpn"));
+                                let marks = disc.chapters(first).unwrap_or_default();
+                                for it in &p.items {
+                                    let mut ch: Vec<bluforge_core::disc::Chapter> = marks
+                                        .iter()
+                                        .filter(|c| {
+                                            c.start_secs >= it.start_secs - 1.0
+                                                && c.start_secs < it.start_secs + it.duration_secs - 0.5
+                                        })
+                                        .map(|c| bluforge_core::disc::Chapter {
+                                            start_secs: c.start_secs - it.start_secs,
+                                            name: c.name.clone(),
+                                        })
+                                        .collect();
+                                    if anime {
+                                        bluforge_core::rip::label_anime_chapters(&mut ch, it.duration_secs);
+                                    }
+                                    let fmt: Vec<String> = ch
+                                        .iter()
+                                        .map(|c| {
+                                            format!(
+                                                "{}:{:02} {}",
+                                                (c.start_secs as u64) / 60,
+                                                (c.start_secs as u64) % 60,
+                                                c.name.clone().unwrap_or_default()
+                                            )
+                                        })
+                                        .collect();
+                                    println!(
+                                        "  S{:02}E{:02} chapters: {}",
+                                        it.episode.season,
+                                        it.episode.number,
+                                        fmt.join(" | ")
+                                    );
+                                }
                             }
                         }
                         Err(e) => println!("episodes  : ERROR {e}"),
