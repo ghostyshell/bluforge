@@ -478,7 +478,7 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
             // The unit-key file is needed for the disc id and lives on the volume,
             // so read it before unmounting the disc for exclusive access.
             let ukf = std::fs::read(disc.join("AACS").join("Unit_Key_RO.inf")).ok();
-            let unmounted = bluforge_core::disc::aacs_unmount(device);
+            let unmounted = false; // read-only: do not disturb a mounted disc
             let vid = bluforge_core::disc::aacs_volume_id(device);
             match (vid, ukf) {
                 (Some(vid), Some(ukf)) => {

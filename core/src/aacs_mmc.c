@@ -84,13 +84,47 @@ int bf_aacs_volume_id(const char *bsd_name, unsigned char out[16]) {
         (void)exclusive;
         SCSITaskInterface **task = (*dev)->CreateSCSITask(dev);
         if (task) {
+            unsigned char rbuf[8];
+
+            /* Allocate an AGID (REPORT KEY format 0x00, AGID nibble 0x0f).
+             * The AACS volume ID is only readable while an AGID is held. */
+            unsigned char alloc[16];
+            memset(alloc, 0, sizeof(alloc));
+            alloc[0] = 0xA4;
+            alloc[7] = 0x00;   /* AACS key class */
+            alloc[8] = 0x00;
+            alloc[9] = 0x08;   /* allocation length */
+            alloc[10] = 0xC0;  /* AGID 0x0f = allocate */
+            memset(rbuf, 0, sizeof(rbuf));
+            SCSITaskSGElement asg;
+            asg.address = (IOVirtualAddress)(uintptr_t)rbuf;
+            asg.length = sizeof(rbuf);
+            IOReturn a1 = (*task)->SetCommandDescriptorBlock(task, alloc, 16);
+            IOReturn a2 = (*task)->SetScatterGatherEntries(task, &asg, 1, sizeof(rbuf),
+                                                           kSCSIDataTransfer_FromTargetToInitiator);
+            IOReturn a3 = (*task)->SetTimeoutDuration(task, 10000);
+            int have_agid = 0;
+            unsigned char agid = 0;
+            if (!a1 && !a2 && !a3) {
+                SCSITaskStatus ast = 0;
+                UInt64 atr = 0;
+                SCSI_Sense_Data asense;
+                memset(&asense, 0, sizeof(asense));
+                if ((*task)->ExecuteTaskSync(task, &asense, &ast, &atr) == kIOReturnSuccess &&
+                    ast == kSCSITaskStatus_GOOD && atr >= 8) {
+                    agid = (unsigned char)((rbuf[7] >> 6) & 0x03);
+                    have_agid = 1;
+                }
+            }
+            (void)have_agid;
+
             unsigned char cdb[16];
             memset(cdb, 0, sizeof(cdb));
             cdb[0] = 0xAD;   // READ DISC STRUCTURE
             cdb[1] = 0x01;   // media type: Blu-ray
             cdb[7] = 0x80;   // format: AACS volume identifier
             cdb[9] = 36;     // allocation length
-            cdb[10] = 0x00;  // AGID 0
+            cdb[10] = (unsigned char)((agid & 0x03) << 6);  // the allocated AGID
 
             unsigned char buf[36];
             memset(buf, 0, sizeof(buf));
@@ -117,6 +151,20 @@ int bf_aacs_volume_id(const char *bsd_name, unsigned char out[16]) {
                 }
             } else {
                 result = -16;
+            }
+            // Release the AGID so the drive can serve other hosts.
+            if (have_agid) {
+                unsigned char rel[16];
+                memset(rel, 0, sizeof(rel));
+                rel[0] = 0xA4;
+                rel[9] = 0x00;
+                rel[10] = (unsigned char)(((agid & 0x03) << 6) | 0x3f);
+                (*task)->SetCommandDescriptorBlock(task, rel, 16);
+                SCSITaskStatus rst = 0;
+                UInt64 rtr = 0;
+                SCSI_Sense_Data rsense;
+                memset(&rsense, 0, sizeof(rsense));
+                (*task)->ExecuteTaskSync(task, &rsense, &rst, &rtr);
             }
             // No ReleaseSCSITask on this interface; the task dies with the device.
         } else {

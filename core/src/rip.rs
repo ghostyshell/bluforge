@@ -434,7 +434,7 @@ where
     // of *this* title: on a later disc the episode playlist is not the main
     // title, and its PIDs can differ, which would break the PTS end-of-episode
     // test in the feeder.
-    let (marks, video_pids) = match crate::disc::Disc::open(&req.source, req.keydb.as_deref()) {
+    let (marks, _video_pids) = match crate::disc::Disc::open(&req.source, req.keydb.as_deref()) {
         Ok(d) => {
             let _ = d.info(); // chapter marks need the title list read first
             let marks = d.chapters(wanted[0].title_index).unwrap_or_default();
@@ -454,6 +454,10 @@ where
         "-hide_banner".into(),
         "-nostdin".into(),
         "-y".into(),
+        // The disc timeline starts at a non-zero PTS (600s on this title), so
+        // -t only behaves as a duration together with these two flags.
+        "-copyts".into(),
+        "-start_at_zero".into(),
         "-i".into(),
         "pipe:0".into(),
     ];
@@ -476,6 +480,7 @@ where
     // -segment_time and -segment_times are mutually exclusive (ffmpeg refuses the
     // output header if both are set). The muxer's own default is 2s, so use that
     // only when there is a single segment to write.
+    a.extend(["-t".into(), format!("{total:.3}")]);
     if times.is_empty() {
         a.extend(["-segment_time".into(), "999999".into()]);
     }
@@ -529,9 +534,16 @@ where
         let mut reader = TitleReader::new(&disc);
         let mut buf = vec![0u8; 1 << 20];
         let mut stride = 0usize;
+        let mut sync = 0usize;
+        let mut skip_prefix = 0usize;
         let mut total_in = 0u64;
         let stop_after = (total * 90_000.0) as u64;
-        let mut base_pts: Option<u64> = None;
+        let mut base: u64 = 0;
+        let mut have_base = false;
+        let mut content: u64 = 0;
+        let mut last_pts: u64 = 0;
+        let mut pes_seen = 0u64;
+        let mut hit_end = false;
         loop {
             let n = match reader.read(&mut buf) {
                 Ok(0) => {
@@ -546,30 +558,50 @@ where
             };
             total_in += n as u64;
             if stride == 0 {
-                stride = if n >= 5 && buf[4] == 0x47 { 192 } else { 188 };
+                // Find the packet size from the data itself: the first buffer may
+                // not begin on a sync byte, and 188 vs 192 decides every offset.
+                let limit = n.min(8192);
+                for off in 0..limit.saturating_sub(384) {
+                    if buf[off] != 0x47 {
+                        continue;
+                    }
+                    if buf.get(off + 188) == Some(&0x47) && buf.get(off + 376) == Some(&0x47) {
+                        stride = 188;
+                        sync = off;
+                        break;
+                    }
+                    if buf.get(off + 192) == Some(&0x47) && buf.get(off + 384) == Some(&0x47) {
+                        stride = 192;
+                        sync = off + 4; // the TS header lives 4 bytes into each packet
+                        skip_prefix = off;
+                        break;
+                    }
+                }
+                if stride == 0 {
+                    stride = 192;
+                    sync = 4;
+                }
+                tracing::info!(stride, sync, skip_prefix, "tv feeder: packet alignment");
             }
             let mut out: Vec<u8> = Vec::with_capacity(n);
-            let sync = if stride == 192 { 4 } else { 0 };
-            let mut i = 0usize;
-            let mut past_end = false;
+            let start = skip_prefix;
+            skip_prefix = 0;
+            let mut i = start;
             while i + stride <= n {
                 let p = i + sync;
                 if buf[p] == 0x47 {
                     let pid = (((buf[p + 1] & 0x1f) as u16) << 8) | buf[p + 2] as u16;
                     if pid != 0x1fff {
-                        // Read the PTS out of each PES header on the video pid: it
-                        // is the only trustworthy clock here (byte counting drifts
-                        // with the variable bitrate).
-                        let is_video = video_pids.is_empty() || video_pids.contains(&pid);
-                        if is_video && buf[p + 1] & 0x40 != 0 {
+                        // Content clock: the play-all title concatenates clips whose
+                        // timestamps restart at 0, so fold each jump into an
+                        // accumulator instead of trusting the absolute PTS.
+                        if buf[p + 1] & 0x40 != 0 {
                             let afc = (buf[p + 3] >> 4) & 3;
                             if afc != 2 {
                                 let mut off = p + 4;
                                 if afc == 3 {
                                     off += 1 + buf[p + 4] as usize;
                                 }
-                                // PES: 00 00 01 | stream | len(2) | '10'+ctrl |
-                                //      PTS_DTS_flags | hdr_len | 5 PTS bytes.
                                 if off + 14 <= i + stride
                                     && buf[off] == 0
                                     && buf[off + 1] == 0
@@ -582,17 +614,32 @@ where
                                         | (((b[2] as u64) & 0xfe) << 14)
                                         | ((b[3] as u64) << 7)
                                         | (((b[4] as u64) & 0xfe) >> 1);
-                                    // Count from the first PTS we see: the disc
-                                    // starts the title at a non-zero timestamp,
-                                    // so absolute comparisons truncate it.
-                                    let base = *base_pts.get_or_insert(pts);
-                                    if base == pts && pts > 0 {
-                                        tracing::info!(base, "tv feeder: first video PTS");
+                                    if !have_base {
+                                        base = pts;
+                                        have_base = true;
                                     }
-                                    if pts.saturating_sub(base) >= stop_after {
-                                        past_end = true;
+                                    if last_pts > pts && last_pts - pts > 90_000 {
+                                        // New clip: account for what we have read so far.
+                                        let elapsed = content + last_pts.saturating_sub(base);
+                                        if elapsed + 45_000 >= stop_after {
+                                            tracing::info!(elapsed, stop_after, "tv feeder: clip end");
+                                            hit_end = true;
+                                            break;
+                                        }
+                                        content = elapsed;
+                                        base = pts;
+                                    }
+                                    let elapsed = content + pts.saturating_sub(base);
+                                    pes_seen += 1;
+                                    if pes_seen <= 3 {
+                                        tracing::info!(pid, pts, elapsed, "tv feeder: pts");
+                                    }
+                                    if elapsed >= stop_after {
+                                        tracing::info!(elapsed, stop_after, "tv feeder: window end");
+                                        hit_end = true;
                                         break;
                                     }
+                                    last_pts = pts;
                                 }
                             }
                         }
@@ -603,14 +650,17 @@ where
                 }
                 i += stride;
             }
-            if i < n {
+            if !hit_end && i < n {
                 out.extend_from_slice(&buf[i..n]);
             }
             if total_in == n as u64 {
                 let head: Vec<String> = out.iter().take(24).map(|b| format!("{b:02x}")).collect();
                 tracing::info!(bytes = out.len(), head = %head.join(" "), "tv feeder: first bytes");
             }
-            if stdin.write_all(&out).is_err() || past_end {
+            if !out.is_empty() && stdin.write_all(&out).is_err() {
+                break;
+            }
+            if hit_end {
                 break;
             }
         }
@@ -747,6 +797,8 @@ where
             a2.extend(["-map".into(), "0".into()]);
         }
         a2.extend(["-c".into(), "copy".into()]);
+        // Hard bound: whatever the segment muxer wrote, the episode is this long.
+        a2.extend(["-t".into(), format!("{:.3}", it.duration_secs)]);
         if have_still {
             a2.extend([
                 "-attach".into(),
@@ -1247,6 +1299,10 @@ fn build_args(req: &RipRequest, ctx: &TrackCtx) -> Vec<String> {
         "-hide_banner".into(),
         "-nostdin".into(),
         "-y".into(),
+        // The disc timeline starts at a non-zero PTS (600s on this title), so
+        // -t only behaves as a duration together with these two flags.
+        "-copyts".into(),
+        "-start_at_zero".into(),
         "-i".into(),
         "pipe:0".into(),
     ];
