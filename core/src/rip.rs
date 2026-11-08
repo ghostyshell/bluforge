@@ -453,15 +453,17 @@ where
     a.extend([
         "-f".into(),
         "segment".into(),
-        // The muxer's default segment_time is 2s; without this it would cut the
-        // whole episode into 2s chunks. Cuts come from -segment_times.
-        "-segment_time".into(),
-        "999999".into(),
         "-segment_format".into(),
         "matroska".into(),
         "-reset_timestamps".into(),
         "1".into(),
     ]);
+    // -segment_time and -segment_times are mutually exclusive (ffmpeg refuses the
+    // output header if both are set). The muxer's own default is 2s, so use that
+    // only when there is a single segment to write.
+    if times.is_empty() {
+        a.extend(["-segment_time".into(), "999999".into()]);
+    }
     if !times.is_empty() {
         a.push("-segment_times".into());
         a.push(times.join(","));
