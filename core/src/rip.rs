@@ -495,22 +495,39 @@ where
     let feeder = std::thread::spawn(move || {
         let disc = match crate::disc::Disc::open(&feed_source, feed_keydb.as_deref()) {
             Ok(d) => d,
-            Err(_) => return,
+            Err(e) => {
+                tracing::error!(%e, "tv feeder: cannot open the disc");
+                return;
+            }
         };
-        if disc.info().is_err() || disc.select(first_title).is_err() {
+        if let Err(e) = disc.info() {
+            tracing::error!(%e, "tv feeder: cannot read the title list");
+            return;
+        }
+        if let Err(e) = disc.select(first_title) {
+            tracing::error!(%e, "tv feeder: cannot select the title");
             return;
         }
         // Seek to the first episode instead of reading the title from the top.
         let _ = disc.seek(first_start);
+        tracing::info!(first_start, "tv feeder: reading");
         let mut reader = TitleReader::new(&disc);
         let mut buf = vec![0u8; 1 << 20];
         let mut stride = 0usize;
+        let mut total_in = 0u64;
         loop {
             let n = match reader.read(&mut buf) {
-                Ok(0) => break,
+                Ok(0) => {
+                    tracing::warn!(total_in, "tv feeder: end of stream");
+                    break;
+                }
                 Ok(n) => n,
-                Err(_) => break,
+                Err(e) => {
+                    tracing::error!(%e, total_in, "tv feeder: disc read failed");
+                    break;
+                }
             };
+            total_in += n as u64;
             if stride == 0 {
                 stride = if n >= 5 && buf[4] == 0x47 { 192 } else { 188 };
             }
@@ -563,6 +580,7 @@ where
                 break;
             }
         }
+        tracing::info!(total_in, "tv feeder: done");
     });
 
     // Progress from the muxer, then wait for both sides.
@@ -590,6 +608,13 @@ where
             .and_then(|s| s.to_string_lossy().trim_start_matches("seg").parse::<u64>().ok())
             .unwrap_or(0)
     });
+    if segs.is_empty() {
+        // ffmpeg exits 0 on an empty pipe, which used to look like a successful
+        // rip that wrote nothing (the feeder thread failing is the usual cause).
+        return Err(CoreError::Disc(
+            "no segments written - the disc feed failed (see the log above)".into(),
+        ));
+    }
 
     // Anime (Japanese audio present) gets OP/ED/preview chapters labelled.
     let anime = ctx

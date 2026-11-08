@@ -183,6 +183,31 @@ enum KeysAction {
     Update,
 }
 
+
+/// A `/dev/rdiskN` node goes stale when the drive re-enumerates (macOS moved it
+/// from disk5 to disk4 and back during one session). If the requested node is
+/// gone, use the optical drive that is present now.
+fn resolve_source(p: &std::path::Path) -> std::path::PathBuf {
+    if p.exists() {
+        return p.to_path_buf();
+    }
+    let name = p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    if !(name.starts_with("rdisk") || name.starts_with("disk")) {
+        return p.to_path_buf();
+    }
+    if let Some(d) = bluforge_core::device::list_optical().into_iter().next() {
+        let path = d
+            .device_path
+            .clone()
+            .unwrap_or_else(|| format!("/dev/r{}", d.bsd_name));
+        if std::path::Path::new(&path).exists() {
+            eprintln!("note: {} is gone; the drive re-enumerated, using {path}", p.display());
+            return std::path::PathBuf::from(path);
+        }
+    }
+    p.to_path_buf()
+}
+
 fn main() {
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -252,7 +277,8 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
             series,
             chapters,
         } => {
-            let disc = bluforge_core::Disc::open(path, Some(&keys::keydb_path()))?;
+            let source = resolve_source(path);
+            let disc = bluforge_core::Disc::open(&source, Some(&keys::keydb_path()))?;
             let info = disc.info()?;
             if cli.json {
                 println!(
@@ -412,7 +438,7 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
         } => {
             use bluforge_core::{IsoFormat, IsoProgress, IsoRequest};
             let req = IsoRequest {
-                source: source.clone(),
+                source: resolve_source(source),
                 keydb: Some(keys::keydb_path()),
                 dest: dest.clone(),
                 format: if *folder { IsoFormat::Folder } else { IsoFormat::Iso },
@@ -476,7 +502,7 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
                 RipMode::Remux { container: container_kind }
             };
             let req = RipRequest {
-                source: source.clone(),
+                source: resolve_source(source),
                 keydb: Some(keys::keydb_path()),
                 title: *title,
                 output: output.clone(),
