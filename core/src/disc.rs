@@ -195,6 +195,14 @@ impl Disc {
 
         let have = |p: &str| Path::new(p).is_file();
 
+        // `BLUFORGE_DECRYPT=aacs` runs without MakeMKV at all; `=mmbd` forces
+        // MakeMKV's library. Default: MakeMKV when installed (it covers revoked
+        // drives and discs missing from KEYDB), libaacs when it is not.
+        let forced = env::var("BLUFORGE_DECRYPT").unwrap_or_default();
+        let aacs_path = ["/opt/homebrew/lib/libaacs", "/usr/local/lib/libaacs"]
+            .into_iter()
+            .find(|c| have(&format!("{c}.dylib")));
+
         let mmbd = [
             "/Applications/MakeMKV.app/Contents/lib/libmmbd_new",
             "/Applications/MakeMKV.app/Contents/lib/libmmbd_old",
@@ -205,17 +213,20 @@ impl Disc {
         .find(|c| have(&format!("{c}.dylib")));
 
         if env::var_os("LIBAACS_PATH").is_none() {
-            match mmbd {
-                Some(c) => env::set_var("LIBAACS_PATH", c),
-                None => {
-                    for c in ["/opt/homebrew/lib/libaacs", "/usr/local/lib/libaacs"] {
-                        if have(&format!("{c}.dylib")) {
-                            env::set_var("LIBAACS_PATH", c);
-                            break;
-                        }
-                    }
-                }
+            match (forced.as_str(), mmbd, aacs_path) {
+                ("aacs", _, Some(c)) => env::set_var("LIBAACS_PATH", c),
+                ("mmbd", Some(c), _) => env::set_var("LIBAACS_PATH", c),
+                (_, Some(c), _) => env::set_var("LIBAACS_PATH", c),
+                (_, None, Some(c)) => env::set_var("LIBAACS_PATH", c),
+                _ => {}
             }
+        }
+
+        // libaacs reads KEYDB.cfg from its own config dir, not ours. Point it at
+        // the database we maintain so discs that are in KEYDB decrypt without
+        // any proprietary library.
+        if forced != "mmbd" {
+            Self::link_keydb_for_libaacs(&crate::keys::keydb_path());
         }
 
         if env::var_os("LIBBDPLUS_PATH").is_none() {
@@ -239,6 +250,32 @@ impl Disc {
             std::env::var("LIBAACS_PATH").ok(),
             std::env::var("LIBBDPLUS_PATH").ok(),
         )
+    }
+
+    /// Point libaacs at our KEYDB.cfg (it only looks inside its own config dir).
+    fn link_keydb_for_libaacs(keydb: &Path) {
+        use std::path::PathBuf;
+        if !keydb.is_file() {
+            return;
+        }
+        let dir = if cfg!(target_os = "macos") {
+            std::env::var("HOME").ok().map(|h| PathBuf::from(h).join("Library/Preferences/aacs"))
+        } else {
+            std::env::var("HOME").ok().map(|h| PathBuf::from(h).join(".config/aacs"))
+        };
+        let Some(dir) = dir else { return };
+        let link = dir.join("KEYDB.cfg");
+        if std::fs::read_link(&link).ok().as_deref() == Some(keydb) {
+            return;
+        }
+        if link.exists() {
+            // Do not clobber a user-managed database.
+            return;
+        }
+        if std::fs::create_dir_all(&dir).is_ok() {
+            #[cfg(unix)]
+            let _ = std::os::unix::fs::symlink(keydb, &link);
+        }
     }
 
     /// Open a disc at `path` (a mounted volume, an ISO, or a `/dev/rdiskX`).
