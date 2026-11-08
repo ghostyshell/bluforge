@@ -543,7 +543,11 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
                     eprint!("\r  {pct:>3}%  {:.0} fps  {}          ", p.fps, p.speed.trim());
                 }
             })?;
-            eprintln!("\nwrote {dest}");
+            if dest.is_empty() {
+                eprintln!("\nrip finished but reported no output file");
+            } else {
+                eprintln!("\nwrote {dest}");
+            }
         }
         Cmd::Covers { cmd } => {
             use bluforge_core::covers::{self, CoverSource};

@@ -462,12 +462,14 @@ where
         "-reset_timestamps".into(),
         "1".into(),
     ]);
-    a.extend(["-t".into(), format!("{total:.3}")]); // only the wanted window
     if !times.is_empty() {
         a.push("-segment_times".into());
         a.push(times.join(","));
     }
     a.extend(meta);
+    // Without this the TV path never reports progress: ffmpeg writes its stats
+    // to stderr, which is not the pipe we parse.
+    a.extend(["-progress".into(), "pipe:1".into(), "-nostats".into()]);
     a.push(pattern.to_string_lossy().into_owned());
 
     tracing::info!(?a, "spawning ffmpeg (tv)");
@@ -476,7 +478,9 @@ where
         .args(&a)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        // Errors here are invisible otherwise, and a failed mux looks exactly
+        // like a dead disc feed.
+        .stderr(Stdio::inherit())
         .spawn()
         .map_err(|e| CoreError::Disc(format!("spawn ffmpeg: {e}")))?;
     let mut stdin = child.stdin.take().ok_or_else(|| CoreError::Disc("ffmpeg stdin".into()))?;
@@ -489,10 +493,10 @@ where
         .find(|s| s.kind == "video")
         .map(|s| s.pid)
         .unwrap_or(0x1011);
-    let stop_ticks = ((first_start + total) * 90_000.0) as u64;
     let feed_source = req.source.clone();
     let feed_keydb = req.keydb.clone();
     let feeder = std::thread::spawn(move || {
+        tracing::info!("tv feeder: thread started");
         let disc = match crate::disc::Disc::open(&feed_source, feed_keydb.as_deref()) {
             Ok(d) => d,
             Err(e) => {
@@ -515,6 +519,8 @@ where
         let mut buf = vec![0u8; 1 << 20];
         let mut stride = 0usize;
         let mut total_in = 0u64;
+        let stop_after = (total * 90_000.0) as u64;
+        let mut base_pts: Option<u64> = None;
         loop {
             let n = match reader.read(&mut buf) {
                 Ok(0) => {
@@ -545,24 +551,36 @@ where
                         // with the variable bitrate).
                         if pid == video_pid && buf[p + 1] & 0x40 != 0 {
                             let afc = (buf[p + 3] >> 4) & 3;
-                            let mut off = p + 4;
-                            if afc == 3 {
-                                off += 1 + buf[p + 4] as usize;
-                            }
-                            if off + 14 <= i + stride
-                                && buf[off] == 0
-                                && buf[off + 1] == 0
-                                && buf[off + 2] == 1
-                                && buf[off + 7] & 0x80 != 0
-                            {
-                                let pts = ((buf[off + 9] as u64 & 0x0e) << 29)
-                                    | ((buf[off + 10] as u64) << 22)
-                                    | ((buf[off + 11] as u64 & 0xfe) << 14)
-                                    | ((buf[off + 12] as u64) << 7)
-                                    | ((buf[off + 13] as u64) >> 1);
-                                if pts >= stop_ticks {
-                                    past_end = true;
-                                    break;
+                            if afc != 2 {
+                                let mut off = p + 4;
+                                if afc == 3 {
+                                    off += 1 + buf[p + 4] as usize;
+                                }
+                                // PES: 00 00 01 | stream | len(2) | '10'+ctrl |
+                                //      PTS_DTS_flags | hdr_len | 5 PTS bytes.
+                                if off + 14 <= i + stride
+                                    && buf[off] == 0
+                                    && buf[off + 1] == 0
+                                    && buf[off + 2] == 1
+                                    && buf[off + 7] & 0x80 != 0
+                                {
+                                    let b = &buf[off + 9..off + 14];
+                                    let pts = (((b[0] as u64) & 0x0e) << 29)
+                                        | ((b[1] as u64) << 22)
+                                        | (((b[2] as u64) & 0xfe) << 14)
+                                        | ((b[3] as u64) << 7)
+                                        | (((b[4] as u64) & 0xfe) >> 1);
+                                    // Count from the first PTS we see: the disc
+                                    // starts the title at a non-zero timestamp,
+                                    // so absolute comparisons truncate it.
+                                    let base = *base_pts.get_or_insert(pts);
+                                    if base == pts && pts > 0 {
+                                        tracing::info!(base, "tv feeder: first video PTS");
+                                    }
+                                    if pts.saturating_sub(base) >= stop_after {
+                                        past_end = true;
+                                        break;
+                                    }
                                 }
                             }
                         }
@@ -575,6 +593,10 @@ where
             }
             if i < n {
                 out.extend_from_slice(&buf[i..n]);
+            }
+            if total_in == n as u64 {
+                let head: Vec<String> = out.iter().take(24).map(|b| format!("{b:02x}")).collect();
+                tracing::info!(bytes = out.len(), head = %head.join(" "), "tv feeder: first bytes");
             }
             if stdin.write_all(&out).is_err() || past_end {
                 break;
@@ -593,6 +615,7 @@ where
     }
     let _ = feeder.join();
     let status = child.wait()?;
+    tracing::info!(?status, "tv ffmpeg exited");
 
     // The segment muxer numbers its output by timestamp, not 0..n, so collect
     // whatever it wrote and order it by that number.
