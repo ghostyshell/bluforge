@@ -379,6 +379,13 @@ where
     let disc = crate::disc::Disc::open(&req.source, req.keydb.as_deref())?;
     let _ = disc.info()?;
     disc.select(title)?;
+    // When the wanted range does not start at the first clip, jump to it: the
+    // splitter only writes wanted clips anyway, so there is no reason to read
+    // the earlier ones.
+    let start_secs = wanted[0].start_secs;
+    if start_secs > 0.5 {
+        let _ = disc.seek(start_secs);
+    }
     let video_pids: Vec<u16> = disc
         .streams(title)
         .unwrap_or_default()
@@ -392,7 +399,7 @@ where
     let mut stride = 0usize;
     let mut sync = 0usize;
     let mut skip = 0usize;
-    let mut clip = 0usize;
+    let mut clip = if start_secs > 0.5 { first_idx } else { 0 };
     let mut base: Option<u64> = None;
     let mut last_pts = 0u64;
     let mut current: Option<(std::fs::File, Vec<u8>)> = None;
@@ -468,8 +475,12 @@ where
                                 | (((b[2] as u64) & 0xfe) << 14)
                                 | ((b[3] as u64) << 7)
                                 | (((b[4] as u64) & 0xfe) >> 1);
+                            // The last wanted clip runs to the end of the title:
+                            // splitting there would only truncate it.
                             let mut next = false;
-                            if let Some(b0) = base {
+                            if clip >= last_wanted {
+                                next = false;
+                            } else if let Some(b0) = base {
                                 if last_pts > pts && last_pts - pts > 90_000 {
                                     next = true; // timestamps restarted: new clip
                                 } else if (pts.saturating_sub(b0) as f64) / 90_000.0
@@ -892,7 +903,7 @@ pub fn label_anime_chapters(ch: &mut [crate::disc::Chapter], duration: f64) {
         .map(|(i, _)| *i)
         .or_else(|| {
             let g = gaps[0].1;
-            (ch[0].start_secs <= 5.0 && (75.0..=300.0).contains(&g)).then_some(0)
+            (ch[0].start_secs <= 5.0 && (75.0..=420.0).contains(&g)).then_some(0)
         });
     if let Some(i) = op {
         ch[i].name = Some("Opening".into());
