@@ -350,6 +350,204 @@ pub struct TrackCtx {
 
 /// Rip a disc as TV: one ffmpeg pass with the segment muxer, cutting at the
 /// episode (clip) boundaries, then rename to `SxxExx - Title`.
+
+/// Split a play-all title into one raw `.m2ts` per clip (episode), without
+/// relying on timestamps: the clips restart their PTS at zero, so both `-t` and
+/// the segment muxer cut in the wrong place. Clip boundaries come from a PTS
+/// reset or from the planned clip duration, whichever comes first.
+fn split_clips<F>(
+    req: &RipRequest,
+    wanted: &[&crate::tv::PlanItem],
+    plan: &crate::tv::Plan,
+    tmp_dir: &std::path::Path,
+    prog: &mut RipProgress,
+    on_progress: &mut F,
+) -> Result<Vec<std::path::PathBuf>, CoreError>
+where
+    F: FnMut(RipProgress),
+{
+    use std::io::Write as _;
+
+    let title = wanted[0].title_index;
+    let first_idx = plan
+        .items
+        .iter()
+        .position(|i| (i.start_secs - wanted[0].start_secs).abs() < 0.001)
+        .unwrap_or(0);
+    let last_wanted = first_idx + wanted.len() - 1;
+
+    let disc = crate::disc::Disc::open(&req.source, req.keydb.as_deref())?;
+    let _ = disc.info()?;
+    disc.select(title)?;
+    let video_pids: Vec<u16> = disc
+        .streams(title)
+        .unwrap_or_default()
+        .iter()
+        .filter(|s| s.kind == "video")
+        .map(|s| s.pid)
+        .collect();
+
+    let mut reader = TitleReader::new(&disc);
+    let mut buf = vec![0u8; 1 << 20];
+    let mut stride = 0usize;
+    let mut sync = 0usize;
+    let mut skip = 0usize;
+    let mut clip = 0usize;
+    let mut base: Option<u64> = None;
+    let mut last_pts = 0u64;
+    let mut current: Option<(std::fs::File, Vec<u8>)> = None;
+    let mut paths: Vec<std::path::PathBuf> = Vec::new();
+    let mut read_total = 0u64;
+
+    let expected = |i: usize| plan.items.get(i).map(|x| x.duration_secs).unwrap_or(0.0);
+    let wanted_clip = |i: usize| i >= first_idx && i <= last_wanted;
+
+    'outer: loop {
+        let n = match reader.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => n,
+            Err(e) => return Err(CoreError::Disc(format!("disc read: {e}"))),
+        };
+        read_total += n as u64;
+
+        if stride == 0 {
+            let limit = n.min(8192);
+            for off in 0..limit.saturating_sub(384) {
+                if buf[off] != 0x47 {
+                    continue;
+                }
+                if buf.get(off + 188) == Some(&0x47) && buf.get(off + 376) == Some(&0x47) {
+                    stride = 188;
+                    sync = off;
+                    break;
+                }
+                if buf.get(off + 192) == Some(&0x47) && buf.get(off + 384) == Some(&0x47) {
+                    stride = 192;
+                    // `off` is the TS sync byte; the 4-byte m2ts timestamp header
+                    // sits immediately before it, so the packet starts at off-4.
+                    let start = off.saturating_sub(4);
+                    skip = start;
+                    sync = off - start;
+                    break;
+                }
+            }
+            if stride == 0 {
+                stride = 192;
+                sync = 4;
+            }
+            tracing::info!(stride, sync, skip, "tv split: packet alignment");
+        }
+
+        let mut i = skip;
+        skip = 0;
+        while i + stride <= n {
+            let p = i + sync;
+            if buf[p] != 0x47 {
+                i += stride;
+                continue;
+            }
+            let pid = (((buf[p + 1] & 0x1f) as u16) << 8) | buf[p + 2] as u16;
+            if pid != 0x1fff {
+                let is_video = video_pids.is_empty() || video_pids.contains(&pid);
+                if is_video && buf[p + 1] & 0x40 != 0 {
+                    let afc = (buf[p + 3] >> 4) & 3;
+                    if afc != 2 {
+                        let mut off = p + 4;
+                        if afc == 3 {
+                            off += 1 + buf[p + 4] as usize;
+                        }
+                        if off + 14 <= i + stride
+                            && buf[off] == 0
+                            && buf[off + 1] == 0
+                            && buf[off + 2] == 1
+                            && buf[off + 7] & 0x80 != 0
+                        {
+                            let b = &buf[off + 9..off + 14];
+                            let pts = (((b[0] as u64) & 0x0e) << 29)
+                                | ((b[1] as u64) << 22)
+                                | (((b[2] as u64) & 0xfe) << 14)
+                                | ((b[3] as u64) << 7)
+                                | (((b[4] as u64) & 0xfe) >> 1);
+                            let mut next = false;
+                            if let Some(b0) = base {
+                                if last_pts > pts && last_pts - pts > 90_000 {
+                                    next = true; // timestamps restarted: new clip
+                                } else if (pts.saturating_sub(b0) as f64) / 90_000.0
+                                    >= expected(clip) + 0.5
+                                {
+                                    next = true; // planned clip length reached
+                                }
+                            }
+                            if next {
+                                if let Some((mut f, b)) = current.take() {
+                                    let _ = f.write_all(&b);
+                                }
+                                clip += 1;
+                                base = Some(pts);
+                                if clip > last_wanted {
+                                    break 'outer;
+                                }
+                                if wanted_clip(clip) {
+                                    let path = tmp_dir
+                                        .join(format!("clip{:03}.m2ts", clip - first_idx));
+                                    let f = std::fs::File::create(&path)?;
+                                    paths.push(path);
+                                    current = Some((f, Vec::with_capacity(1 << 20)));
+                                }
+                            } else if base.is_none() {
+                                base = Some(pts);
+                            }
+                            last_pts = pts;
+                        }
+                    }
+                }
+                if wanted_clip(clip) {
+                    if current.is_none() && clip >= first_idx {
+                        let path = tmp_dir.join(format!("clip{:03}.m2ts", clip - first_idx));
+                        let f = std::fs::File::create(&path)?;
+                        paths.push(path);
+                        current = Some((f, Vec::with_capacity(1 << 20)));
+                    }
+                    if let Some((_, b)) = current.as_mut() {
+                        b.extend_from_slice(&buf[i..i + stride]);
+                    }
+                }
+            }
+            i += stride;
+        }
+        if let Some((_, b)) = current.as_mut() {
+            if b.len() >= (1 << 20) {
+                if let Some((f, b)) = current.as_mut() {
+                    f.write_all(b)?;
+                    b.clear();
+                }
+            }
+        }
+        let pct = if last_wanted > first_idx {
+            ((clip - first_idx) as f64 / (last_wanted - first_idx) as f64 * 100.0).min(99.0)
+        } else {
+            50.0
+        };
+        if (pct - prog.percent).abs() >= 1.0 {
+            prog.percent = pct;
+            prog.message = format!("episode {} of {}", clip - first_idx + 1, wanted.len());
+            on_progress(prog.clone());
+        }
+    }
+
+    if let Some((mut f, b)) = current.take() {
+        f.write_all(&b)?;
+        f.flush().ok();
+    }
+    tracing::info!(clips = paths.len(), read_bytes = read_total, "tv split: done");
+    if paths.is_empty() {
+        return Err(CoreError::Disc(
+            "no clips split out of the title (disc read failed?)".into(),
+        ));
+    }
+    Ok(paths)
+}
+
 fn run_tv<F>(
     plan: &crate::tv::Plan,
     req: &RipRequest,
@@ -428,279 +626,20 @@ where
 
     let tmp_dir = std::env::temp_dir().join(format!("bluforge-tv-{}", std::process::id()));
     let _ = std::fs::create_dir_all(&tmp_dir);
-    let pattern = tmp_dir.join("seg%03d.mkv");
-
-    // Chapters of the whole title (sliced per episode below) and the video PIDs
-    // of *this* title: on a later disc the episode playlist is not the main
-    // title, and its PIDs can differ, which would break the PTS end-of-episode
-    // test in the feeder.
-    let (marks, video_pids) = match crate::disc::Disc::open(&req.source, req.keydb.as_deref()) {
-        Ok(d) => {
-            let _ = d.info(); // chapter marks need the title list read first
-            let marks = d.chapters(wanted[0].title_index).unwrap_or_default();
-            let pids: Vec<u16> = d
-                .streams(wanted[0].title_index)
-                .unwrap_or_default()
-                .iter()
-                .filter(|s| s.kind == "video")
-                .map(|s| s.pid)
-                .collect();
-            (marks, pids)
-        }
-        Err(_) => (Vec::new(), Vec::new()),
-    };
-
-    let mut a: Vec<String> = vec![
-        "-hide_banner".into(),
-        "-nostdin".into(),
-        "-y".into(),
-        // The disc timeline starts at a non-zero PTS (600s on this title), so
-        // -t only behaves as a duration together with these two flags.
-        "-copyts".into(),
-        "-start_at_zero".into(),
-        "-i".into(),
-        "pipe:0".into(),
-    ];
-    for m in maps.iter() {
-        a.push("-map".into());
-        a.push(m.clone());
-    }
-    a.extend(["-c".into(), "copy".into()]);
-    if let Some(seek) = Some(first_start).filter(|s| *s > 0.5) {
-        let _ = seek; // handled by -ss on the segment muxer below
-    }
-    a.extend([
-        "-f".into(),
-        "segment".into(),
-        "-segment_format".into(),
-        "matroska".into(),
-        "-reset_timestamps".into(),
-        "1".into(),
-    ]);
-    // -segment_time and -segment_times are mutually exclusive (ffmpeg refuses the
-    // output header if both are set). The muxer's own default is 2s, so use that
-    // only when there is a single segment to write.
-    a.extend(["-t".into(), format!("{total:.3}")]);
-    if times.is_empty() {
-        a.extend(["-segment_time".into(), "999999".into()]);
-    }
-    if !times.is_empty() {
-        a.push("-segment_times".into());
-        a.push(times.join(","));
-    }
-    a.extend(meta);
-    // Without this the TV path never reports progress: ffmpeg writes its stats
-    // to stderr, which is not the pipe we parse.
-    a.extend(["-progress".into(), "pipe:1".into(), "-nostats".into()]);
-    a.push(pattern.to_string_lossy().into_owned());
-
-    tracing::info!(?a, "spawning ffmpeg (tv)");
-
-    let mut child = Command::new(ffmpeg_path())
-        .args(&a)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        // Errors here are invisible otherwise, and a failed mux looks exactly
-        // like a dead disc feed.
-        .stderr(Stdio::inherit())
-        .spawn()
-        .map_err(|e| CoreError::Disc(format!("spawn ffmpeg: {e}")))?;
-    let mut stdin = child.stdin.take().ok_or_else(|| CoreError::Disc("ffmpeg stdin".into()))?;
-
-    // Feed on a thread so the main one can parse -progress.
-    let first_title = wanted[0].title_index;
-    let feed_source = req.source.clone();
-    let feed_keydb = req.keydb.clone();
-    let feeder = std::thread::spawn(move || {
-        tracing::info!("tv feeder: thread started");
-        let disc = match crate::disc::Disc::open(&feed_source, feed_keydb.as_deref()) {
-            Ok(d) => d,
-            Err(e) => {
-                tracing::error!(%e, "tv feeder: cannot open the disc");
-                return;
-            }
-        };
-        if let Err(e) = disc.info() {
-            tracing::error!(%e, "tv feeder: cannot read the title list");
-            return;
-        }
-        if let Err(e) = disc.select(first_title) {
-            tracing::error!(%e, "tv feeder: cannot select the title");
-            return;
-        }
-        // Seek to the first episode instead of reading the title from the top.
-        let _ = disc.seek(first_start);
-        tracing::info!(first_start, "tv feeder: reading");
-        let mut reader = TitleReader::new(&disc);
-        let mut buf = vec![0u8; 1 << 20];
-        let mut stride = 0usize;
-        let mut sync = 0usize;
-        let mut skip_prefix = 0usize;
-        let mut total_in = 0u64;
-        let stop_after = (total * 90_000.0) as u64;
-        let mut base: u64 = 0;
-        let mut have_base = false;
-        let mut content: u64 = 0;
-        let mut last_pts: u64 = 0;
-        let mut pes_seen = 0u64;
-        let mut hit_end = false;
-        loop {
-            let n = match reader.read(&mut buf) {
-                Ok(0) => {
-                    tracing::warn!(total_in, "tv feeder: end of stream");
-                    break;
-                }
-                Ok(n) => n,
-                Err(e) => {
-                    tracing::error!(%e, total_in, "tv feeder: disc read failed");
-                    break;
-                }
-            };
-            total_in += n as u64;
-            if stride == 0 {
-                // Find the packet size from the data itself: the first buffer may
-                // not begin on a sync byte, and 188 vs 192 decides every offset.
-                let limit = n.min(8192);
-                for off in 0..limit.saturating_sub(384) {
-                    if buf[off] != 0x47 {
-                        continue;
-                    }
-                    if buf.get(off + 188) == Some(&0x47) && buf.get(off + 376) == Some(&0x47) {
-                        stride = 188;
-                        sync = off;
-                        break;
-                    }
-                    if buf.get(off + 192) == Some(&0x47) && buf.get(off + 384) == Some(&0x47) {
-                        stride = 192;
-                        sync = off + 4; // the TS header lives 4 bytes into each packet
-                        skip_prefix = off;
-                        break;
-                    }
-                }
-                if stride == 0 {
-                    stride = 192;
-                    sync = 4;
-                }
-                tracing::info!(stride, sync, skip_prefix, "tv feeder: packet alignment");
-            }
-            let mut out: Vec<u8> = Vec::with_capacity(n);
-            let start = skip_prefix;
-            skip_prefix = 0;
-            let mut i = start;
-            while i + stride <= n {
-                let p = i + sync;
-                if buf[p] == 0x47 {
-                    let pid = (((buf[p + 1] & 0x1f) as u16) << 8) | buf[p + 2] as u16;
-                    if pid != 0x1fff {
-                        // Content clock: the play-all title concatenates clips whose
-                        // timestamps restart at 0, so fold each jump into an
-                        // accumulator instead of trusting the absolute PTS.
-                        let is_video = video_pids.is_empty() || video_pids.contains(&pid);
-                        if is_video && buf[p + 1] & 0x40 != 0 {
-                            let afc = (buf[p + 3] >> 4) & 3;
-                            if afc != 2 {
-                                let mut off = p + 4;
-                                if afc == 3 {
-                                    off += 1 + buf[p + 4] as usize;
-                                }
-                                if off + 14 <= i + stride
-                                    && buf[off] == 0
-                                    && buf[off + 1] == 0
-                                    && buf[off + 2] == 1
-                                    && buf[off + 7] & 0x80 != 0
-                                {
-                                    let b = &buf[off + 9..off + 14];
-                                    let pts = (((b[0] as u64) & 0x0e) << 29)
-                                        | ((b[1] as u64) << 22)
-                                        | (((b[2] as u64) & 0xfe) << 14)
-                                        | ((b[3] as u64) << 7)
-                                        | (((b[4] as u64) & 0xfe) >> 1);
-                                    if !have_base {
-                                        base = pts;
-                                        have_base = true;
-                                    }
-                                    if last_pts > pts && last_pts - pts > 90_000 {
-                                        // New clip: account for what we have read so far.
-                                        let elapsed = content + last_pts.saturating_sub(base);
-                                        if elapsed + 45_000 >= stop_after {
-                                            tracing::info!(elapsed, stop_after, "tv feeder: clip end");
-                                            hit_end = true;
-                                            break;
-                                        }
-                                        content = elapsed;
-                                        base = pts;
-                                    }
-                                    let elapsed = content + pts.saturating_sub(base);
-                                    pes_seen += 1;
-                                    if pes_seen <= 3 {
-                                        tracing::info!(pid, pts, elapsed, "tv feeder: pts");
-                                    }
-                                    if elapsed >= stop_after {
-                                        tracing::info!(elapsed, stop_after, "tv feeder: window end");
-                                        hit_end = true;
-                                        break;
-                                    }
-                                    last_pts = pts;
-                                }
-                            }
-                        }
-                        out.extend_from_slice(&buf[i..i + stride]);
-                    }
-                } else {
-                    out.extend_from_slice(&buf[i..i + stride]);
-                }
-                i += stride;
-            }
-            if !hit_end && i < n {
-                out.extend_from_slice(&buf[i..n]);
-            }
-            if total_in == n as u64 {
-                let head: Vec<String> = out.iter().take(24).map(|b| format!("{b:02x}")).collect();
-                tracing::info!(bytes = out.len(), head = %head.join(" "), "tv feeder: first bytes");
-            }
-            if !out.is_empty() && stdin.write_all(&out).is_err() {
-                break;
-            }
-            if hit_end {
-                break;
-            }
-        }
-        tracing::info!(total_in, "tv feeder: done");
-    });
-
-    // Progress from the muxer, then wait for both sides.
-    if let Some(out) = child.stdout.take() {
-        use std::io::BufRead as _;
-        for line in std::io::BufReader::new(out).lines().map_while(Result::ok) {
-            parse_progress(&line, &mut prog);
-            on_progress(prog.clone());
-        }
-    }
-    let _ = feeder.join();
-    let status = child.wait()?;
-    tracing::info!(?status, "tv ffmpeg exited");
-
-    // The segment muxer numbers its output by timestamp, not 0..n, so collect
-    // whatever it wrote and order it by that number.
-    let mut segs: Vec<std::path::PathBuf> = std::fs::read_dir(&tmp_dir)
-        .map(|d| {
-            d.filter_map(|e| e.ok().map(|e| e.path()))
-                .filter(|p| p.extension().map(|x| x == "mkv").unwrap_or(false))
-                .collect()
+    // Chapters of the whole title; sliced per episode below. (Read before the
+    // split so the marks cover the title even if the split runs long.)
+    let marks = crate::disc::Disc::open(&req.source, req.keydb.as_deref())
+        .and_then(|d| {
+            let _ = d.info()?;
+            d.chapters(wanted[0].title_index)
         })
         .unwrap_or_default();
-    segs.sort_by_key(|p| {
-        p.file_stem()
-            .and_then(|s| s.to_string_lossy().trim_start_matches("seg").parse::<u64>().ok())
-            .unwrap_or(0)
-    });
-    if segs.is_empty() {
-        // ffmpeg exits 0 on an empty pipe, which used to look like a successful
-        // rip that wrote nothing (the feeder thread failing is the usual cause).
-        return Err(CoreError::Disc(
-            "no segments written - the disc feed failed (see the log above)".into(),
-        ));
-    }
+
+    // Disc 2's play-all title concatenates clips whose timestamps restart at
+    // zero, so segmenting by timestamp splits in the wrong place (and produces
+    // files whose duration has nothing to do with their length). Split on the
+    // clip boundaries instead: one raw .m2ts per wanted episode.
+    let segs = split_clips(req, &wanted, plan, &tmp_dir, &mut prog, on_progress)?;
 
     // Anime (Japanese audio present) gets OP/ED/preview chapters labelled.
     let anime = ctx
@@ -865,8 +804,6 @@ where
     prog.message = format!("{} episodes", saved.len());
     prog.dest = saved.first().map(|p| p.clone());
     on_progress(prog);
-    let _ = status;
-    let _ = tmp_dir;
     Ok(())
 }
 
