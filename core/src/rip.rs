@@ -434,7 +434,7 @@ where
     // of *this* title: on a later disc the episode playlist is not the main
     // title, and its PIDs can differ, which would break the PTS end-of-episode
     // test in the feeder.
-    let (marks, _video_pids) = match crate::disc::Disc::open(&req.source, req.keydb.as_deref()) {
+    let (marks, video_pids) = match crate::disc::Disc::open(&req.source, req.keydb.as_deref()) {
         Ok(d) => {
             let _ = d.info(); // chapter marks need the title list read first
             let marks = d.chapters(wanted[0].title_index).unwrap_or_default();
@@ -595,7 +595,8 @@ where
                         // Content clock: the play-all title concatenates clips whose
                         // timestamps restart at 0, so fold each jump into an
                         // accumulator instead of trusting the absolute PTS.
-                        if buf[p + 1] & 0x40 != 0 {
+                        let is_video = video_pids.is_empty() || video_pids.contains(&pid);
+                        if is_video && buf[p + 1] & 0x40 != 0 {
                             let afc = (buf[p + 3] >> 4) & 3;
                             if afc != 2 {
                                 let mut off = p + 4;
