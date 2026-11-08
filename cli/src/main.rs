@@ -115,6 +115,24 @@ enum Cmd {
         #[command(subcommand)]
         cmd: CoversCmd,
     },
+    /// Author a Blu-ray (BDMV / ISO) from finished MKV or MP4 files.
+    Author {
+        /// Input files, in playback order (episodes are chaptered).
+        #[arg(required = true)]
+        inputs: Vec<std::path::PathBuf>,
+        /// Output .iso file or BDMV folder.
+        #[arg(long)]
+        out: std::path::PathBuf,
+        /// Volume label.
+        #[arg(long)]
+        label: Option<String>,
+        /// Do not carry chapter marks from the inputs.
+        #[arg(long)]
+        no_chapters: bool,
+        /// Force a chapter every N minutes instead.
+        #[arg(long)]
+        auto_chapters: Option<u32>,
+    },
     /// Eject the disc from the optical drive.
     Eject,
     /// Show linked library versions.
@@ -423,6 +441,30 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
                     );
                 }
             }
+        }
+        Cmd::Author {
+            inputs,
+            out,
+            label,
+            no_chapters,
+            auto_chapters,
+        } => {
+            let req = bluforge_core::author::AuthorRequest {
+                inputs: inputs.clone(),
+                dest: out.clone(),
+                label: label.clone(),
+                chapters: !*no_chapters,
+                auto_chapter_minutes: *auto_chapters,
+            };
+            let mut last = -1i64;
+            let written = bluforge_core::author::run(&req, |p| {
+                let pct = p.percent as i64;
+                if pct != last {
+                    last = pct;
+                    eprint!("\r  {pct:>3}%  {}          ", p.message);
+                }
+            })?;
+            eprintln!("\nwrote {}", written.display());
         }
         Cmd::Eject => match bluforge_core::device::eject() {
             Ok(m) => println!("{m}"),

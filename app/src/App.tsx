@@ -86,6 +86,10 @@ export default function App() {
   const [tvError, setTvError] = useState<string | null>(null);
   const [mcp, setMcp] = useState<{ enabled: boolean; port: number | null } | null>(null);
   const [startEp, setStartEp] = useState<number | "">("");
+  const [authorFile, setAuthorFile] = useState<string | null>(null);
+  const [authorOut, setAuthorOut] = useState("");
+  const [authorBusy, setAuthorBusy] = useState(false);
+  const [authorProg, setAuthorProg] = useState<{ percent: number; message: string } | null>(null);
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
   const [coverTab, setCoverTab] = useState<CoverRole>("cover");
   const [tabs, setTabs] = useState<Record<CoverRole, TabState>>({
@@ -138,11 +142,20 @@ export default function App() {
       setProgress(p);
       if (p.done) { setBusy(null); setToast("Rip complete"); }
     });
+    const unAuthor = [
+      api.onAuthorProgress((p) => setAuthorProg({ percent: p.percent, message: p.message })),
+      api.onAuthorDone((path) => { setAuthorBusy(false); setToast(`Authored ${path}`); }),
+      api.onAuthorError((e) => { setAuthorBusy(false); setError(e); }),
+    ];
     const unErr = api.onRipError((msg) => {
       setBusy(null);
       setError(msg);
     });
-    return () => { un.then((f) => f()); unErr.then((f) => f()); };
+    return () => {
+      un.then((f) => f());
+      unErr.then((f) => f());
+      unAuthor.forEach((u) => u.then((f) => f()));
+    };
   }, [refresh]);
 
   const openDisc = async (p: string) => {
@@ -328,6 +341,35 @@ export default function App() {
       setToast(`${p.items.length} episodes detected`);
     } catch (e) { setTvError(String(e)); setError(String(e)); }
     finally { setTvBusy(false); }
+  };
+
+  const chooseAuthorFile = async () => {
+    try {
+      const { open } = await import("@tauri-apps/plugin-dialog");
+      const picked = await open({
+        multiple: false,
+        filters: [{ name: "Video", extensions: ["mkv", "mp4", "m2ts"] }],
+      });
+      if (typeof picked === "string") {
+        setAuthorFile(picked);
+        const stem = picked.split("/").pop()?.replace(/\.[^.]+$/, "") ?? "disc";
+        setAuthorOut(`${(cfg?.output_dir ?? "").replace(/\/$/, "")}/${stem}/${stem}.iso`);
+      }
+    } catch (e) { setError(String(e)); }
+  };
+
+  const startAuthor = async () => {
+    if (!authorFile || !authorOut) return;
+    setError(null); setAuthorBusy(true); setAuthorProg({ percent: 0, message: "starting" });
+    try {
+      await api.authorStart({
+        inputs: [authorFile],
+        dest: authorOut,
+        label: null,
+        chapters: true,
+        auto_chapter_minutes: null,
+      });
+    } catch (e) { setError(String(e)); setAuthorBusy(false); }
   };
 
   const saveChosen = async () => {
@@ -620,6 +662,42 @@ export default function App() {
               (probed by event count), full English if there is no English audio. Episodes land at
               the TV template below.
             </p>
+          </section>
+
+          {/* Author */}
+          <section className="card">
+            <div className="row between">
+              <h2>Author a disc</h2>
+              <span className="sub">BDMV / ISO from a finished file</span>
+            </div>
+            <div className="row" style={{ marginTop: 10, gap: 8 }}>
+              <button onClick={chooseAuthorFile} disabled={authorBusy}>Choose file</button>
+              <span className="grow mono truncate">{authorFile ?? "no file selected"}</span>
+            </div>
+            <label className="field" style={{ marginTop: 10 }}>Output ISO
+              <input className="mono" value={authorOut} onChange={(e) => setAuthorOut(e.target.value)}
+                placeholder="…/disc.iso" />
+            </label>
+            <div className="row between" style={{ marginTop: 12, alignItems: "flex-end" }}>
+              <p className="hint" style={{ margin: 0, maxWidth: 380 }}>
+                Keeps the file's chapter marks and writes a UDF 2.50 image. One file per disc for now.
+              </p>
+              <button className="primary" disabled={!authorFile || !authorOut || authorBusy} onClick={startAuthor}>
+                {authorBusy ? "Authoring…" : "Author disc"}
+              </button>
+            </div>
+            {authorProg && (
+              <div style={{ marginTop: 12 }}>
+                <div className="progress" role="progressbar" aria-label="Authoring progress"
+                  aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(authorProg.percent)}>
+                  <i style={{ width: `${authorProg.percent}%` }} />
+                </div>
+                <div className="stats" style={{ marginTop: 8 }} aria-live="polite">
+                  <span>{authorProg.percent.toFixed(0)}%</span>
+                  <span>{authorProg.message}</span>
+                </div>
+              </div>
+            )}
           </section>
 
           {/* Covers */}

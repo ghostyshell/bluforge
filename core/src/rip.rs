@@ -430,13 +430,25 @@ where
     let _ = std::fs::create_dir_all(&tmp_dir);
     let pattern = tmp_dir.join("seg%03d.mkv");
 
-    // Chapters of the whole title; they are sliced per episode below.
-    let marks = crate::disc::Disc::open(&req.source, req.keydb.as_deref())
-        .and_then(|d| {
-            let _ = d.info()?; // chapter marks need the title list read first
-            d.chapters(wanted[0].title_index)
-        })
-        .unwrap_or_default();
+    // Chapters of the whole title (sliced per episode below) and the video PIDs
+    // of *this* title: on a later disc the episode playlist is not the main
+    // title, and its PIDs can differ, which would break the PTS end-of-episode
+    // test in the feeder.
+    let (marks, video_pids) = match crate::disc::Disc::open(&req.source, req.keydb.as_deref()) {
+        Ok(d) => {
+            let _ = d.info(); // chapter marks need the title list read first
+            let marks = d.chapters(wanted[0].title_index).unwrap_or_default();
+            let pids: Vec<u16> = d
+                .streams(wanted[0].title_index)
+                .unwrap_or_default()
+                .iter()
+                .filter(|s| s.kind == "video")
+                .map(|s| s.pid)
+                .collect();
+            (marks, pids)
+        }
+        Err(_) => (Vec::new(), Vec::new()),
+    };
 
     let mut a: Vec<String> = vec![
         "-hide_banner".into(),
@@ -492,12 +504,6 @@ where
 
     // Feed on a thread so the main one can parse -progress.
     let first_title = wanted[0].title_index;
-    let video_pid = ctx
-        .streams
-        .iter()
-        .find(|s| s.kind == "video")
-        .map(|s| s.pid)
-        .unwrap_or(0x1011);
     let feed_source = req.source.clone();
     let feed_keydb = req.keydb.clone();
     let feeder = std::thread::spawn(move || {
@@ -554,7 +560,8 @@ where
                         // Read the PTS out of each PES header on the video pid: it
                         // is the only trustworthy clock here (byte counting drifts
                         // with the variable bitrate).
-                        if pid == video_pid && buf[p + 1] & 0x40 != 0 {
+                        let is_video = video_pids.is_empty() || video_pids.contains(&pid);
+                        if is_video && buf[p + 1] & 0x40 != 0 {
                             let afc = (buf[p + 3] >> 4) & 3;
                             if afc != 2 {
                                 let mut off = p + 4;

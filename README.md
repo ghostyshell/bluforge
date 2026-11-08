@@ -181,6 +181,26 @@ To get true originals, log in - either with credentials in the config
 both verify the cookie against a known free pid before storing it. Without a
 valid cookie the public previews are used and labelled as such.
 
+## Authoring
+
+Turn a finished MKV/MP4 back into a Blu-ray:
+
+```bash
+bluforge author "/path/Episode.mkv" --out "/path/Disc.iso" --label MY_DISC
+```
+
+* Uses `tsMuxeR`; the app looks for it at
+  `~/Library/Application Support/bluforge/bin/tsMuxeR` (override with
+  `BLUFORGE_TSMUXER`).
+* Writes a UDF 2.50 image with a complete BDMV tree (index.bdmv,
+  MovieObject.bdmv, PLAYLIST, CLIPINF, STREAM) - playable in a hardware player.
+* Chapter marks are carried over from the input; `--auto-chapters N` forces one
+  every N minutes and `--no-chapters` drops them.
+* One file per disc for now: multi-episode discs need per-episode playlists
+  (the next authoring step).
+
+In the app: the **Author a disc** card. Over MCP: `author_start`.
+
 ## MCP server
 
 Every capability is available as an MCP tool, served by the app itself on

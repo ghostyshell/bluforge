@@ -4,6 +4,7 @@
 
 use std::path::PathBuf;
 
+pub mod author;
 pub mod config;
 pub mod covers;
 pub mod device;

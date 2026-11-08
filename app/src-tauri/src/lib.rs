@@ -301,6 +301,25 @@ fn start_rip(
 }
 
 #[tauri::command]
+fn author_start(app: AppHandle, request: bluforge_core::author::AuthorRequest) -> Result<(), String> {
+    let app2 = app.clone();
+    std::thread::spawn(move || {
+        let res = bluforge_core::author::run(&request, |p| {
+            let _ = app2.emit("author://progress", p);
+        });
+        match res {
+            Ok(path) => {
+                let _ = app2.emit("author://done", path.display().to_string());
+            }
+            Err(e) => {
+                let _ = app2.emit("author://error", e.to_string());
+            }
+        }
+    });
+    Ok(())
+}
+
+#[tauri::command]
 fn cancel_rip(state: State<RpState>) {
     state.cancel.store(true, Ordering::Relaxed);
 }
@@ -400,6 +419,7 @@ pub fn run() {
             open_disc,
             start_rip,
             cancel_rip,
+            author_start,
             export_iso,
             check_update,
             install_update,

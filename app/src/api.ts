@@ -26,6 +26,12 @@ export type KeyDbStatus = {
   modified: number | null;
 };
 
+export type AuthorProgress = {
+  percent: number;
+  message: string;
+  done: boolean;
+};
+
 export type AppConfig = {
   version: number;
   output_dir: string;
@@ -198,6 +204,19 @@ export const api = {
   installUpdate: () => invoke<void>("install_update"),
   eject: () => invoke<string>("eject"),
   mcpStatus: () => invoke<{ enabled: boolean; port: number | null }>("mcp_status"),
+  authorStart: (request: {
+    inputs: string[];
+    dest: string;
+    label: string | null;
+    chapters: boolean;
+    auto_chapter_minutes: number | null;
+  }) => invoke<void>("author_start", { request }),
+  onAuthorProgress: (cb: (p: AuthorProgress) => void): Promise<UnlistenFn> =>
+    listen<AuthorProgress>("author://progress", (e) => cb(e.payload)),
+  onAuthorDone: (cb: (path: string) => void): Promise<UnlistenFn> =>
+    listen<string>("author://done", (e) => cb(e.payload)),
+  onAuthorError: (cb: (msg: string) => void): Promise<UnlistenFn> =>
+    listen<string>("author://error", (e) => cb(e.payload)),
   tvPlan: (source: string, start?: number | null) =>
     invoke<{
       series: string;

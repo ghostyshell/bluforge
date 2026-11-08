@@ -307,6 +307,7 @@ fn run_tool(name: &str, args: Value) -> Result<Value, String> {
             serde_json::to_value(plan).map_err(|e| e.to_string())
         }
         "rip_start" => start_rip(args),
+        "author_start" => start_author(args),
         "iso_start" => start_iso(args),
         "job_status" => {
             let want = args.get("id").and_then(|v| v.as_u64());
@@ -597,6 +598,71 @@ fn start_rip(args: Value) -> Result<Value, String> {
 }
 
 #[derive(Deserialize)]
+struct AuthorArgs {
+    input: String,
+    dest: String,
+    #[serde(default)]
+    label: Option<String>,
+    #[serde(default)]
+    chapters: Option<bool>,
+    #[serde(default)]
+    auto_chapter_minutes: Option<u32>,
+}
+
+fn start_author(args: Value) -> Result<Value, String> {
+    let a: AuthorArgs = serde_json::from_value(args).map_err(|e| format!("bad author arguments: {e}"))?;
+    require_free_slot()?;
+
+    let req = bluforge_core::author::AuthorRequest {
+        inputs: vec![PathBuf::from(&a.input)],
+        dest: PathBuf::from(&a.dest),
+        label: a.label,
+        chapters: a.chapters.unwrap_or(true),
+        auto_chapter_minutes: a.auto_chapter_minutes,
+    };
+
+    let id = NEXT_JOB.fetch_add(1, Ordering::SeqCst);
+    {
+        let mut v = jobs().lock().unwrap();
+        v.push(Job {
+            id,
+            kind: "author".into(),
+            state: "running".into(),
+            message: "starting".into(),
+            percent: 0.0,
+            dest: Some(a.dest.clone()),
+            error: None,
+            cancel: None,
+        });
+    }
+
+    std::thread::spawn(move || {
+        let res = bluforge_core::author::run(&req, |p: bluforge_core::author::AuthorProgress| {
+            job_update(id, |j| {
+                j.percent = p.percent;
+                if !p.message.is_empty() {
+                    j.message = p.message.clone();
+                }
+            });
+        });
+        match res {
+            Ok(path) => job_update(id, |j| {
+                j.state = "done".into();
+                j.message = "finished".into();
+                j.dest = Some(path.display().to_string());
+            }),
+            Err(e) => job_update(id, |j| {
+                j.state = "error".into();
+                j.error = Some(e.to_string());
+            }),
+        }
+        BUSY.store(false, Ordering::SeqCst);
+    });
+
+    Ok(json!({ "job": id, "state": "running" }))
+}
+
+#[derive(Deserialize)]
 struct IsoArgs {
     source: String,
     dest: String,
@@ -761,6 +827,17 @@ fn tools() -> Vec<Value> {
                 "format": { "type": "string", "enum": ["iso", "folder"] },
                 "label": { "type": "string", "description": "ISO volume label." }
             }, "required": ["source", "dest"] }
+        }),
+        json!({
+            "name": "author_start",
+            "description": "Author a Blu-ray (BDMV/ISO) from one finished file. Chapters come from the input's marks; needs tsMuxeR. Returns a job id.",
+            "inputSchema": { "type": "object", "properties": {
+                "input": { "type": "string", "description": "MKV/MP4/M2TS to author." },
+                "dest": { "type": "string", "description": "Output .iso file or BDMV folder." },
+                "label": { "type": "string" },
+                "chapters": { "type": "boolean" },
+                "auto_chapter_minutes": { "type": "integer", "description": "Force a chapter every N minutes instead." }
+            }, "required": ["input", "dest"] }
         }),
         json!({
             "name": "job_status",
