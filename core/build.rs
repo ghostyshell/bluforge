@@ -2,6 +2,7 @@ use std::env;
 
 fn main() {
     println!("cargo:rerun-if-changed=src/bluray_shim.c");
+    println!("cargo:rerun-if-changed=src/aacs_mmc.c");
     println!("cargo:rerun-if-env-changed=BLURAY_PREFIX");
 
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
@@ -31,6 +32,11 @@ fn main() {
         Ok((includes, link_paths, libs)) => {
             let mut b = cc::Build::new();
             b.file("src/bluray_shim.c");
+            if target_os == "macos" {
+                // AACS volume-ID read (libaacs cannot reach the drive on macOS).
+                b.file("src/aacs_mmc.c");
+                b.flag_if_supported("-fobjc-arc");
+            }
             for inc in &includes {
                 b.include(inc);
             }
@@ -47,6 +53,10 @@ fn main() {
             }
             for lib in &libs {
                 println!("cargo:rustc-link-lib=dylib={lib}");
+            }
+            if target_os == "macos" {
+                println!("cargo:rustc-link-lib=framework=IOKit");
+                println!("cargo:rustc-link-lib=framework=CoreFoundation");
             }
             println!("cargo:rustc-cfg=have_bluray");
         }

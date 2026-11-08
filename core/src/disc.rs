@@ -594,6 +594,85 @@ pub fn library_version() -> String {
 }
 
 /// `Read` adapter over a selected title (yields decrypted MPEG-TS).
+/// Read the 16-byte AACS volume ID straight from the drive on macOS.
+///
+/// libaacs needs it to derive the volume-unique key, but its own macOS MMC layer
+/// cannot find the drive on this stack, so we issue READ DISC STRUCTURE (0x80)
+/// ourselves and hand the result back through its cache.
+#[cfg(target_os = "macos")]
+pub fn aacs_volume_id(device: &Path) -> Option<[u8; 16]> {
+    extern "C" {
+        fn bf_aacs_volume_id(name: *const std::os::raw::c_char, out: *mut u8) -> std::os::raw::c_int;
+    }
+    let name = device.file_name()?.to_string_lossy().trim_start_matches('r').to_string();
+    let cname = std::ffi::CString::new(name).ok()?;
+    let mut out = [0u8; 16];
+    let rc = unsafe { bf_aacs_volume_id(cname.as_ptr(), out.as_mut_ptr()) };
+    if rc == 0 {
+        Some(out)
+    } else {
+        tracing::warn!(rc, "aacs: could not read the volume id");
+        None
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn aacs_volume_id(_device: &Path) -> Option<[u8; 16]> {
+    None
+}
+
+/// Seed libaacs's volume-ID cache: `~/Library/Caches/aacs/vid/<sha1(Unit_Key_RO.inf)>`.
+pub fn aacs_cache_volume_id(disc_root: &Path, vid: &[u8; 16]) -> bool {
+    let ukf = disc_root.join("AACS").join("Unit_Key_RO.inf");
+    let Ok(data) = std::fs::read(&ukf) else {
+        tracing::warn!(path = %ukf.display(), "aacs: no unit key file, cannot compute the disc id");
+        return false;
+    };
+    aacs_cache_volume_id_bytes(&data, vid)
+}
+
+/// Cache by unit-key-file content (the disc id is SHA-1 of that file).
+pub fn aacs_cache_volume_id_bytes(unit_key_file: &[u8], vid: &[u8; 16]) -> bool {
+    use sha1::{Digest, Sha1};
+    let id = format!("{:x}", Sha1::digest(unit_key_file));
+    let dir = if cfg!(target_os = "macos") {
+        std::env::var("HOME")
+            .ok()
+            .map(|h| std::path::PathBuf::from(h).join("Library/Caches/aacs/vid"))
+    } else {
+        std::env::var("HOME")
+            .ok()
+            .map(|h| std::path::PathBuf::from(h).join(".cache/aacs/vid"))
+    };
+    let Some(dir) = dir else { return false };
+    if std::fs::create_dir_all(&dir).is_err() {
+        return false;
+    }
+    match std::fs::write(dir.join(&id), vid) {
+        Ok(()) => {
+            tracing::info!(disc_id = %id, "aacs: cached the volume id for libaacs");
+            true
+        }
+        Err(e) => {
+            tracing::warn!(%e, "aacs: cannot write the volume id cache");
+            false
+        }
+    }
+}
+
+/// Unmount the volume so the drive can be opened exclusively for a SCSI command.
+pub fn aacs_unmount(device: &Path) -> bool {
+    std::process::Command::new("diskutil")
+        .arg("unmountDisk")
+        .arg("force")
+        .arg(device)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
 pub struct TitleReader<'a> {
     disc: &'a Disc,
     buf: Vec<u8>,

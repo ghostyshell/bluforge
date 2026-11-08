@@ -133,6 +133,14 @@ enum Cmd {
         #[arg(long)]
         auto_chapters: Option<u32>,
     },
+    /// AACS helper: read the volume ID from the drive and cache it for libaacs.
+    Aacs {
+        /// Device node, eg. /dev/disk4.
+        device: std::path::PathBuf,
+        /// Mounted disc root (used to compute the disc id).
+        #[arg(long)]
+        disc: std::path::PathBuf,
+    },
     /// Eject the disc from the optical drive.
     Eject,
     /// Show linked library versions.
@@ -465,6 +473,27 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
                 }
             })?;
             eprintln!("\nwrote {}", written.display());
+        }
+        Cmd::Aacs { device, disc } => {
+            // The unit-key file is needed for the disc id and lives on the volume,
+            // so read it before unmounting the disc for exclusive access.
+            let ukf = std::fs::read(disc.join("AACS").join("Unit_Key_RO.inf")).ok();
+            let unmounted = bluforge_core::disc::aacs_unmount(device);
+            let vid = bluforge_core::disc::aacs_volume_id(device);
+            match (vid, ukf) {
+                (Some(vid), Some(ukf)) => {
+                    let hex: String = vid.iter().map(|b| format!("{b:02x}")).collect();
+                    println!("volume id : {hex} (unmounted: {unmounted})");
+                    let ok = bluforge_core::disc::aacs_cache_volume_id_bytes(&ukf, &vid);
+                    println!("cached    : {ok}");
+                }
+                (Some(vid), None) => {
+                    let hex: String = vid.iter().map(|b| format!("{b:02x}")).collect();
+                    println!("volume id : {hex}");
+                    println!("cached    : false (no unit key file)");
+                }
+                (None, _) => println!("volume id : unreadable (unmounted: {unmounted})"),
+            }
         }
         Cmd::Eject => match bluforge_core::device::eject() {
             Ok(m) => println!("{m}"),

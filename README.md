@@ -245,6 +245,21 @@ Tools:
 A stale `/dev/rdiskN` (USB drives re-enumerate) is resolved to the current
 optical device automatically.
 
+## Decryption backends
+
+Two AACS implementations can drive libbluray:
+
+| Backend | When | Notes |
+| --- | --- | --- |
+| `libmmbd` (MakeMKV) | default when MakeMKV is installed | Handles LibreDrive and drives whose AACS certificate is revoked; needs the MakeMKV app running. |
+| `libaacs` + KEYDB | `BLUFORGE_DECRYPT=aacs`, or automatically when MakeMKV is absent | No proprietary code. Works for discs listed in KEYDB; the app links its copy where libaacs looks (`~/Library/Preferences/aacs/KEYDB.cfg` on macOS). |
+
+`bluforge aacs <device> --disc <mount>` reads the drive's AACS volume ID and
+seeds libaacs's cache. On this drive the read needs an authenticated AGID
+(sense `05/6F/02` otherwise), and bus encryption is reported as supported, so
+discs that are neither in KEYDB nor decryptable by libaacs's own handshake still
+need MakeMKV's LibreDrive.
+
 ## Configuration & data
 
 * Config: `~/Library/Application Support/bluforge/config.json`
