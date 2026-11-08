@@ -20,7 +20,9 @@ authoring with custom menus and burning.
 | Track defaults: English non-commentary audio, subtitles off | ✅ |
 | Cover art: search/view/download from HiResCovers, dvdcover.com, TMDB | ✅ |
 | Decrypted ISO / folder export | ✅ |
+| TV / anime: per-episode split, SxxExx titles, OP/ED/preview chapters | ✅ |
 | Desktop UI (Tauri v2) | ✅ |
+| MCP server (all features as tools, localhost, off by default) | ✅ |
 | Blu-ray authoring + menus + burning | 🚧 |
 | Self-update wiring (Tauri updater) | ✅ (needs a signed release) |
 | Windows / Linux | 🚧 (macOS first; non-macOS device layer stubbed) |
@@ -179,10 +181,57 @@ To get true originals, log in - either with credentials in the config
 both verify the cookie against a known free pid before storing it. Without a
 valid cookie the public previews are used and labelled as such.
 
+## MCP server
+
+Every capability is available as an MCP tool, served by the app itself on
+localhost. It is **off by default** (no listening socket); enable it in the
+sidebar (**MCP server**) or in the config:
+
+```json
+{ "mcp_enabled": true, "mcp_port": 8848 }
+```
+
+* Endpoint: `POST http://127.0.0.1:8848/mcp` (JSON-RPC 2.0, stateless HTTP)
+* Health: `GET http://127.0.0.1:8848/`
+* Bound to `127.0.0.1` only; the listener stops when the toggle is off or the
+  port changes.
+
+Client configuration:
+
+```json
+{
+  "mcpServers": {
+    "bluforge": { "type": "http", "url": "http://127.0.0.1:8848/mcp" }
+  }
+}
+```
+
+Tools:
+
+| Tool | What it does |
+| --- | --- |
+| `status` | version, optical drives, key DB, port, output folder |
+| `disc_info` | titles, streams, chapters for a disc / ISO / folder |
+| `tv_plan` | split a TV disc into episodes (TMDB titles, stills) |
+| `rip_start` | remux or encode, movie or TV; returns a job id |
+| `job_status` / `job_cancel` | progress and cancellation for rips and exports |
+| `iso_start` | decrypted ISO or BDMV folder export |
+| `covers_search` / `covers_download` | cover art from hirescovers / dvdcover / TMDB |
+| `keys_update` | refresh KEYDB.cfg |
+| `eject` | open the tray |
+| `config_get` / `config_set` | read or patch settings |
+| `preview_output` / `template_placeholders` | render the output template |
+
+A stale `/dev/rdiskN` (USB drives re-enumerate) is resolved to the current
+optical device automatically.
+
 ## Configuration & data
 
 * Config: `~/Library/Application Support/bluforge/config.json`
 * Keys:   `~/Library/Application Support/bluforge/KEYDB.cfg`
+* Disc memory: `~/Library/Application Support/bluforge/tv_discs.json` - which
+  episode numbers each disc held, so a later disc continues from there even when
+  discs hold different counts (8 + 4 here). Override with `--start-episode`.
 
 Keys refresh on launch (toggleable) and via the **Update** button.
 

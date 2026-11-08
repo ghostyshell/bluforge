@@ -35,6 +35,10 @@ export type AppConfig = {
   auto_update_keys: boolean;
   auto_check_updates: boolean;
   last_update_check: number | null;
+  auto_cover: boolean;
+  hirescovers_dir: string;
+  mcp_enabled: boolean;
+  mcp_port: number;
 };
 
 export type Title = {
@@ -114,6 +118,8 @@ export type RipRequest = {
   tv: boolean;
   series: string | null;
   episodes: string | null;
+  /** First episode number on this disc (uneven multi-disc sets). */
+  start_episode: number | null;
 };
 
 export type CoverHit = {
@@ -191,7 +197,8 @@ export const api = {
   checkUpdate: () => invoke<UpdateInfo>("check_update"),
   installUpdate: () => invoke<void>("install_update"),
   eject: () => invoke<string>("eject"),
-  tvPlan: (source: string) =>
+  mcpStatus: () => invoke<{ enabled: boolean; port: number | null }>("mcp_status"),
+  tvPlan: (source: string, start?: number | null) =>
     invoke<{
       series: string;
       season: number;
@@ -204,7 +211,7 @@ export const api = {
         duration_secs: number;
         episode: { season: number; number: number; title: string; still: string | null };
       }[];
-    }>("tv_plan", { source }),
+    }>("tv_plan", { source, start: start ?? null }),
   reveal: (path: string) => invoke<void>("reveal", { path }),
   previewOutput: (template: string, vars: PreviewVars) =>
     invoke<string>("preview_output", { template, vars }),

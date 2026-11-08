@@ -7,7 +7,7 @@
   --border-strong: #2f3848;
   --text: #e8ecf4;
   --text-dim: #98a2b6;
-  --text-faint: #6b7488;
+  --text-faint: #7d879c;
   --accent: #6d8bff;
   --accent-strong: #8aa2ff;
   --accent-soft: rgba(109, 139, 255, 0.14);
@@ -26,6 +26,14 @@
 }
 
 * { box-sizing: border-box; }
+
+/* Keyboard focus must always be visible; the app is all custom-styled controls. */
+:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+button:focus:not(:focus-visible) { outline: none; }
 
 html, body, #root { height: 100%; margin: 0; }
 
@@ -60,11 +68,11 @@ html[data-os="mac"] .header { padding-top: 34px; padding-bottom: 10px; }
 
 /* ---------- layout ---------- */
 .body { display: flex; flex: 1; min-height: 0; }
-.main { flex: 1; overflow: auto; padding: 22px; display: grid; gap: 16px; align-content: start; max-width: 1080px; margin: 0 auto; width: 100%; }
-.side { width: 340px; border-left: 1px solid var(--border); padding: 22px; overflow: auto; background: linear-gradient(180deg, rgba(255,255,255,.012), transparent); }
+.main { flex: 1; overflow: auto; padding: 24px; display: grid; gap: 18px; align-content: start; max-width: 1080px; margin: 0 auto; width: 100%; }
+.side { width: 348px; border-left: 1px solid var(--border); padding: 20px 20px 28px; overflow: auto; background: linear-gradient(180deg, rgba(255,255,255,.012), transparent); }
 
-.card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow); }
-.card h2 { margin: 0 0 4px; font-size: 13px; font-weight: 600; letter-spacing: .3px; text-transform: uppercase; color: var(--text-dim); }
+.card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; box-shadow: var(--shadow); }
+.card h2 { margin: 0 0 6px; font-size: 12.5px; font-weight: 600; letter-spacing: .5px; text-transform: uppercase; color: var(--text-dim); }
 .card .sub { color: var(--text-faint); font-size: 12px; }
 
 .row { display: flex; align-items: center; gap: 12px; }
@@ -97,6 +105,8 @@ button.sm { padding: 5px 9px; font-size: 12px; border-radius: 7px; }
   border-radius: var(--radius-sm); padding: 12px; cursor: pointer; transition: .14s ease;
 }
 .mode:hover { border-color: var(--border-strong); }
+button.mode { display: block; width: 100%; font: inherit; color: inherit; }
+button.mode .t, button.mode .d { display: block; }
 .mode.on { border-color: var(--accent); background: var(--accent-soft); }
 .mode .t { font-weight: 600; }
 .mode .d { color: var(--text-faint); font-size: 12px; margin-top: 3px; }
@@ -165,3 +175,33 @@ h1 { font-size: 20px; margin: 0 0 2px; }
 /* the generic input rule gives width:100%, which stretches the checkbox and
    shoves the episode title off the row */
 .ep input[type="checkbox"] { width: 15px; height: 15px; padding: 0; margin: 0; flex: none; accent-color: var(--accent); }
+
+/* ---------- collapsible settings ---------- */
+details.group { border-top: 1px solid var(--border); margin-top: 14px; padding-top: 12px; }
+details.group > summary {
+  cursor: pointer; list-style: none; display: flex; align-items: center; justify-content: space-between;
+  font-size: 12px; font-weight: 600; letter-spacing: .4px; text-transform: uppercase; color: var(--text-dim);
+}
+details.group > summary::-webkit-details-marker { display: none; }
+details.group > summary::after { content: "⌄"; color: var(--text-faint); font-size: 14px; line-height: 1; }
+details.group[open] > summary::after { content: "⌃"; }
+details.group > summary:focus-visible { outline-offset: 4px; }
+
+.check { cursor: pointer; }
+.check input[type="checkbox"] { accent-color: var(--accent); width: 15px; height: 15px; }
+
+/* A long sidebar should not jump when a section opens. */
+.side .card + .card { margin-top: 16px; }
+
+@media (max-width: 980px) {
+  .body { flex-direction: column; }
+  .side { width: auto; border-left: none; border-top: 1px solid var(--border); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+  }
+}

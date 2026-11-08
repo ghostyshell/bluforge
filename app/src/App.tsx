@@ -84,6 +84,8 @@ export default function App() {
   const [tvSel, setTvSel] = useState<Record<number, boolean>>({});
   const [tvBusy, setTvBusy] = useState(false);
   const [tvError, setTvError] = useState<string | null>(null);
+  const [mcp, setMcp] = useState<{ enabled: boolean; port: number | null } | null>(null);
+  const [startEp, setStartEp] = useState<number | "">("");
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
   const [coverTab, setCoverTab] = useState<CoverRole>("cover");
   const [tabs, setTabs] = useState<Record<CoverRole, TabState>>({
@@ -130,6 +132,7 @@ export default function App() {
         try { const c = await api.config(); if (c.auto_update_keys) await api.keysUpdate(); await refresh(); } catch { /* offline ok */ }
       }
       try { const u = await api.checkUpdate(); setUpdate(u.version); } catch { /* offline ok */ }
+      try { setMcp(await api.mcpStatus()); } catch { /* offline ok */ }
     })();
     const un = api.onProgress((p) => {
       setProgress(p);
@@ -209,6 +212,18 @@ export default function App() {
     return () => { alive = false; };
   }, [cfg, disc, title, titleInfo, container, movie, poster]);
 
+  /// Save a config patch and refresh anything the backend restarts from it.
+  const saveCfg = async (patch: Partial<NonNullable<typeof cfg>>) => {
+    if (!cfg) return;
+    const next = { ...cfg, ...patch };
+    setCfg(next);
+    try {
+      await api.setConfig(next);
+      setToast("Saved");
+      setMcp(await api.mcpStatus());
+    } catch (e) { setError(String(e)); }
+  };
+
   const startRip = async () => {
     // A TV rip does not need a title: the episode plan picks the title.
     if (!discPath || (!tvPlan && title == null)) return;
@@ -234,6 +249,7 @@ export default function App() {
         tv: !!tvPlan,
         series: tvPlan?.series ?? null,
         episodes: tvPlan ? Object.entries(tvSel).filter(([, v]) => v).map(([k]) => k).join(",") : null,
+        start_episode: tvPlan && startEp !== "" ? Number(startEp) : null,
       });
     } catch (e) { setError(String(e)); setBusy(null); }
   };
@@ -460,21 +476,23 @@ export default function App() {
           <section className="card">
             <h2>Output</h2>
             <div className="modes" style={{ marginTop: 10 }}>
-              <div className={`mode ${lossless ? "on" : ""}`} onClick={() => setLossless(true)}>
-                <div className="t">Remux (lossless)</div>
-                <div className="d">Bit-for-bit copy of the original streams. Fast.</div>
-              </div>
-              <div className={`mode ${!lossless ? "on" : ""}`} onClick={() => setLossless(false)}>
-                <div className="t">Encode</div>
-                <div className="d">Re-encode video (CPU x264/x265 or GPU) to shrink.</div>
-              </div>
+              <button type="button" className={`mode ${lossless ? "on" : ""}`}
+                aria-pressed={lossless} onClick={() => setLossless(true)}>
+                <span className="t">Remux (lossless)</span>
+                <span className="d">Bit-for-bit copy of the original streams. Fast.</span>
+              </button>
+              <button type="button" className={`mode ${!lossless ? "on" : ""}`}
+                aria-pressed={!lossless} onClick={() => setLossless(false)}>
+                <span className="t">Encode</span>
+                <span className="d">Re-encode video (CPU x264/x265 or GPU) to shrink.</span>
+              </button>
             </div>
 
             <div className="row" style={{ marginTop: 14 }}>
               <span className="sub">Container</span>
-              <div className="seg">
-                <button className={container === "mkv" ? "on" : ""} onClick={() => setContainer("mkv")}>MKV</button>
-                <button className={container === "mp4" ? "on" : ""} onClick={() => setContainer("mp4")}>MP4</button>
+              <div className="seg" role="group" aria-label="Container">
+                <button aria-pressed={container === "mkv"} className={container === "mkv" ? "on" : ""} onClick={() => setContainer("mkv")}>MKV</button>
+                <button aria-pressed={container === "mp4"} className={container === "mp4" ? "on" : ""} onClick={() => setContainer("mp4")}>MP4</button>
               </div>
             </div>
 
@@ -570,7 +588,7 @@ export default function App() {
             </div>
             {tvError && <p className="err" style={{ marginTop: 8 }}>⚠ {tvError}</p>}
             {tvPlan && (
-              <div className="eps">
+              <div className="eps" role="group" aria-label="Episodes to rip">
                 {tvPlan.items.map((it) => (
                   <label key={it.episode.number} className="ep">
                     <input type="checkbox" checked={!!tvSel[it.episode.number]}
@@ -584,8 +602,12 @@ export default function App() {
                 ))}
               </div>
             )}
-            <div className="row" style={{ marginTop: 10, gap: 12 }}>
-              <label className="field">Subtitles on TV rips
+            <div className="row wrap" style={{ marginTop: 10, gap: 12, alignItems: "flex-end" }}>
+              <label className="field" style={{ maxWidth: 130 }}>Start episode
+                <input className="mono" type="number" min={1} value={startEp} placeholder="auto"
+                  onChange={(e) => setStartEp(e.target.value === "" ? "" : Number(e.target.value))} />
+              </label>
+              <label className="field" style={{ flex: 1, minWidth: 220 }}>Subtitles on TV rips
                 <select value={cfg?.tv_subs ?? "all"}
                   onChange={(e) => setCfg((c) => (c ? { ...c, tv_subs: e.target.value } : c))}>
                   <option value="all">Keep every track (signs default)</option>
@@ -677,7 +699,7 @@ export default function App() {
             </div>
           </section>
 
-          {error && <div className="err">⚠ {error}</div>}
+          {error && <div className="err" role="alert">⚠ {error}</div>}
         </main>
 
         {/* Side panel: keys, action, progress */}
@@ -703,6 +725,8 @@ export default function App() {
               <input className="mono" value={cfg?.output_dir ?? ""} onChange={(e) => cfg && setCfg({ ...cfg, output_dir: e.target.value })}
                 onBlur={async () => { if (cfg) { await api.setConfig(cfg); setToast("Saved"); } }} />
             </label>
+            <details className="group" open>
+              <summary>Output templates</summary>
             <label className="field" style={{ marginTop: 10 }}>Output template
               <input className="mono" value={cfg?.output_template ?? ""} placeholder="{title} ({year})"
                 onChange={(e) => cfg && setCfg({ ...cfg, output_template: e.target.value })}
@@ -735,6 +759,8 @@ export default function App() {
               ))}
             </div>
 
+            </details>
+
             <label className="check" style={{ marginTop: 10 }}>
               <input type="checkbox" checked={cfg?.auto_update_keys ?? true}
                 onChange={async (e) => { if (cfg) { const n = { ...cfg, auto_update_keys: e.target.checked }; setCfg(n); await api.setConfig(n); } }} />
@@ -745,6 +771,30 @@ export default function App() {
                 onChange={async (e) => { if (cfg) { const n = { ...cfg, auto_check_updates: e.target.checked }; setCfg(n); await api.setConfig(n); } }} />
               Check for updates on launch
             </label>
+          </section>
+
+          <section className="card" style={{ marginTop: 16 }}>
+            <div className="row between">
+              <h2>MCP server</h2>
+              <span className={`pill ${mcp?.port ? "good" : ""}`}>
+                <span className="dot" />{mcp?.port ? `port ${mcp.port}` : "off"}
+              </span>
+            </div>
+            <label className="check" style={{ marginTop: 10 }}>
+              <input type="checkbox" checked={cfg?.mcp_enabled ?? false}
+                onChange={(e) => void saveCfg({ mcp_enabled: e.target.checked })} />
+              Let an agent drive BluForge over MCP
+            </label>
+            <label className="field" style={{ marginTop: 10 }}>Port
+              <input className="mono" type="number" min={1024} max={65535}
+                value={cfg?.mcp_port ?? 8848}
+                onChange={(e) => cfg && setCfg({ ...cfg, mcp_port: Number(e.target.value) || 8848 })}
+                onBlur={() => cfg && void saveCfg({ mcp_port: cfg.mcp_port })} />
+            </label>
+            <p className="hint" style={{ marginTop: 8 }}>
+              Localhost only. Endpoint <span className="mono">http://127.0.0.1:{cfg?.mcp_port ?? 8848}/mcp</span> -
+              disc, TV plan, rip, ISO export, covers, keys, eject and config as tools.
+            </p>
           </section>
 
           <div style={{ marginTop: 18 }}>
@@ -759,8 +809,11 @@ export default function App() {
 
           {progress && (
             <div style={{ marginTop: 16 }}>
-              <div className="progress"><i style={{ width: `${progress.percent}%` }} /></div>
-              <div className="stats" style={{ marginTop: 8 }}>
+              <div className="progress" role="progressbar" aria-label="Rip progress"
+                aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress.percent)}>
+                <i style={{ width: `${progress.percent}%` }} />
+              </div>
+              <div className="stats" style={{ marginTop: 8 }} aria-live="polite">
                 <span>{progress.percent.toFixed(1)}%</span>
                 <span>{progress.fps.toFixed(0)} fps</span>
                 <span>{(progress.speed || "").trim()}</span>
@@ -786,8 +839,11 @@ export default function App() {
             </div>
             {isoProgress && (
               <div style={{ marginTop: 12 }}>
-                <div className="progress"><i style={{ width: `${isoProgress.percent}%` }} /></div>
-                <div className="stats" style={{ marginTop: 8 }}>
+                <div className="progress" role="progressbar" aria-label="ISO export progress"
+                  aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(isoProgress.percent)}>
+                  <i style={{ width: `${isoProgress.percent}%` }} />
+                </div>
+                <div className="stats" style={{ marginTop: 8 }} aria-live="polite">
                   <span>{isoProgress.percent.toFixed(0)}%</span>
                   <span>{isoProgress.message}</span>
                   {isoProgress.files > 0 && <span>{isoProgress.files} files</span>}
@@ -805,7 +861,7 @@ export default function App() {
         </aside>
       </div>
 
-      {toast && <div className="toast" role="status">{toast}</div>}
+      {toast && <div className="toast" role="status" aria-live="polite">{toast}</div>}
     </div>
   );
 }

@@ -121,6 +121,71 @@ pub fn parse_label(label: &str) -> (String, Option<u32>, Option<u32>) {
     (name, season, disc)
 }
 
+fn slugify(s: &str) -> String {
+    s.to_ascii_lowercase()
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect::<String>()
+        .trim_matches('-')
+        .to_string()
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Default)]
+struct DiscRecord {
+    first: u32,
+    count: u32,
+}
+
+fn memory_path() -> std::path::PathBuf {
+    crate::config_dir().join("tv_discs.json")
+}
+
+fn load_memory() -> std::collections::HashMap<String, DiscRecord> {
+    std::fs::read(memory_path())
+        .ok()
+        .and_then(|b| serde_json::from_slice(&b).ok())
+        .unwrap_or_default()
+}
+
+/// Where does this disc start? Remembered mapping first, then the previous disc.
+fn disc_memory_start(slug: &str, season: u32, disc: Option<u32>) -> Option<u32> {
+    let mem = load_memory();
+    let prefix = format!("{slug}|s{season}|");
+    if let Some(d) = disc {
+        if let Some(r) = mem.get(&format!("{prefix}{d}")) {
+            return Some(r.first);
+        }
+    }
+    // Anything earlier in the same season tells us where this disc should start.
+    let mut start: Option<u32> = None;
+    for (k, r) in &mem {
+        let Some(rest) = k.strip_prefix(&prefix) else { continue };
+        let Ok(other) = rest.parse::<u32>() else { continue };
+        if disc.map(|d| other < d).unwrap_or(true) {
+            let next = r.first + r.count;
+            start = Some(start.map(|s| s.max(next)).unwrap_or(next));
+        }
+    }
+    start
+}
+
+/// Record that this disc holds episodes `first..first+count` so the next disc
+/// numbers itself correctly.
+pub fn remember_disc(series: &str, season: u32, disc: Option<u32>, first: u32, count: u32) {
+    let Some(d) = disc else { return };
+    let mut mem = load_memory();
+    mem.insert(
+        format!("{}|s{}|{}", slugify(series), season, d),
+        DiscRecord { first, count },
+    );
+    if let Some(dir) = memory_path().parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    if let Ok(json) = serde_json::to_vec_pretty(&mem) {
+        let _ = std::fs::write(memory_path(), json);
+    }
+}
+
 /// Keep only plausibly-episode-sized clips, in order. A trailing 0.5s fragment
 /// (common at the end of a play-all title) is dropped, as are menus.
 pub fn episode_clips(clips: &[Clip]) -> Vec<Clip> {
@@ -373,7 +438,12 @@ pub struct Plan {
 ///
 /// Handles both authorings: one "play all" title whose clips are the episodes,
 /// or several episode-sized titles. `series` overrides the label-derived name.
-pub fn plan(disc: &crate::Disc, info: &crate::DiscInfo, series: Option<&str>) -> Result<Plan, CoreError> {
+pub fn plan(
+    disc: &crate::Disc,
+    info: &crate::DiscInfo,
+    series: Option<&str>,
+    start_override: Option<u32>,
+) -> Result<Plan, CoreError> {
     let (label_name, season_from_label, disc_no) = parse_label(&info.name);
     let season = season_from_label.unwrap_or(1);
     let name = series
@@ -433,9 +503,13 @@ pub fn plan(disc: &crate::Disc, info: &crate::DiscInfo, series: Option<&str>) ->
         return Err(CoreError::Disc("no episode-sized titles or clips found".into()));
     }
 
-    // Number them. A later disc continues from where an earlier one stopped.
-    let per_disc = best.len() as u32;
-    let start = disc_no.map(|d| 1 + d.saturating_sub(1) * per_disc).unwrap_or(1);
+    // Number them. Discs are not always evenly split (this show is 8 + 4), so a
+    // remembered mapping wins over arithmetic: an explicit override, then what we
+    // recorded for this disc, then the end of the previous disc, then 1.
+    let slug = slugify(&name);
+    let start = start_override
+        .or_else(|| disc_memory_start(&slug, season, disc_no))
+        .unwrap_or(1);
     for (i, item) in best.iter_mut().enumerate() {
         item.episode.number = start + i as u32;
     }

@@ -134,6 +134,9 @@ pub struct RipRequest {
     /// Episode-number filter, eg. "1-3" or "1,2,5". Empty = all on the disc.
     #[serde(default)]
     pub episodes: Option<String>,
+    /// First episode number on this disc (overrides the remembered mapping).
+    #[serde(default)]
+    pub start_episode: Option<u32>,
 }
 
 fn yes() -> bool {
@@ -783,6 +786,18 @@ where
                 let _ = std::fs::write(dir.join("poster.jpg"), &bytes);
             }
         }
+    }
+
+    // Remember the numbering so the next disc continues from here, even when the
+    // discs hold different episode counts.
+    if let Some(first) = wanted.first() {
+        crate::tv::remember_disc(
+            &plan.series,
+            plan.season,
+            plan.disc,
+            first.episode.number,
+            wanted.len() as u32,
+        );
     }
 
     prog.done = true;
@@ -1514,7 +1529,7 @@ where
 
     // TV / anime: one file per episode, from the title's clips.
     if req.tv {
-        match crate::tv::plan(&disc, &info, req.series.as_deref()) {
+        match crate::tv::plan(&disc, &info, req.series.as_deref(), req.start_episode) {
             Ok(plan) if plan.items.len() >= 2 => {
                 return run_tv(&plan, req, &cfg, &mut ctx, cancel, &mut on_progress);
             }

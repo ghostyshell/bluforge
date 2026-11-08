@@ -7,6 +7,18 @@ use tauri::{AppHandle, Emitter, Manager, State};
 
 use bluforge_core::{config::AppConfig, disc::DiscInfo, iso, keys::KeyDbStatus, rip, CoreSnapshot};
 
+mod mcp;
+
+/// Where the MCP server is listening, if it is.
+#[tauri::command]
+fn mcp_status() -> serde_json::Value {
+    let cfg = AppConfig::load();
+    serde_json::json!({
+        "enabled": cfg.mcp_enabled,
+        "port": mcp::running_port(),
+    })
+}
+
 struct RpState {
     cancel: Arc<AtomicBool>,
     running: Arc<AtomicBool>,
@@ -212,10 +224,10 @@ fn save_covers(dest_dir: String, stem: String, items: Vec<SaveItem>) -> Result<V
 
 /// Detect the episodes on a TV/anime disc (clip boundaries + TMDB titles).
 #[tauri::command]
-fn tv_plan(source: String) -> Result<bluforge_core::tv::Plan, String> {
+fn tv_plan(source: String, start: Option<u32>) -> Result<bluforge_core::tv::Plan, String> {
     let disc = bluforge_core::Disc::open(std::path::Path::new(&source), None).map_err(|e| e.to_string())?;
     let info = disc.info().map_err(|e| e.to_string())?;
-    bluforge_core::tv::plan(&disc, &info, None).map_err(|e| e.to_string())
+    bluforge_core::tv::plan(&disc, &info, None, start).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -245,7 +257,10 @@ fn config_get() -> AppConfig {
 
 #[tauri::command]
 fn config_set(config: AppConfig) -> Result<(), String> {
-    config.save().map_err(|e| e.to_string())
+    config.save().map_err(|e| e.to_string())?;
+    // Starts or stops the MCP listener to match the setting.
+    mcp::apply(&config);
+    Ok(())
 }
 
 #[tauri::command]
@@ -364,6 +379,9 @@ pub fn run() {
         )
         .try_init();
 
+    // The MCP listener is off unless the saved config enables it.
+    mcp::apply(&AppConfig::load());
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -393,7 +411,8 @@ pub fn run() {
             eject,
             tv_plan,
             template_placeholders,
-            tmdb_lookup
+            tmdb_lookup,
+            mcp_status
         ])
         .setup(|app| {
             let _ = app.get_webview_window("main");

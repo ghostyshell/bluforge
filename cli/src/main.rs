@@ -44,6 +44,9 @@ enum Cmd {
         /// With --episodes: print each episode's chapter marks (dry run, no rip).
         #[arg(long)]
         chapters: bool,
+        /// First episode number on this disc (overrides the remembered mapping).
+        #[arg(long)]
+        start_episode: Option<u32>,
     },
     /// Rip a title to MKV/MP4 (remux by default, or `--encode`).
     Rip {
@@ -103,6 +106,9 @@ enum Cmd {
         /// TV subtitles: all (default) or signs (signs & songs only).
         #[arg(long, default_value = "all")]
         tv_subs: String,
+        /// First episode number on this disc (overrides the remembered mapping).
+        #[arg(long)]
+        start_episode: Option<u32>,
     },
     /// Cover art: search and download case/disc covers.
     Covers {
@@ -276,6 +282,7 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
             episodes,
             series,
             chapters,
+            start_episode,
         } => {
             let source = resolve_source(path);
             let disc = bluforge_core::Disc::open(&source, Some(&keys::keydb_path()))?;
@@ -306,7 +313,7 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
                         Ok(None) => println!("lookup    : nothing for {dbg:?}"),
                         Err(e) => println!("lookup    : ERROR {e}"),
                     }
-                    match bluforge_core::tv::plan(&disc, &info, series.as_deref()) {
+                    match bluforge_core::tv::plan(&disc, &info, series.as_deref(), *start_episode) {
                         Ok(p) => {
                             println!(
                                 "series    : {} - season {} (disc {:?}, tmdb {:?}, mal {:?})",
@@ -474,6 +481,7 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
             series,
             episodes,
             tv_subs,
+            start_episode,
         } => {
             use bluforge_core::{Container, EncodeSettings, RipMode, RipProgress, RipRequest, VideoCodec};
             let container_kind = if container.eq_ignore_ascii_case("mp4") {
@@ -524,6 +532,7 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
                 tv: *tv,
                 series: series.clone(),
                 episodes: episodes.clone(),
+                start_episode: *start_episode,
             };
             if tv_subs != "all" {
                 let mut c = AppConfig::load();
