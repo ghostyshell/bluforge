@@ -35,6 +35,19 @@ All notable changes to BluForge. Newest first.
   look unkeyed (routing to the native attempt and libmmbd instead of libaacs).
   It now matches on the BSD name regardless of `/dev/` or `r` prefix.
 
+### Added
+
+- `bluforge keys from-makemkv`: recover a disc key from MakeMKV's `discatt.dat`
+  VID plus offline MKB derivation (`VUK = AES-G(MK, VID)`), bypassing the host
+  certificate entirely. Also caches the VID/RDK where libaacs expects them, and
+  `plan_backend` falls back to it when native auth is refused.
+
+### Fixed
+
+- `calc_pk` narrowed `dev_key_v_mask` with a logical shift; libaacs uses an
+  arithmetic shift, without which the loop never converges and media-key
+  derivation hangs.
+
 ### Changed
 
 - The libaacs backend is handed a *mounted* volume (libaacs resolves the drive

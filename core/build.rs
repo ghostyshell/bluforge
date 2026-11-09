@@ -3,6 +3,7 @@ use std::env;
 fn main() {
     println!("cargo:rerun-if-changed=src/bluray_shim.c");
     println!("cargo:rerun-if-changed=src/aacs_mmc.c");
+    println!("cargo:rerun-if-changed=src/aacs_native.c");
     println!("cargo:rerun-if-env-changed=BLURAY_PREFIX");
 
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();

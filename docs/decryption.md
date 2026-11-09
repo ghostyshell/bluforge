@@ -101,6 +101,34 @@ fallback (`plan_backend` does both automatically).
 
 We now print the SCSI sense on auth failure, so the reason is never a guess.
 
+## Bypass: recover the key from MakeMKV's VID
+
+MakeMKV ships its own (unrevoked) host certificate and, during a backup, writes
+what it authenticated for into `discatt.dat`:
+
+   04 00 00 80 00 00 00 10 <16-byte VID>
+   04 00 00 84 00 00 00 20 <32-byte RDK>   (only if bus encryption / no LibreDrive)
+   01 03 00 38 00 00 00 5C <92-byte drive cert>
+
+The MK needs **no** host certificate (device keys + MKB, offline), and
+`VUK = AES-G(MK, VID)`. So MakeMKV only has to supply the VID.
+
+    bluforge keys from-makemkv [--from <mount>] [--print]
+
+- runs `makemkvcon backup` just far enough to get `discatt.dat`, then kills it
+  (`SDF_STOP` is set so MakeMKV does not switch the drive into LibreDrive, which
+  would hide the RDK and can leave the drive needing a re-insert);
+- derives the media key from the disc's own MKB with the KEYDB device keys;
+- computes the VUK and writes `I/M/V` into `KEYDB.cfg`;
+- caches `vid/<discid>` and `rdk/<sha1(drivecert)>/<discid>` where libaacs looks
+  for them (the RDK is what lets libaacs read bus-encrypted/UHD discs without an
+  HC).
+
+`plan_backend` tries this automatically after native auth fails, so an unkeyed
+disc still ends up on libaacs (MakeMKV is used once, per disc, never as the
+decryptor). Verified on the Danganronpa disc: the VID/MK/VUK recovered this way
+match the reference values exactly.
+
 ## Traps seen in practice
 
 - **The drive drops off the USB bus** under sustained reads (HL-DT-ST BD-RE

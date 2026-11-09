@@ -258,6 +258,14 @@ enum KeysAction {
         #[arg(long)]
         print: bool,
     },
+    /// Recover the key via MakeMKV's discatt.dat (VID) plus offline MKB
+    /// derivation. Bypasses the host certificate entirely.
+    FromMakemkv {
+        #[arg(long)]
+        from: Option<std::path::PathBuf>,
+        #[arg(long)]
+        print: bool,
+    },
     /// List known discs.
     List {
         /// Maximum rows to print.
@@ -432,6 +440,35 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
                     println!("vuk       : 0x{}", k.vuk);
                 } else {
                     let (k, added) = bluforge_core::native::derive_and_store(&mount)?;
+                    eprintln!(
+                        "{} 0x{} {}",
+                        if added { "derived" } else { "already keyed" },
+                        k.id,
+                        k.name
+                    );
+                }
+            }
+            KeysAction::FromMakemkv { from, print } => {
+                let mount = match from {
+                    Some(p) => p.clone(),
+                    None => bluforge_core::device::list_optical()
+                        .into_iter()
+                        .find_map(|d| d.mount_point.map(std::path::PathBuf::from))
+                        .ok_or_else(|| {
+                            bluforge_core::CoreError::Device(
+                                "no mounted optical volume; pass --from <mount>".into(),
+                            )
+                        })?,
+                };
+                if *print {
+                    let (k, _dc, _rdk) = bluforge_core::native::from_makemkv(&mount)?;
+                    println!("disc      : {}", k.name);
+                    println!("id        : 0x{}", k.id);
+                    println!("volume id : 0x{}", k.vid);
+                    println!("media key : 0x{}", k.media_key);
+                    println!("vuk       : 0x{}", k.vuk);
+                } else {
+                    let (k, added) = bluforge_core::native::from_makemkv_and_store(&mount)?;
                     eprintln!(
                         "{} 0x{} {}",
                         if added { "derived" } else { "already keyed" },

@@ -20,6 +20,184 @@ struct BfDk {
 }
 
 extern "C" {
+    fn bf_media_key(
+        mkb: *const u8,
+        mkb_len: usize,
+        dks: *const BfDk,
+        ndks: i32,
+        out_mk: *mut u8,
+    ) -> i32;
+    fn bf_aesg(key: *const u8, data: *const u8, out: *mut u8);
+}
+
+fn makemkvcon() -> Option<std::path::PathBuf> {
+    let p = std::path::PathBuf::from("/Applications/MakeMKV.app/Contents/MacOS/makemkvcon");
+    p.is_file().then_some(p)
+}
+
+/// One `discatt.dat` record: 8-byte header `cat 00 00 id 00 00 00 len` + payload.
+fn rec<'a>(data: &'a [u8], cat: u8, id: u8, len: usize) -> Option<&'a [u8]> {
+    let mut needle = [0u8; 8];
+    needle[0] = cat;
+    needle[3] = id;
+    needle[7] = len as u8;
+    let i = data.windows(8).position(|w| w == needle)?;
+    data.get(i + 8..i + 8 + len)
+}
+
+/// Drive ids for `SDF_STOP` (disables LibreDrive so the RDK is readable).
+fn makemkv_drive_ids(exe: &std::path::Path) -> Vec<String> {
+    let out = match std::process::Command::new(exe)
+        .args(["f", "--list"])
+        .output()
+    {
+        Ok(o) => o,
+        Err(_) => return Vec::new(),
+    };
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter(|l| {
+            let t = l.trim();
+            !t.is_empty() && t.contains('_') && !t.starts_with(char::is_numeric)
+        })
+        .map(|l| l.trim().trim_end_matches(',').to_string())
+        .filter(|l| l.contains('_'))
+        .collect()
+}
+
+/// Run `makemkvcon backup` just far enough to get `discatt.dat` (holds the VID
+/// and, without LibreDrive, the RDK). MakeMKV authenticates with its own
+/// (unrevoked) host certificate; we never talk AACS to the drive ourselves.
+fn discatt_for(exe: &std::path::Path) -> Option<Vec<u8>> {
+    let dir = std::env::temp_dir().join(format!("bluforge-discatt-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).ok()?;
+    let path = dir.join("discatt.dat");
+
+    let mut cmd = std::process::Command::new(exe);
+    cmd.args(["backup", "disc:0"])
+        .arg(&dir)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    let ids = makemkv_drive_ids(exe);
+    if !ids.is_empty() {
+        cmd.env("SDF_STOP", ids.join(" "));
+    }
+    let mut child = cmd.spawn().ok()?;
+    for _ in 0..160 {
+        if path.is_file() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(250));
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+    let data = std::fs::read(&path).ok();
+    let _ = std::fs::remove_dir_all(&dir);
+    data
+}
+
+/// Recover the disc keys via MakeMKV's `discatt.dat` (VID/RDK) plus our offline
+/// MKB derivation. Returns the key and the (optional) drive cert + RDK.
+pub fn from_makemkv(
+    mount: &Path,
+) -> Result<(NativeKey, Option<Vec<u8>>, Option<Vec<u8>>), CoreError> {
+    let mounted = crate::device::ensure_mounted(mount);
+    let mount = mounted.as_path();
+    let exe =
+        makemkvcon().ok_or_else(|| CoreError::Keys("MakeMKV (makemkvcon) not found".into()))?;
+    let header = read_header(&keys::keydb_path())?;
+    let mkb = read_mkb(mount)?;
+    let id = keys::disc_id_for_path(mount).ok_or_else(|| {
+        CoreError::Disc(format!("no AACS/Unit_Key_RO.inf under {}", mount.display()))
+    })?;
+
+    let data = discatt_for(&exe)
+        .ok_or_else(|| CoreError::Disc("MakeMKV produced no discatt.dat".into()))?;
+    let vid = rec(&data, 0x04, 0x80, 16)
+        .ok_or_else(|| CoreError::Disc("discatt.dat has no VID".into()))?;
+    let rdk = rec(&data, 0x04, 0x84, 32).map(|r| r.to_vec());
+    let dc = rec(&data, 0x01, 0x03, 92).map(|r| r.to_vec());
+
+    let mut mk = [0u8; 16];
+    let rc = unsafe {
+        bf_media_key(
+            mkb.as_ptr(),
+            mkb.len(),
+            header.dks.as_ptr(),
+            header.dks.len() as i32,
+            mk.as_mut_ptr(),
+        )
+    };
+    if rc != 0 {
+        return Err(CoreError::Disc(format!(
+            "media key derivation failed (code {rc})"
+        )));
+    }
+    let mut vuk = [0u8; 16];
+    unsafe { bf_aesg(mk.as_ptr(), vid.as_ptr(), vuk.as_mut_ptr()) };
+
+    let name = mount
+        .file_name()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "UNKNOWN".into());
+    Ok((
+        NativeKey {
+            id,
+            name,
+            vid: hexstr(vid),
+            media_key: hexstr(&mk),
+            vuk: hexstr(&vuk),
+        },
+        dc,
+        rdk,
+    ))
+}
+
+fn aacs_dir() -> std::path::PathBuf {
+    std::path::PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| ".".into()))
+        .join("Library/Preferences/aacs")
+}
+
+/// Store the key in KEYDB and cache VID/RDK where libaacs looks for them
+/// (RDK is per drive+disc; needed for bus-encrypted discs once the HC is dead).
+pub fn from_makemkv_and_store(mount: &Path) -> Result<(NativeKey, bool), CoreError> {
+    let (key, dc, rdk) = from_makemkv(mount)?;
+    let path = keys::keydb_path();
+    let mut added = false;
+    if !keys::has_at(&path, &key.id).unwrap_or(false) {
+        let entry = KeyEntry {
+            id: key.id.clone(),
+            name: Some(format!("{} ({})", key.name, key.name)),
+            media_key: Some(key.media_key.clone()),
+            volume_id: Some(key.vid.clone()),
+            vuk: Some(key.vuk.clone()),
+            unit_keys: Vec::new(),
+            note: Some("from-makemkv".into()),
+        };
+        keys::upsert_at(&path, &entry)?;
+        added = true;
+    }
+    let vid_raw = hexbytes(&key.vid).unwrap_or_default();
+    let aacs = aacs_dir();
+    if !vid_raw.is_empty() {
+        let _ = std::fs::create_dir_all(aacs.join("vid"));
+        let _ = std::fs::write(aacs.join("vid").join(&key.id), &vid_raw);
+    }
+    if let (Some(dc), Some(rdk)) = (dc, rdk) {
+        use sha1::{Digest, Sha1};
+        let driveid: String = Sha1::digest(&dc)
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        let dir = aacs.join("rdk").join(driveid);
+        let _ = std::fs::create_dir_all(&dir);
+        let _ = std::fs::write(dir.join(&key.id), &rdk);
+    }
+    Ok((key, added))
+}
+
+extern "C" {
     fn bf_native_key(
         mount: *const libc::c_char,
         host_priv: *const u8,

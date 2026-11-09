@@ -271,8 +271,19 @@ impl Disc {
                 DecryptBackend::Aacs
             }
             Err(e) => {
-                tracing::warn!("native key derivation failed ({e}); falling back to libmmbd");
-                DecryptBackend::Mmbd
+                tracing::info!("native auth failed ({e}); trying MakeMKV discatt (VID)");
+                match crate::native::from_makemkv_and_store(&mount) {
+                    Ok((k, added)) => {
+                        if added {
+                            tracing::info!(id = %k.id, "derived disc key via MakeMKV VID");
+                        }
+                        DecryptBackend::Aacs
+                    }
+                    Err(e2) => {
+                        tracing::warn!("MakeMKV VID path failed ({e2}); falling back to libmmbd");
+                        DecryptBackend::Mmbd
+                    }
+                }
             }
         }
     }

@@ -5,6 +5,7 @@
 //! backend on macOS. Non-macOS stubs are provided for cross-platform builds.
 
 use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BlockDevice {
@@ -381,6 +382,32 @@ mod mac {
 
 #[cfg(target_os = "macos")]
 pub use mac::list;
+
+/// Ensure the optical volume for `source` is mounted and return its mount point
+/// (the disc's MKB has to be read from the filesystem, not the raw device).
+pub fn ensure_mounted(source: &Path) -> PathBuf {
+    let s = source.to_string_lossy();
+    if !s.starts_with("/dev/") && source.join("AACS").is_dir() {
+        return source.to_path_buf();
+    }
+    let bsd = crate::disc::bsd_name_for(source).or_else(|| {
+        crate::device::list_optical()
+            .into_iter()
+            .find_map(|d| Some(d.bsd_name))
+    });
+    let Some(bsd) = bsd else {
+        return source.to_path_buf();
+    };
+    let dev = std::path::PathBuf::from(format!("/dev/{bsd}"));
+    for _ in 0..25 {
+        let m = crate::disc::Disc::aacs_mount_path(&dev);
+        if m.join("AACS").is_dir() {
+            return m;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(400));
+    }
+    crate::disc::Disc::aacs_mount_path(&dev)
+}
 
 /// Mount point of any volume on the given device node, if currently mounted.
 /// Accepts `/dev/diskN`, `/dev/rdiskN`, or a bare `diskN`.

@@ -83,7 +83,7 @@ static int calc_pk(const uint8_t *dk, uint8_t *pk, uint32_t uv, uint32_t v_mask,
         if (crypto_aesg3(cur, l, r, pk)) {
             return -1;
         }
-        dev_key_v_mask >>= 1;
+        dev_key_v_mask = ((int32_t) dev_key_v_mask) >> 1;
     }
     return 0;
 }
@@ -195,6 +195,44 @@ static int media_key(MKB *m, const bf_dk_t *dks, int n, uint8_t *mk)
         }
     }
     return BF_ERR_NOKEY;
+}
+
+// Media key from the MKB using device keys only (no drive, no host cert).
+int bf_media_key(const uint8_t *mkb_data, size_t mkb_len, const bf_dk_t *dks, int ndks,
+                 uint8_t out_mk[16])
+{
+    uint8_t *buf;
+    MKB *m;
+    int rc;
+    if (!mkb_data || mkb_len < 16) {
+        return BF_ERR_MKB;
+    }
+    crypto_init();
+    buf = malloc(mkb_len);
+    if (!buf) {
+        return BF_ERR_MKB;
+    }
+    memcpy(buf, mkb_data, mkb_len);
+    m = mkb_init(buf, mkb_len);
+    if (!m) {
+        free(buf);
+        return BF_ERR_MKB;
+    }
+    rc = media_key(m, dks, ndks, out_mk);
+    mkb_close(m);
+    return rc;
+}
+
+// AES-G (AACS): AES-128-ECB decrypt of `data` under `key`, XOR `data`.
+void bf_aesg(const uint8_t *key, const uint8_t *data, uint8_t out[16])
+{
+    int i;
+    if (crypto_aes128d(key, data, out)) {
+        return;
+    }
+    for (i = 0; i < 16; i++) {
+        out[i] ^= data[i];
+    }
 }
 
 // Returns BF_OK and fills out_vid/out_mk/out_vuk (16 bytes each).
