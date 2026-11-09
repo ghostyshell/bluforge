@@ -72,6 +72,9 @@ pub fn status() -> KeyDbStatus {
 }
 
 /// Download the latest key database, replacing the local copy atomically.
+///
+/// Entries present only locally (added with `keys add`, and not yet in the
+/// community database) are preserved, so a refresh cannot drop a hand-added key.
 pub fn update() -> Result<KeyDbStatus, CoreError> {
     let dir = crate::config_dir();
     fs::create_dir_all(&dir)?;
@@ -81,11 +84,16 @@ pub fn update() -> Result<KeyDbStatus, CoreError> {
     for (url, is_zip) in MIRRORS {
         match fetch(url, *is_zip) {
             Ok(bytes) => {
+                let remote = String::from_utf8_lossy(&bytes).into_owned();
+                let merged = match fs::read_to_string(&dest) {
+                    Ok(local) => merge_local_keys(&remote, &local),
+                    Err(_) => remote,
+                };
                 let tmp = dest.with_extension("cfg.tmp");
-                fs::write(&tmp, &bytes)?;
+                fs::write(&tmp, &merged)?;
                 validate(&tmp)?;
                 fs::rename(&tmp, &dest)?;
-                tracing::info!(url, bytes = bytes.len(), "key database updated");
+                tracing::info!(url, bytes = merged.len(), "key database updated");
                 return Ok(status());
             }
             Err(e) => {
@@ -95,6 +103,33 @@ pub fn update() -> Result<KeyDbStatus, CoreError> {
         }
     }
     Err(last_err.unwrap_or_else(|| CoreError::Keys("no mirrors configured".into())))
+}
+
+/// Append any `local` entries whose disc id is absent from `remote`.
+///
+/// The community copy wins for shared disc ids; only ids unique to `local`
+/// are carried over, so a refresh cannot drop a hand-added key.
+fn merge_local_keys(remote: &str, local: &str) -> String {
+    use std::collections::HashSet;
+    let remote_ids: HashSet<String> = remote
+        .lines()
+        .filter_map(parse_line)
+        .map(|e| e.id)
+        .collect();
+    let mut out = String::with_capacity(remote.len() + 4096);
+    out.push_str(remote);
+    if !out.ends_with('\n') {
+        out.push('\n');
+    }
+    for line in local.lines() {
+        if let Some(e) = parse_line(line) {
+            if !remote_ids.contains(&e.id) {
+                out.push_str(line.trim_end());
+                out.push('\n');
+            }
+        }
+    }
+    out
 }
 
 fn fetch(url: &str, is_zip: bool) -> Result<Vec<u8>, CoreError> {
@@ -475,6 +510,12 @@ mod tests {
 
     const ID: &str = "20377624994e9eb5480028798e71ea00ed788f6b";
 
+    fn lookup_in(text: &str, id: &str) -> Option<KeyEntry> {
+        text.lines()
+            .filter_map(parse_line)
+            .find(|e| e.id.eq_ignore_ascii_case(id))
+    }
+
     #[test]
     fn disc_id_is_sha1_hex() {
         assert_eq!(disc_id_of(b"x").len(), 40);
@@ -574,5 +615,28 @@ mod tests {
     fn civil_dates() {
         assert_eq!(civil_from_days(0), "1970-01-01");
         assert_eq!(civil_from_days(19_000), "2022-01-08");
+    }
+
+    #[test]
+    fn update_merge_keeps_local_only_keys_and_remote_wins_on_shared() {
+        let remote = format!("0x{ID} = COMMUNITY | V | 0x11\n");
+        let local = format!(
+            "0x{ID} = LOCAL_EDIT | V | 0x99\n0x0000000000000000000000000000000000000002 = LOCAL_ONLY | V | 0x22\n"
+        );
+        let merged = merge_local_keys(&remote, &local);
+        // Shared id: the community copy wins.
+        assert_eq!(
+            lookup_in(&merged, ID).unwrap().name.as_deref(),
+            Some("COMMUNITY")
+        );
+        // Local-only id is carried over.
+        assert!(merged.contains("LOCAL_ONLY"));
+        assert_eq!(
+            lookup_in(&merged, "0000000000000000000000000000000000000002")
+                .unwrap()
+                .name
+                .as_deref(),
+            Some("LOCAL_ONLY")
+        );
     }
 }

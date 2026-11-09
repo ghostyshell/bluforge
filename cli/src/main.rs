@@ -113,6 +113,10 @@ enum Cmd {
         /// First episode number on this disc (overrides the remembered mapping).
         #[arg(long)]
         start_episode: Option<u32>,
+        /// Retry the whole rip this many times on failure (transient drive/decrypt
+        /// hiccups after a replug). Default 2.
+        #[arg(long, default_value_t = 2)]
+        retries: u32,
     },
     /// Cover art: search and download case/disc covers.
     Covers {
@@ -723,6 +727,7 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
             episodes,
             tv_subs,
             start_episode,
+            retries,
         } => {
             use bluforge_core::{
                 Container, EncodeSettings, RipMode, RipProgress, RipRequest, VideoCodec,
@@ -785,26 +790,40 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
                 c.save()?;
             }
             let cancel = std::sync::atomic::AtomicBool::new(false);
-            let mut last = -1i64;
-            let mut dest = String::new();
-            bluforge_core::rip::run(&req, &cancel, |p: RipProgress| {
-                if let Some(d) = p.dest {
-                    dest = d.display().to_string();
+            let mut attempt = 0u32;
+            loop {
+                attempt += 1;
+                let mut last = -1i64;
+                let mut dest = String::new();
+                let res = bluforge_core::rip::run(&req, &cancel, |p: RipProgress| {
+                    if let Some(d) = p.dest {
+                        dest = d.display().to_string();
+                    }
+                    let pct = p.percent as i64;
+                    if pct != last {
+                        last = pct;
+                        eprint!(
+                            "\r  {pct:>3}%  {:.0} fps  {}          ",
+                            p.fps,
+                            p.speed.trim()
+                        );
+                    }
+                });
+                match res {
+                    Ok(()) => {
+                        if dest.is_empty() {
+                            eprintln!("\nrip finished but reported no output file");
+                        } else {
+                            eprintln!("\nwrote {dest}");
+                        }
+                        break;
+                    }
+                    Err(e) if attempt <= *retries => {
+                        eprintln!("\nrip failed ({e}); retry {attempt}/{retries}");
+                        std::thread::sleep(std::time::Duration::from_secs(5));
+                    }
+                    Err(e) => return Err(e),
                 }
-                let pct = p.percent as i64;
-                if pct != last {
-                    last = pct;
-                    eprint!(
-                        "\r  {pct:>3}%  {:.0} fps  {}          ",
-                        p.fps,
-                        p.speed.trim()
-                    );
-                }
-            })?;
-            if dest.is_empty() {
-                eprintln!("\nrip finished but reported no output file");
-            } else {
-                eprintln!("\nwrote {dest}");
             }
         }
         Cmd::Covers { cmd } => {

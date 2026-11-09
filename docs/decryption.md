@@ -48,7 +48,9 @@ identically, to libmmbd's.
 Disc id is `SHA-1(AACS/Unit_Key_RO.inf)`; `--from <mount>` derives it. The store
 is what "retires MakeMKV": once a disc is keyed it rips natively and offline.
 
-Back up `KEYDB.cfg` before bulk edits. There is no automatic backup.
+Back up `KEYDB.cfg` before bulk edits. `keys update` merges rather than
+replaces, so an entry you added that the community database does not have yet
+is preserved on refresh.
 
 ## Getting a key for a new disc
 
@@ -69,7 +71,9 @@ After that the disc needs no MakeMKV.
   (`drutil` reports "No Media Inserted", no `/dev/disk` node). It needs a
   physical replug; a powered hub is the real fix.
 - **The first rip after a replug tends to fail** with `Unable decrypt unit`
-  (libaacs) and then succeeds on retry. Retry once before suspecting a code bug.
+  (libaacs) and then succeeds on retry. `bluforge rip` now re-runs the whole rip
+  on failure by default (`--retries`, default 2), so this is handled without a
+  manual second command.
 - **`/dev/rdiskN` numbers change** when the drive re-enumerates; never cache the
   node, re-read it (`bluforge devices`).
 - **Do not unmount unless the backend needs it**: libaacs does, libmmbd does not,
