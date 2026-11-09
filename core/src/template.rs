@@ -10,7 +10,10 @@ use std::path::PathBuf;
 
 /// Placeholders offered in the UI: `(name, description)`.
 pub const PLACEHOLDERS: &[(&str, &str)] = &[
-    ("title", "movie title (TMDB when matched, else the disc label)"),
+    (
+        "title",
+        "movie title (TMDB when matched, else the disc label)",
+    ),
     ("year", "release year (TMDB)"),
     ("tmdb", "TMDB id"),
     ("disc", "disc label"),
@@ -149,7 +152,9 @@ fn tidy(seg: &str) -> String {
             s = s.replace("  ", " ");
         }
         s = s.replace(" -/", "/").replace("/- ", "/");
-        s = s.trim_matches(|c: char| c == ' ' || c == '-' || c == '.' || c == '_').to_string();
+        s = s
+            .trim_matches(|c: char| c == ' ' || c == '-' || c == '.' || c == '_')
+            .to_string();
         if s == before {
             break;
         }
@@ -160,7 +165,11 @@ fn tidy(seg: &str) -> String {
 /// Render `template` against `vars`, appending `.ext` if the last segment has
 /// no extension. Empty template falls back to `fallback`.
 pub fn render(template: &str, vars: &Vars, ext: &str, fallback: &str) -> PathBuf {
-    let tpl = if template.trim().is_empty() { fallback } else { template };
+    let tpl = if template.trim().is_empty() {
+        fallback
+    } else {
+        template
+    };
 
     // Substitute {name} with values.
     let mut out = String::with_capacity(tpl.len() + 16);
@@ -197,11 +206,7 @@ pub fn render(template: &str, vars: &Vars, ext: &str, fallback: &str) -> PathBuf
     out.push_str(rest);
 
     // Sanitise per path segment and drop empty ones.
-    let mut parts: Vec<String> = out
-        .split('/')
-        .map(tidy)
-        .filter(|s| !s.is_empty())
-        .collect();
+    let mut parts: Vec<String> = out.split('/').map(tidy).filter(|s| !s.is_empty()).collect();
     if parts.is_empty() {
         parts.push(tidy(fallback));
     }
@@ -233,7 +238,12 @@ mod tests {
 
     #[test]
     fn renders_and_extends() {
-        let p = render("{title} ({year})/{title} ({year}) - {resolution} {hdr}", &vars(), "mkv", "");
+        let p = render(
+            "{title} ({year})/{title} ({year}) - {resolution} {hdr}",
+            &vars(),
+            "mkv",
+            "",
+        );
         assert_eq!(
             p,
             PathBuf::from("Gladiator II (2024)/Gladiator II (2024) - 2160p HDR10.mkv")

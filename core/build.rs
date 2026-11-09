@@ -18,8 +18,14 @@ fn main() {
     } else {
         match pkg_config::Config::new().probe("libbluray") {
             Ok(l) => Ok((
-                l.include_paths.iter().map(|p| p.display().to_string()).collect(),
-                l.link_paths.iter().map(|p| p.display().to_string()).collect(),
+                l.include_paths
+                    .iter()
+                    .map(|p| p.display().to_string())
+                    .collect(),
+                l.link_paths
+                    .iter()
+                    .map(|p| p.display().to_string())
+                    .collect(),
                 l.libs.clone(),
             )),
             Err(e) => Err(std::io::Error::other(e.to_string())),

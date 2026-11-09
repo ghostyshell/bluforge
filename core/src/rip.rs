@@ -360,6 +360,7 @@ fn split_clips<F>(
     wanted: &[&crate::tv::PlanItem],
     plan: &crate::tv::Plan,
     tmp_dir: &std::path::Path,
+    backend: crate::disc::DecryptBackend,
     prog: &mut RipProgress,
     on_progress: &mut F,
 ) -> Result<Vec<std::path::PathBuf>, CoreError>
@@ -376,7 +377,7 @@ where
         .unwrap_or(0);
     let last_wanted = first_idx + wanted.len() - 1;
 
-    let disc = crate::disc::Disc::open(&req.source, req.keydb.as_deref())?;
+    let disc = crate::disc::Disc::open_with_backend(&req.source, req.keydb.as_deref(), backend)?;
     let _ = disc.info()?;
     disc.select(title)?;
     // When the wanted range does not start at the first clip, jump to it: the
@@ -499,8 +500,8 @@ where
                                     break 'outer;
                                 }
                                 if wanted_clip(clip) {
-                                    let path = tmp_dir
-                                        .join(format!("clip{:03}.m2ts", clip - first_idx));
+                                    let path =
+                                        tmp_dir.join(format!("clip{:03}.m2ts", clip - first_idx));
                                     let f = std::fs::File::create(&path)?;
                                     paths.push(path);
                                     current = Some((f, Vec::with_capacity(1 << 20)));
@@ -550,7 +551,11 @@ where
         f.write_all(&b)?;
         f.flush().ok();
     }
-    tracing::info!(clips = paths.len(), read_bytes = read_total, "tv split: done");
+    tracing::info!(
+        clips = paths.len(),
+        read_bytes = read_total,
+        "tv split: done"
+    );
     if paths.is_empty() {
         return Err(CoreError::Disc(
             "no clips split out of the title (disc read failed?)".into(),
@@ -564,6 +569,7 @@ fn run_tv<F>(
     req: &RipRequest,
     cfg: &crate::AppConfig,
     ctx: &mut TrackCtx,
+    backend: crate::disc::DecryptBackend,
     _cancel: &std::sync::atomic::AtomicBool,
     on_progress: &mut F,
 ) -> Result<(), CoreError>
@@ -601,6 +607,7 @@ where
         req.keydb.as_deref(),
         wanted[0].title_index,
         200 * 1024 * 1024,
+        backend,
     )
     .unwrap_or_default()
     .into_iter()
@@ -626,7 +633,7 @@ where
     on_progress(prog.clone());
 
     // Segment boundaries, relative to the first episode being ripped.
-    let first_start = wanted.first().map(|i| i.start_secs).unwrap_or(0.0);
+    let _first_start = wanted.first().map(|i| i.start_secs).unwrap_or(0.0);
     let mut times = Vec::new();
     let mut acc = 0.0;
     for it in &wanted {
@@ -639,7 +646,7 @@ where
     let _ = std::fs::create_dir_all(&tmp_dir);
     // Chapters of the whole title; sliced per episode below. (Read before the
     // split so the marks cover the title even if the split runs long.)
-    let marks = crate::disc::Disc::open(&req.source, req.keydb.as_deref())
+    let marks = crate::disc::Disc::open_with_backend(&req.source, req.keydb.as_deref(), backend)
         .and_then(|d| {
             let _ = d.info()?;
             d.chapters(wanted[0].title_index)
@@ -650,7 +657,15 @@ where
     // zero, so segmenting by timestamp splits in the wrong place (and produces
     // files whose duration has nothing to do with their length). Split on the
     // clip boundaries instead: one raw .m2ts per wanted episode.
-    let segs = split_clips(req, &wanted, plan, &tmp_dir, &mut prog, on_progress)?;
+    let segs = split_clips(
+        req,
+        &wanted,
+        plan,
+        &tmp_dir,
+        backend,
+        &mut prog,
+        on_progress,
+    )?;
 
     // Anime (Japanese audio present) gets OP/ED/preview chapters labelled.
     let anime = ctx
@@ -826,8 +841,9 @@ pub fn probe_sub_events(
     keydb: Option<&std::path::Path>,
     title: u32,
     budget: u64,
+    backend: crate::disc::DecryptBackend,
 ) -> Result<Vec<(u16, u64)>, CoreError> {
-    let disc = crate::disc::Disc::open(source, keydb)?;
+    let disc = crate::disc::Disc::open_with_backend(source, keydb, backend)?;
     let info = disc.info()?;
     let subs: Vec<u16> = disc
         .streams(title)?
@@ -1005,7 +1021,10 @@ fn plan_tracks_tv(
                     4 => "1080i",
                     _ => "video",
                 };
-                maps.push(format!("0:v:{}", maps.iter().filter(|m| m.starts_with("0:v:")).count()));
+                maps.push(format!(
+                    "0:v:{}",
+                    maps.iter().filter(|m| m.starts_with("0:v:")).count()
+                ));
                 if out_s + out_a == 0 && !maps.is_empty() {
                     // label the first video
                 }
@@ -1029,12 +1048,20 @@ fn plan_tracks_tv(
                             format!("-metadata:s:a:{out_a}"),
                             format!("language={}", lang_tag(&lang)),
                             format!("-metadata:s:a:{out_a}"),
-                            format!("title={} {}", lang_name(&lang), audio_codec_label(st.coding_type)),
+                            format!(
+                                "title={} {}",
+                                lang_name(&lang),
+                                audio_codec_label(st.coding_type)
+                            ),
                         ]);
                     }
                     meta.extend([
                         format!("-disposition:a:{out_a}"),
-                        if default_audio == Some(idx) { "default".into() } else { "0".into() },
+                        if default_audio == Some(idx) {
+                            "default".into()
+                        } else {
+                            "0".into()
+                        },
                     ]);
                     out_a += 1;
                 }
@@ -1043,27 +1070,29 @@ fn plan_tracks_tv(
             "subtitle" => {
                 // "signs" mode keeps just the default track on an English-audio
                 // disc, so the file carries no redundant full subtitles.
-                let signs_only_skip = signs_only
-                    && has_eng_audio
-                    && signs_idx.is_some()
-                    && signs_idx != Some(idx);
+                let signs_only_skip =
+                    signs_only && has_eng_audio && signs_idx.is_some() && signs_idx != Some(idx);
                 let keep = st.lang.as_deref() == Some("eng") && !signs_only_skip;
                 if keep {
                     maps.push(format!("0:s:{}", si));
                     let lang = st.lang.clone().unwrap_or_default();
                     let is_default = Some(idx) == default_sub;
-                    let label = if Some(idx) == signs_idx { "signs & songs" } else { "full" };
+                    let label = if Some(idx) == signs_idx {
+                        "signs & songs"
+                    } else {
+                        "full"
+                    };
                     meta.extend([
                         format!("-metadata:s:s:{out_s}"),
                         format!("language={}", lang_tag(&lang)),
                         format!("-metadata:s:s:{out_s}"),
-                        format!(
-                            "title={} ({})",
-                            lang_name(&lang),
-                            label
-                        ),
+                        format!("title={} ({})", lang_name(&lang), label),
                         format!("-disposition:s:{out_s}"),
-                        if is_default { "default".into() } else { "0".into() },
+                        if is_default {
+                            "default".into()
+                        } else {
+                            "0".into()
+                        },
                     ]);
                     out_s += 1;
                 }
@@ -1173,7 +1202,11 @@ fn plan_tracks(ctx: &TrackCtx, audio: AudioSel, subs: SubSel) -> (Vec<String>, V
                     }
                     meta.extend([
                         format!("-disposition:a:{out_a}"),
-                        if ctx.default_audio == Some(ai) { "default".into() } else { "0".into() },
+                        if ctx.default_audio == Some(ai) {
+                            "default".into()
+                        } else {
+                            "0".into()
+                        },
                     ]);
                     out_a += 1;
                     // With `all`, also keep the embedded lossy core.
@@ -1240,8 +1273,12 @@ fn map_args(maps: &[String]) -> Vec<String> {
 fn build_args(req: &RipRequest, ctx: &TrackCtx) -> Vec<String> {
     let mkv = matches!(
         &req.mode,
-        RipMode::Remux { container: Container::Mkv }
-            | RipMode::Encode { container: Container::Mkv, .. }
+        RipMode::Remux {
+            container: Container::Mkv
+        } | RipMode::Encode {
+            container: Container::Mkv,
+            ..
+        }
     );
 
     let mut a: Vec<String> = vec![
@@ -1256,7 +1293,12 @@ fn build_args(req: &RipRequest, ctx: &TrackCtx) -> Vec<String> {
         "pipe:0".into(),
     ];
     if let Some(cf) = &ctx.chapters_file {
-        a.extend(["-f".into(), "ffmetadata".into(), "-i".into(), cf.to_string_lossy().into_owned()]);
+        a.extend([
+            "-f".into(),
+            "ffmetadata".into(),
+            "-i".into(),
+            cf.to_string_lossy().into_owned(),
+        ]);
     }
 
     let (mut maps, meta) = plan_tracks(ctx, req.audio, req.subs);
@@ -1438,15 +1480,42 @@ fn write_chapters(
 
 /// Run the rip. `on_progress` is called on the calling thread for each update.
 /// `cancel` is polled between progress lines; when set the ffmpeg child is killed.
-pub fn run<F>(req: &RipRequest, cancel: &std::sync::atomic::AtomicBool, mut on_progress: F) -> Result<(), CoreError>
+pub fn run<F>(
+    req_in: &RipRequest,
+    cancel: &std::sync::atomic::AtomicBool,
+    mut on_progress: F,
+) -> Result<(), CoreError>
 where
     F: FnMut(RipProgress),
 {
-    if let Some(dir) = req.output.as_ref().and_then(|p| p.parent()) {
+    if let Some(dir) = req_in.output.as_ref().and_then(|p| p.parent()) {
         std::fs::create_dir_all(dir)?;
     }
-    let disc = Disc::open(&req.source, req.keydb.as_deref())?;
+    // Native libaacs cannot decrypt while the volume is mounted, so open the raw
+    // device and unmount it for the rip; libmmbd only needs the raw device.
+    let backend = Disc::resolve_backend_for(Some(&req_in.source));
+    let disc_id = Disc::disc_id_for_source(&req_in.source);
+    let keyed = disc_id
+        .as_deref()
+        .map(|i| crate::keys::has(i).unwrap_or(false))
+        .unwrap_or(false);
+    let (source, remount) =
+        crate::disc::prepare_source(&req_in.source, backend == crate::disc::DecryptBackend::Aacs);
+    let _remount = crate::disc::RemountGuard(remount);
+    let mut owned = req_in.clone();
+    owned.source = source;
+    let req: &RipRequest = &owned;
+
+    let disc = Disc::open_with_backend(&req.source, req.keydb.as_deref(), backend)?;
     let info = disc.info()?;
+    let (aacs_lib, _) = Disc::decryption_backend();
+    tracing::info!(
+        backend = backend.label(),
+        aacs_lib = aacs_lib.as_deref().unwrap_or("(none)"),
+        disc_id = ?disc_id,
+        keyed,
+        "decrypt backend"
+    );
     let title = req.title.or(info.main_title).unwrap_or(0);
     tracing::info!(title, main = ?info.main_title, "ripping title");
     let title_info = info.titles.iter().find(|t| t.index == title);
@@ -1524,9 +1593,7 @@ where
     // A path that is an existing dir, ends in `/`, or has no extension is a
     // folder to render the template into; anything else is the exact file.
     ctx.dest = match &req.output {
-        Some(p)
-            if p.is_dir() || p.to_string_lossy().ends_with('/') || p.extension().is_none() =>
-        {
+        Some(p) if p.is_dir() || p.to_string_lossy().ends_with('/') || p.extension().is_none() => {
             p.join(template::render(&tpl, &vars, ext, "{title} - {resolution}"))
         }
         Some(p) => p.clone(),
@@ -1543,7 +1610,15 @@ where
     if req.tv {
         match crate::tv::plan(&disc, &info, req.series.as_deref(), req.start_episode) {
             Ok(plan) if plan.items.len() >= 2 => {
-                return run_tv(&plan, req, &cfg, &mut ctx, cancel, &mut on_progress);
+                return run_tv(
+                    &plan,
+                    req,
+                    &cfg,
+                    &mut ctx,
+                    backend,
+                    cancel,
+                    &mut on_progress,
+                );
             }
             Ok(plan) => tracing::info!(
                 found = plan.items.len(),
@@ -1610,11 +1685,7 @@ where
                 break;
             }
             if stride == 0 {
-                stride = if n >= 5 && buf[4] == 0x47 {
-                    192
-                } else {
-                    188
-                };
+                stride = if n >= 5 && buf[4] == 0x47 { 192 } else { 188 };
             }
             out.clear();
             let sync = if stride == 192 { 4 } else { 0 };
@@ -1718,7 +1789,11 @@ mod tests {
     fn st(kind: &str, lang: &str, ct: u8, fmt: u8) -> StreamInfo {
         StreamInfo {
             kind: kind.into(),
-            lang: if lang.is_empty() { None } else { Some(lang.into()) },
+            lang: if lang.is_empty() {
+                None
+            } else {
+                Some(lang.into())
+            },
             coding_type: ct,
             format: fmt,
             rate: 0,
@@ -1777,7 +1852,10 @@ mod tests {
     fn chapters_at(starts: &[f64]) -> Vec<crate::disc::Chapter> {
         starts
             .iter()
-            .map(|s| crate::disc::Chapter { start_secs: *s, name: None })
+            .map(|s| crate::disc::Chapter {
+                start_secs: *s,
+                name: None,
+            })
             .collect()
     }
 
@@ -1829,7 +1907,10 @@ mod tests {
     #[test]
     fn subtitles_are_mapped_and_never_default() {
         let (maps, meta) = plan_tracks(&sample(), AudioSel::Main, SubSel::All);
-        assert_eq!(maps, vec!["0:v:0", "0:v:1", "0:a:0", "0:a:1", "0:s:0", "0:s:1"]);
+        assert_eq!(
+            maps,
+            vec!["0:v:0", "0:v:1", "0:a:0", "0:a:1", "0:s:0", "0:s:1"]
+        );
         assert_eq!(dispo(&meta, "-disposition:s:0"), "0");
         assert_eq!(dispo(&meta, "-disposition:s:1"), "0");
         assert!(meta.contains(&"title=English (subtitles)".to_string()));
@@ -1852,6 +1933,11 @@ mod tests {
     fn video_is_labelled_once_and_default() {
         let (_, meta) = plan_tracks(&sample(), AudioSel::Main, SubSel::None);
         assert!(meta.contains(&"title=2160p HEVC".to_string()));
-        assert_eq!(meta.iter().filter(|m| m.starts_with("-metadata:s:v:")).count(), 2);
+        assert_eq!(
+            meta.iter()
+                .filter(|m| m.starts_with("-metadata:s:v:"))
+                .count(),
+            2
+        );
     }
 }

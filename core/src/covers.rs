@@ -81,10 +81,14 @@ fn decorate(url: &str, cookie: Option<&str>) -> ureq::Request {
     if url.contains("hirescovers.net") {
         req = req.set("User-Agent", UA);
         if let Some(c) = cookie {
-            req = req.set("Cookie", c).set("Referer", "https://www.hirescovers.net/gallery/");
+            req = req
+                .set("Cookie", c)
+                .set("Referer", "https://www.hirescovers.net/gallery/");
         }
     } else if url.contains("dvdcover.com") {
-        req = req.set("User-Agent", BROWSER_UA).set("Referer", "https://dvdcover.com/");
+        req = req
+            .set("User-Agent", BROWSER_UA)
+            .set("Referer", "https://dvdcover.com/");
     } else {
         req = req.set("User-Agent", UA);
     }
@@ -125,13 +129,7 @@ pub fn role_filename(role: &str, stem: &str) -> String {
 pub fn sanitize(s: &str) -> String {
     let t: String = s
         .chars()
-        .map(|c| {
-            if "/\\:*?\"<>|".contains(c) {
-                '-'
-            } else {
-                c
-            }
-        })
+        .map(|c| if "/\\:*?\"<>|".contains(c) { '-' } else { c })
         .collect();
     let t = t.replace("&#038;", "&").replace("&amp;", "&");
     let t = t.trim().trim_matches('.').to_string();
@@ -235,7 +233,8 @@ fn search_dvdcover(query: &str, limit: usize) -> Result<Vec<CoverHit>, CoreError
     let medias: Vec<serde_json::Value> = serde_json::from_str(&media).unwrap_or_default();
     let mut by_id = std::collections::HashMap::new();
     for m in &medias {
-        if let (Some(id), Some(url)) = (m.get("id").and_then(|v| v.as_u64()), dvdcover_free_url(m)) {
+        if let (Some(id), Some(url)) = (m.get("id").and_then(|v| v.as_u64()), dvdcover_free_url(m))
+        {
             by_id.insert(id, url);
         }
     }
@@ -264,7 +263,11 @@ fn search_dvdcover(query: &str, limit: usize) -> Result<Vec<CoverHit>, CoreError
         };
         out.push(CoverHit {
             source: CoverSource::DvdCover.as_str().into(),
-            id: p.get("id").and_then(|v| v.as_u64()).unwrap_or(0).to_string(),
+            id: p
+                .get("id")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0)
+                .to_string(),
             title,
             kind: kind.into(),
             format: format.into(),
@@ -309,7 +312,11 @@ pub fn manifest_path(dir: &Path) -> PathBuf {
 }
 
 /// Search the local HiResCovers manifest (204k items) - no network, no login.
-pub fn search_hirescovers(manifest: &Path, query: &str, limit: usize) -> Result<Vec<CoverHit>, CoreError> {
+pub fn search_hirescovers(
+    manifest: &Path,
+    query: &str,
+    limit: usize,
+) -> Result<Vec<CoverHit>, CoreError> {
     if !manifest.is_file() {
         return Ok(vec![]);
     }
@@ -356,7 +363,11 @@ pub fn search_hirescovers(manifest: &Path, query: &str, limit: usize) -> Result<
         out.push(CoverHit {
             source: CoverSource::Hirescovers.as_str().into(),
             id: pid.to_string(),
-            title: if title.is_empty() { query.to_string() } else { title },
+            title: if title.is_empty() {
+                query.to_string()
+            } else {
+                title
+            },
             kind: kind.into(),
             format: format.into(),
             preview_url: normal,
@@ -453,7 +464,10 @@ pub fn login_hirescovers(user: &str, pass: &str) -> Result<String, CoreError> {
         urlencode(&form_token),
         urlencode(&sid)
     );
-    let (_s, page2, cookie) = fetch("https://www.hirescovers.net/forum/ucp.php?mode=login", Some(body))?;
+    let (_s, page2, cookie) = fetch(
+        "https://www.hirescovers.net/forum/ucp.php?mode=login",
+        Some(body),
+    )?;
     if page2.contains("mode=logout") {
         tracing::info!("hirescovers: logged in");
     } else {
@@ -493,7 +507,11 @@ pub fn search(
 }
 
 /// Re-resolve a hit from a `source id` pair (used by `covers get`).
-pub fn by_id(source: CoverSource, id: &str, hirescovers_dir: &Path) -> Result<Option<CoverHit>, CoreError> {
+pub fn by_id(
+    source: CoverSource,
+    id: &str,
+    hirescovers_dir: &Path,
+) -> Result<Option<CoverHit>, CoreError> {
     match source {
         CoverSource::Hirescovers => {
             let manifest = manifest_path(hirescovers_dir);
@@ -505,7 +523,10 @@ pub fn by_id(source: CoverSource, id: &str, hirescovers_dir: &Path) -> Result<Op
                 let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) else {
                     continue;
                 };
-                if v.get("pid").and_then(|p| p.as_u64()).map(|p| p.to_string()).as_deref()
+                if v.get("pid")
+                    .and_then(|p| p.as_u64())
+                    .map(|p| p.to_string())
+                    .as_deref()
                     == Some(id)
                 {
                     let caption = jstr(&v, "caption").unwrap_or_default();
@@ -537,7 +558,9 @@ pub fn by_id(source: CoverSource, id: &str, hirescovers_dir: &Path) -> Result<Op
         }
         CoverSource::DvdCover => {
             let body = get(
-                &format!("https://dvdcover.com/wp-json/wp/v2/posts/{id}?_fields=id,title,featured_media"),
+                &format!(
+                    "https://dvdcover.com/wp-json/wp/v2/posts/{id}?_fields=id,title,featured_media"
+                ),
                 None,
             )?;
             let post: serde_json::Value = serde_json::from_str(&body).unwrap_or_default();
@@ -668,10 +691,12 @@ pub fn inspect(bytes: &[u8], path: &Path) -> ImageInfo {
 
     if bytes.len() > 8 && bytes[..8] == [0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A] {
         info.format = "png".into();
-        info.width = ((bytes[16] as u32) << 24) | ((bytes[17] as u32) << 16)
+        info.width = ((bytes[16] as u32) << 24)
+            | ((bytes[17] as u32) << 16)
             | ((bytes[18] as u32) << 8)
             | bytes[19] as u32;
-        info.height = ((bytes[20] as u32) << 24) | ((bytes[21] as u32) << 16)
+        info.height = ((bytes[20] as u32) << 24)
+            | ((bytes[21] as u32) << 16)
             | ((bytes[22] as u32) << 8)
             | bytes[23] as u32;
         info.reasons.push("png".into());
@@ -722,8 +747,8 @@ pub fn inspect(bytes: &[u8], path: &Path) -> ImageInfo {
             }
             0xE1 => info.has_exif = true,
             0xE2 => info.has_icc = true,
-            0xED => info.has_adobe = true,   // APP13 = Photoshop IRB
-            0xEE => info.has_adobe = true,   // APP14 = Adobe
+            0xED => info.has_adobe = true, // APP13 = Photoshop IRB
+            0xEE => info.has_adobe = true, // APP14 = Adobe
             0xFE => {
                 let t = String::from_utf8_lossy(payload).trim().to_string();
                 if !t.is_empty() {
@@ -743,7 +768,11 @@ pub fn inspect(bytes: &[u8], path: &Path) -> ImageInfo {
 
     // Judge it.
     let long_side = info.width.max(info.height);
-    let creator_lc = info.creator.clone().unwrap_or_default().to_ascii_lowercase();
+    let creator_lc = info
+        .creator
+        .clone()
+        .unwrap_or_default()
+        .to_ascii_lowercase();
     if creator_lc.contains("gd-jpeg") || creator_lc.contains("gd-") {
         info.watermarked = true;
         info.reasons
@@ -892,48 +921,52 @@ pub fn auto_covers(movie: &str, dest: &Path, cfg: &crate::AppConfig) -> Vec<Save
                     break;
                 }
             }
-                let pick = hits
-                    .iter()
-                    .find(|h| h.kind == want && h.format != "dvd")
-                    .or_else(|| hits.iter().find(|h| h.kind == want));
-                let Some(hit) = pick else { continue };
-                let target = parent.join(format!("{stem} - {want}"));
-                let Ok(s) = download(hit, &target, cookie.as_deref()) else {
-                    continue;
-                };
-                let rank = if s.original {
-                    0
-                } else if !s.info.watermarked {
-                    1
-                } else {
-                    2
-                };
-                tracing::info!(
-                    path = %s.path.display(),
-                    source = %hit.source,
-                    width = s.info.width,
-                    height = s.info.height,
-                    rank,
-                    "cover saved"
-                );
-                let better = best.as_ref().map(|(r, _)| rank < *r).unwrap_or(true);
-                if better {
-                    if let Some((_, prev)) = best.take() {
-                        if prev.path != s.path {
-                            let _ = std::fs::remove_file(&prev.path);
-                        }
+            let pick = hits
+                .iter()
+                .find(|h| h.kind == want && h.format != "dvd")
+                .or_else(|| hits.iter().find(|h| h.kind == want));
+            let Some(hit) = pick else { continue };
+            let target = parent.join(format!("{stem} - {want}"));
+            let Ok(s) = download(hit, &target, cookie.as_deref()) else {
+                continue;
+            };
+            let rank = if s.original {
+                0
+            } else if !s.info.watermarked {
+                1
+            } else {
+                2
+            };
+            tracing::info!(
+                path = %s.path.display(),
+                source = %hit.source,
+                width = s.info.width,
+                height = s.info.height,
+                rank,
+                "cover saved"
+            );
+            let better = best.as_ref().map(|(r, _)| rank < *r).unwrap_or(true);
+            if better {
+                if let Some((_, prev)) = best.take() {
+                    if prev.path != s.path {
+                        let _ = std::fs::remove_file(&prev.path);
                     }
-                    best = Some((rank, s));
-                } else if best.as_ref().map(|(_, b)| b.path != s.path).unwrap_or(false) {
-                    let _ = std::fs::remove_file(&s.path);
                 }
-                if rank == 0 {
-                    break;
-                }
+                best = Some((rank, s));
+            } else if best
+                .as_ref()
+                .map(|(_, b)| b.path != s.path)
+                .unwrap_or(false)
+            {
+                let _ = std::fs::remove_file(&s.path);
             }
-            if let Some((_, s)) = best {
-                saved.push(s);
+            if rank == 0 {
+                break;
             }
+        }
+        if let Some((_, s)) = best {
+            saved.push(s);
+        }
     }
     saved
 }
@@ -988,7 +1021,13 @@ mod tests {
     #[test]
     fn flags_a_gd_preview_as_watermarked() {
         // What hirescovers' previews actually look like: GD re-encode, 96 dpi, small.
-        let b = jpeg(720, 400, 96, Some("CREATOR: gd-jpeg v1.0 (using IJG JPEG v62), quality = 85"), false);
+        let b = jpeg(
+            720,
+            400,
+            96,
+            Some("CREATOR: gd-jpeg v1.0 (using IJG JPEG v62), quality = 85"),
+            false,
+        );
         let i = inspect(&b, Path::new("x.jpg"));
         assert!(i.watermarked, "reasons: {:?}", i.reasons);
         assert_eq!((i.width, i.height), (720, 400));

@@ -17,10 +17,10 @@ use serde_json::{json, Value};
 
 use bluforge_core::config::AppConfig;
 use bluforge_core::iso;
+use bluforge_core::keys;
 use bluforge_core::rip::{
     AudioSel, Container, EncodeSettings, RipMode, RipProgress, RipRequest, SubSel, VideoCodec,
 };
-use bluforge_core::keys;
 
 const PROTOCOL: &str = "2025-06-18";
 const SERVER_NAME: &str = "bluforge";
@@ -188,7 +188,10 @@ fn handle(mut stream: TcpStream) {
             .to_string(),
         )
     } else if method != "POST" {
-        ("405 Method Not Allowed", json!({"error": "POST /mcp"}).to_string())
+        (
+            "405 Method Not Allowed",
+            json!({"error": "POST /mcp"}).to_string(),
+        )
     } else {
         match dispatch(&body) {
             Some(v) => ("200 OK", v.to_string()),
@@ -277,7 +280,8 @@ fn run_tool(name: &str, args: Value) -> Result<Value, String> {
     match name {
         "status" => {
             let cfg = AppConfig::load();
-            let snap = serde_json::to_value(bluforge_core::snapshot()).map_err(|e| e.to_string())?;
+            let snap =
+                serde_json::to_value(bluforge_core::snapshot()).map_err(|e| e.to_string())?;
             Ok(json!({
                 "app": snap,
                 "mcp": {
@@ -303,7 +307,8 @@ fn run_tool(name: &str, args: Value) -> Result<Value, String> {
                 .map_err(|e| e.to_string())?;
             let info = disc.info().map_err(|e| e.to_string())?;
             let start = args.get("start").and_then(|v| v.as_u64()).map(|v| v as u32);
-            let plan = bluforge_core::tv::plan(&disc, &info, series, start).map_err(|e| e.to_string())?;
+            let plan =
+                bluforge_core::tv::plan(&disc, &info, series, start).map_err(|e| e.to_string())?;
             serde_json::to_value(plan).map_err(|e| e.to_string())
         }
         "rip_start" => start_rip(args),
@@ -322,7 +327,11 @@ fn run_tool(name: &str, args: Value) -> Result<Value, String> {
         "job_cancel" => {
             let id = args.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
             let mut jobs = jobs().lock().unwrap();
-            let job = if id == 0 { jobs.last_mut() } else { jobs.iter_mut().find(|j| j.id == id) };
+            let job = if id == 0 {
+                jobs.last_mut()
+            } else {
+                jobs.iter_mut().find(|j| j.id == id)
+            };
             match job {
                 Some(j) => {
                     if let Some(c) = &j.cancel {
@@ -348,7 +357,9 @@ fn run_tool(name: &str, args: Value) -> Result<Value, String> {
             };
             let mut hits = Vec::new();
             for s in sources {
-                if let Ok(mut r) = bluforge_core::covers::search(s, &query, limit, &cfg.hirescovers_dir) {
+                if let Ok(mut r) =
+                    bluforge_core::covers::search(s, &query, limit, &cfg.hirescovers_dir)
+                {
                     hits.append(&mut r);
                 }
             }
@@ -358,8 +369,9 @@ fn run_tool(name: &str, args: Value) -> Result<Value, String> {
             let url = str_arg(&args, "url")?;
             let dest = str_arg(&args, "dest")?;
             let cfg = AppConfig::load();
-            let (bytes, kind) = bluforge_core::covers::fetch(&url, bluforge_core::covers::cookie(&cfg).as_deref())
-                .map_err(|e| e.to_string())?;
+            let (bytes, kind) =
+                bluforge_core::covers::fetch(&url, bluforge_core::covers::cookie(&cfg).as_deref())
+                    .map_err(|e| e.to_string())?;
             if let Some(dir) = Path::new(&dest).parent() {
                 std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
             }
@@ -369,6 +381,54 @@ fn run_tool(name: &str, args: Value) -> Result<Value, String> {
         "keys_update" => {
             let st = keys::update().map_err(|e| e.to_string())?;
             serde_json::to_value(st).map_err(|e| e.to_string())
+        }
+        "keys_list" => {
+            let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(40) as usize;
+            let rows: Vec<Value> = keys::list_at(&keys::keydb_path(), None)
+                .map_err(|e| e.to_string())?
+                .into_iter()
+                .filter(|e| e.vuk.is_some() || !e.unit_keys.is_empty())
+                .take(limit)
+                .map(|e| json!({ "disc_id": e.id, "name": e.name }))
+                .collect();
+            Ok(json!({ "entries": rows, "limit": limit }))
+        }
+        "keys_add" => {
+            let id = keys_arg_disc(&args)?;
+            let entry = keys::KeyEntry {
+                id,
+                name: args
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string),
+                vuk: args.get("vuk").and_then(|v| v.as_str()).map(str::to_string),
+                volume_id: args
+                    .get("volume_id")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string),
+                media_key: args
+                    .get("media_key")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string),
+                unit_keys: args
+                    .get("unit_keys")
+                    .and_then(|v| v.as_array())
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(|x| x.as_str().map(str::to_string))
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+                note: Some("bluforge mcp".into()),
+            };
+            let replaced =
+                keys::upsert_at(&keys::keydb_path(), &entry).map_err(|e| e.to_string())?;
+            Ok(json!({ "disc_id": entry.id, "replaced": replaced }))
+        }
+        "keys_remove" => {
+            let id = keys_arg_disc(&args)?;
+            let removed = keys::remove_at(&keys::keydb_path(), &id).map_err(|e| e.to_string())?;
+            Ok(json!({ "disc_id": id, "removed": removed }))
         }
         "eject" => {
             let msg = bluforge_core::device::eject().map_err(|e| e.to_string())?;
@@ -385,7 +445,12 @@ fn run_tool(name: &str, args: Value) -> Result<Value, String> {
         "preview_output" => {
             let template = str_arg(&args, "template")?;
             let ext = args.get("ext").and_then(|v| v.as_str()).unwrap_or("mkv");
-            let s = |k: &str| args.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let s = |k: &str| {
+                args.get(k)
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string()
+            };
             let v = bluforge_core::TemplateVars::build(
                 &s("disc"),
                 &s("title"),
@@ -396,7 +461,9 @@ fn run_tool(name: &str, args: Value) -> Result<Value, String> {
                 args.get("video_codec").and_then(|x| x.as_str()),
                 args.get("audio_lang").and_then(|x| x.as_str()),
                 args.get("audio_codec").and_then(|x| x.as_str()),
-                args.get("runtime_secs").and_then(|x| x.as_f64()).unwrap_or(0.0),
+                args.get("runtime_secs")
+                    .and_then(|x| x.as_f64())
+                    .unwrap_or(0.0),
                 args.get("chapters").and_then(|x| x.as_u64()).unwrap_or(0) as usize,
                 args.get("playlist").and_then(|x| x.as_u64()).unwrap_or(0) as u32,
                 args.get("index").and_then(|x| x.as_u64()).unwrap_or(0) as u32,
@@ -406,18 +473,38 @@ fn run_tool(name: &str, args: Value) -> Result<Value, String> {
                 "path": bluforge_core::render_template(&template, &v, ext, "{title} - {resolution}")
             }))
         }
-        "template_placeholders" => Ok(json!(
-            bluforge_core::template::PLACEHOLDERS
-                .iter()
-                .map(|(k, d)| json!({ "key": k, "description": d }))
-                .collect::<Vec<_>>()
-        )),
+        "template_placeholders" => Ok(json!(bluforge_core::template::PLACEHOLDERS
+            .iter()
+            .map(|(k, d)| json!({ "key": k, "description": d }))
+            .collect::<Vec<_>>())),
         other => Err(format!("unknown tool: {other}")),
     }
 }
 
 /// `/dev/rdiskN` goes stale when the drive re-enumerates (it moved disk5 -> disk4
 /// here). Fall back to the optical drive that is present now.
+/// Resolve a disc id from a `disc` (40 hex) or a `source` path.
+fn keys_arg_disc(args: &Value) -> Result<String, String> {
+    if let Some(d) = args.get("disc").and_then(|v| v.as_str()) {
+        let t = d
+            .trim()
+            .trim_start_matches("0x")
+            .trim_start_matches("0X")
+            .to_ascii_lowercase();
+        if t.len() == 40 && t.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Ok(t);
+        }
+        return Err(format!("bad disc id '{d}'"));
+    }
+    if let Some(s) = args.get("source").and_then(|v| v.as_str()) {
+        let resolved = resolve_source(s);
+        let p = Path::new(&resolved);
+        return keys::disc_id_for_path(p)
+            .ok_or_else(|| format!("no AACS/Unit_Key_RO.inf under {}", p.display()));
+    }
+    Err("give `disc` or `source`".into())
+}
+
 fn resolve_source(p: &str) -> String {
     if Path::new(p).exists() {
         return p.to_string();
@@ -556,7 +643,11 @@ fn start_rip(args: Value) -> Result<Value, String> {
         let mut v = jobs().lock().unwrap();
         v.push(Job {
             id,
-            kind: if req.tv { "rip-tv".into() } else { "rip".into() },
+            kind: if req.tv {
+                "rip-tv".into()
+            } else {
+                "rip".into()
+            },
             state: "running".into(),
             message: "starting".into(),
             percent: 0.0,
@@ -610,7 +701,8 @@ struct AuthorArgs {
 }
 
 fn start_author(args: Value) -> Result<Value, String> {
-    let a: AuthorArgs = serde_json::from_value(args).map_err(|e| format!("bad author arguments: {e}"))?;
+    let a: AuthorArgs =
+        serde_json::from_value(args).map_err(|e| format!("bad author arguments: {e}"))?;
     require_free_slot()?;
 
     let req = bluforge_core::author::AuthorRequest {
@@ -735,15 +827,32 @@ fn apply_config_patch(cfg: &mut AppConfig, patch: &Value) -> Result<(), String> 
     let obj = patch.as_object().ok_or("arguments must be an object")?;
     for (key, val) in obj {
         match key.as_str() {
-            "output_dir" => cfg.output_dir = PathBuf::from(val.as_str().ok_or("output_dir must be a string")?),
-            "output_template" => cfg.output_template = val.as_str().ok_or("output_template must be a string")?.to_string(),
-            "tv_template" => cfg.tv_template = val.as_str().ok_or("tv_template must be a string")?.to_string(),
+            "output_dir" => {
+                cfg.output_dir = PathBuf::from(val.as_str().ok_or("output_dir must be a string")?)
+            }
+            "output_template" => {
+                cfg.output_template = val
+                    .as_str()
+                    .ok_or("output_template must be a string")?
+                    .to_string()
+            }
+            "tv_template" => {
+                cfg.tv_template = val
+                    .as_str()
+                    .ok_or("tv_template must be a string")?
+                    .to_string()
+            }
             "tv_subs" => cfg.tv_subs = val.as_str().ok_or("tv_subs must be a string")?.to_string(),
-            "auto_update_keys" => cfg.auto_update_keys = val.as_bool().ok_or("auto_update_keys must be a bool")?,
-            "auto_check_updates" => cfg.auto_check_updates = val.as_bool().ok_or("auto_check_updates must be a bool")?,
+            "auto_update_keys" => {
+                cfg.auto_update_keys = val.as_bool().ok_or("auto_update_keys must be a bool")?
+            }
+            "auto_check_updates" => {
+                cfg.auto_check_updates = val.as_bool().ok_or("auto_check_updates must be a bool")?
+            }
             "auto_cover" => cfg.auto_cover = val.as_bool().ok_or("auto_cover must be a bool")?,
             "hirescovers_dir" => {
-                cfg.hirescovers_dir = PathBuf::from(val.as_str().ok_or("hirescovers_dir must be a string")?)
+                cfg.hirescovers_dir =
+                    PathBuf::from(val.as_str().ok_or("hirescovers_dir must be a string")?)
             }
             "hirescovers_user" => cfg.hirescovers_user = val.as_str().map(|s| s.to_string()),
             "hirescovers_pass" => cfg.hirescovers_pass = val.as_str().map(|s| s.to_string()),
@@ -872,6 +981,34 @@ fn tools() -> Vec<Value> {
             "name": "keys_update",
             "description": "Refresh the AACS/BD+ key database (KEYDB.cfg).",
             "inputSchema": { "type": "object", "properties": {} }
+        }),
+        json!({
+            "name": "keys_list",
+            "description": "List keyed discs in the local key store (disc id + name).",
+            "inputSchema": { "type": "object", "properties": {
+                "limit": { "type": "integer" }
+            } }
+        }),
+        json!({
+            "name": "keys_add",
+            "description": "Add or replace a disc key so it decrypts with native libaacs (no MakeMKV). Give `source` (a mounted disc) or `disc` (40-hex id), plus the VUK and/or unit key.",
+            "inputSchema": { "type": "object", "properties": {
+                "source": { "type": "string" },
+                "disc": { "type": "string" },
+                "vuk": { "type": "string" },
+                "unit_keys": { "type": "array", "items": { "type": "string" } },
+                "media_key": { "type": "string" },
+                "volume_id": { "type": "string" },
+                "name": { "type": "string" }
+            } }
+        }),
+        json!({
+            "name": "keys_remove",
+            "description": "Remove a disc's key entry. Give `disc` (40-hex id) or `source`.",
+            "inputSchema": { "type": "object", "properties": {
+                "disc": { "type": "string" },
+                "source": { "type": "string" }
+            } }
         }),
         json!({
             "name": "eject",

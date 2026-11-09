@@ -365,11 +365,7 @@ pub fn lookup_movie(movie: &str, hint_runtime: f64) -> Result<Option<MovieRef>, 
         }
         v
     };
-    let (id, slug) = cands
-        .iter()
-        .max_by_key(|(_, s)| score(s))
-        .cloned()
-        .unwrap();
+    let (id, slug) = cands.iter().max_by_key(|(_, s)| score(s)).cloned().unwrap();
     tracing::info!(tmdb_id = id, %slug, "tmdb: matched");
 
     let page = get(&format!("https://www.themoviedb.org/movie/{id}"))?;
@@ -441,7 +437,11 @@ pub fn lookup_movie(movie: &str, hint_runtime: f64) -> Result<Option<MovieRef>, 
     }
 
     Ok(Some(MovieRef {
-        title: if name.is_empty() { movie.to_string() } else { name },
+        title: if name.is_empty() {
+            movie.to_string()
+        } else {
+            name
+        },
         year,
         tmdb_id: id,
         poster_url,

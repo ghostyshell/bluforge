@@ -138,7 +138,9 @@ fn probe(input: &Path) -> Result<Probe, CoreError> {
             };
             let mut line = format!("{codec_tag}, \"{path}\", track={track}, lang={lang}");
             if kind == "video" && codec == "h264" {
-                line = format!("{codec_tag}, \"{path}\", insertSEI, contSPS, track={track}, lang={lang}");
+                line = format!(
+                    "{codec_tag}, \"{path}\", insertSEI, contSPS, track={track}, lang={lang}"
+                );
             }
             if !title.is_empty() {
                 line.push_str(&format!(
@@ -235,9 +237,8 @@ fn meta(req: &AuthorRequest) -> Result<(String, f64), CoreError> {
         .take(32)
         .collect::<String>();
 
-    let mut s = String::from(
-        "MUXOPT --blu-ray --no-pcr-on-video-pid --new-audio-pes --vbr --vbv-len=500",
-    );
+    let mut s =
+        String::from("MUXOPT --blu-ray --no-pcr-on-video-pid --new-audio-pes --vbr --vbv-len=500");
     s.push_str(&format!(" --label={label}"));
     if !chapter_marks.is_empty() {
         let list = chapter_marks
@@ -294,7 +295,8 @@ where
     if let Some(dir) = req.dest.parent() {
         std::fs::create_dir_all(dir)?;
     }
-    let meta_path = std::env::temp_dir().join(format!("bluforge-author-{}.meta", std::process::id()));
+    let meta_path =
+        std::env::temp_dir().join(format!("bluforge-author-{}.meta", std::process::id()));
     std::fs::write(&meta_path, &meta_text)?;
 
     on_progress(AuthorProgress {

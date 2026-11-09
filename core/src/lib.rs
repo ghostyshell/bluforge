@@ -17,12 +17,12 @@ pub mod template;
 pub mod tv;
 
 pub use config::AppConfig;
-pub use disc::{Chapter, Disc, DiscInfo, StreamInfo, Title};
-pub use iso::{IsoFormat, IsoProgress, IsoRequest};
 pub use covers::{CoverHit, CoverSource};
+pub use disc::{Chapter, DecryptBackend, Disc, DiscInfo, StreamInfo, Title};
+pub use iso::{IsoFormat, IsoProgress, IsoRequest};
 pub use metadata::{lookup_movie, Poster};
-pub use template::{render as render_template, Vars as TemplateVars};
 pub use rip::{Container, EncodeSettings, RipMode, RipProgress, RipRequest, VideoCodec};
+pub use template::{render as render_template, Vars as TemplateVars};
 
 #[derive(Debug, thiserror::Error)]
 pub enum CoreError {

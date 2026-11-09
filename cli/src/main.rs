@@ -3,7 +3,11 @@ use clap::{Parser, Subcommand};
 use bluforge_core::{device, keys, AppConfig};
 
 #[derive(Parser)]
-#[command(name = "bluforge", version, about = "BluForge — Blu-ray ripping & authoring")]
+#[command(
+    name = "bluforge",
+    version,
+    about = "BluForge — Blu-ray ripping & authoring"
+)]
 struct Cli {
     /// Emit machine-readable JSON.
     #[arg(long, global = true)]
@@ -194,9 +198,7 @@ enum CoversCmd {
         stem: Option<String>,
     },
     /// Show what a cover file really is (original vs watermarked preview).
-    Inspect {
-        file: std::path::PathBuf,
-    },
+    Inspect { file: std::path::PathBuf },
     /// Log in to HiResCovers with the configured credentials.
     Login,
     /// Store a HiResCovers member cookie pasted from a browser, and verify it.
@@ -206,15 +208,62 @@ enum CoversCmd {
     },
 }
 
-
 #[derive(Subcommand)]
 enum KeysAction {
     /// Show local key database status.
     Status,
     /// Download the latest key database.
     Update,
+    /// Add or replace a disc key (retires MakeMKV for that disc).
+    Add {
+        /// Disc id: 40 hex chars (SHA-1 of AACS/Unit_Key_RO.inf).
+        #[arg(long)]
+        disc: Option<String>,
+        /// Derive the disc id from a mounted disc / BDMV folder instead.
+        #[arg(long)]
+        from: Option<std::path::PathBuf>,
+        /// Volume-unique key (hex). Alone this decrypts an AACS1 disc.
+        #[arg(long)]
+        vuk: Option<String>,
+        /// Unit key (hex), repeatable. Needed for AACS2/UHD discs.
+        #[arg(long = "unit-key")]
+        unit_keys: Vec<String>,
+        /// Media key (hex), optional.
+        #[arg(long = "media-key")]
+        media_key: Option<String>,
+        /// Volume id (hex), optional.
+        #[arg(long = "volume-id")]
+        volume_id: Option<String>,
+        /// Human name for the entry.
+        #[arg(long)]
+        name: Option<String>,
+    },
+    /// List known discs.
+    List {
+        /// Maximum rows to print.
+        #[arg(long, default_value_t = 40)]
+        limit: usize,
+        /// Only entries that carry a key.
+        #[arg(long)]
+        keyed: bool,
+    },
+    /// Remove a disc's entry.
+    Remove {
+        #[arg(long)]
+        disc: Option<String>,
+        #[arg(long)]
+        from: Option<std::path::PathBuf>,
+    },
+    /// Show the entry for one disc.
+    Show {
+        #[arg(long)]
+        disc: Option<String>,
+        #[arg(long)]
+        from: Option<std::path::PathBuf>,
+    },
+    /// Merge another KEYDB.cfg into the local one.
+    Import { file: std::path::PathBuf },
 }
-
 
 /// A `/dev/rdiskN` node goes stale when the drive re-enumerates (macOS moved it
 /// from disk5 to disk4 and back during one session). If the requested node is
@@ -223,7 +272,10 @@ fn resolve_source(p: &std::path::Path) -> std::path::PathBuf {
     if p.exists() {
         return p.to_path_buf();
     }
-    let name = p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let name = p
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
     if !(name.starts_with("rdisk") || name.starts_with("disk")) {
         return p.to_path_buf();
     }
@@ -233,7 +285,10 @@ fn resolve_source(p: &std::path::Path) -> std::path::PathBuf {
             .clone()
             .unwrap_or_else(|| format!("/dev/r{}", d.bsd_name));
         if std::path::Path::new(&path).exists() {
-            eprintln!("note: {} is gone; the drive re-enumerated, using {path}", p.display());
+            eprintln!(
+                "note: {} is gone; the drive re-enumerated, using {path}",
+                p.display()
+            );
             return std::path::PathBuf::from(path);
         }
     }
@@ -243,8 +298,7 @@ fn resolve_source(p: &std::path::Path) -> std::path::PathBuf {
 fn main() {
     tracing_subscriber::fmt()
         .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info".into()),
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
         )
         .init();
 
@@ -277,7 +331,12 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
                 println!("No optical devices found.");
                 println!("Attach a Blu-ray/DVD drive and retry. All block devices:");
                 for d in device::list() {
-                    println!("  {}  {}  {}", d.bsd_name, d.display(), device::human_bytes(d.size_bytes));
+                    println!(
+                        "  {}  {}  {}",
+                        d.bsd_name,
+                        d.display(),
+                        device::human_bytes(d.size_bytes)
+                    );
                 }
             } else {
                 for d in &devs {
@@ -300,6 +359,82 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
                 let st = keys::update()?;
                 print_keys(cli.json, st)?;
             }
+            KeysAction::Add {
+                disc,
+                from,
+                vuk,
+                unit_keys,
+                media_key,
+                volume_id,
+                name,
+            } => {
+                let id = resolve_disc_id(disc, from)?;
+                let entry = keys::KeyEntry {
+                    id: id.clone(),
+                    name: name.clone(),
+                    media_key: media_key.as_deref().and_then(norm_hex),
+                    volume_id: volume_id.as_deref().and_then(norm_hex),
+                    vuk: vuk.as_deref().and_then(norm_hex),
+                    unit_keys: unit_keys.iter().filter_map(|s| norm_hex(s)).collect(),
+                    note: Some("bluforge".into()),
+                };
+                if entry.vuk.is_none() && entry.unit_keys.is_empty() && entry.media_key.is_none() {
+                    return Err(bluforge_core::CoreError::Keys(
+                        "nothing to store: give --vuk (and/or --unit-key)".into(),
+                    ));
+                }
+                let replaced = keys::upsert_at(&keys::keydb_path(), &entry)?;
+                eprintln!(
+                    "{} {} {}",
+                    if replaced { "updated" } else { "added" },
+                    id,
+                    name.clone().unwrap_or_default()
+                );
+            }
+            KeysAction::List { limit, keyed } => {
+                let all = keys::list_at(&keys::keydb_path(), None)?;
+                let mut shown = 0usize;
+                for e in all {
+                    let has_key = e.vuk.is_some() || !e.unit_keys.is_empty();
+                    if *keyed && !has_key {
+                        continue;
+                    }
+                    if shown >= *limit {
+                        break;
+                    }
+                    println!(
+                        "{}  {}  {}",
+                        e.id,
+                        if has_key { "KEY" } else { "   " },
+                        e.name.unwrap_or_default()
+                    );
+                    shown += 1;
+                }
+                eprintln!("{shown} shown");
+            }
+            KeysAction::Remove { disc, from } => {
+                let id = resolve_disc_id(disc, from)?;
+                let gone = keys::remove_at(&keys::keydb_path(), &id)?;
+                eprintln!("{} {id}", if gone { "removed" } else { "not found:" });
+            }
+            KeysAction::Show { disc, from } => {
+                let id = resolve_disc_id(disc, from)?;
+                match keys::lookup_at(&keys::keydb_path(), &id)? {
+                    Some(e) => {
+                        println!("disc id   : {}", e.id);
+                        println!("name      : {}", e.name.unwrap_or_default());
+                        println!("has vuk   : {}", e.vuk.is_some());
+                        println!("unit keys : {}", e.unit_keys.len());
+                        println!("media key : {}", e.media_key.is_some());
+                        println!("volume id : {}", e.volume_id.is_some());
+                    }
+                    None => eprintln!("no entry for {id}"),
+                }
+            }
+            KeysAction::Import { file } => {
+                let (added, skipped) = keys::import_at(&keys::keydb_path(), file)?;
+                eprintln!("imported {added} entries ({skipped} already present)");
+            }
         },
         Cmd::Disc {
             path,
@@ -311,6 +446,10 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
             start_episode,
         } => {
             let source = resolve_source(path);
+            let backend = bluforge_core::Disc::resolve_backend_for(Some(&source));
+            let keyed = bluforge_core::Disc::disc_id_for_source(&source)
+                .map(|id| bluforge_core::keys::has(&id).unwrap_or(false))
+                .unwrap_or(false);
             let disc = bluforge_core::Disc::open(&source, Some(&keys::keydb_path()))?;
             let info = disc.info()?;
             if cli.json {
@@ -320,14 +459,33 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
                         .map_err(|e| bluforge_core::CoreError::Disc(e.to_string()))?
                 );
             } else {
-                println!("disc      : {}", if info.name.is_empty() { "(unnamed)" } else { &info.name });
+                println!(
+                    "disc      : {}",
+                    if info.name.is_empty() {
+                        "(unnamed)"
+                    } else {
+                        &info.name
+                    }
+                );
                 println!("libbluray : {}", info.library);
                 println!("AACS      : {} (ready: {})", info.aacs, info.aacs_ready);
+                println!(
+                    "decrypt   : {}{}",
+                    backend.label(),
+                    if keyed {
+                        " [disc key present]"
+                    } else {
+                        " [no disc key]"
+                    }
+                );
                 println!("titles    : {}", info.titles.len());
                 if *episodes {
                     let dbg = bluforge_core::tv::parse_label(&info.name).0;
                     println!("tmdb tv id : {:?}", bluforge_core::tv::tmdb_tv_id(&dbg));
-                    println!("tmdb season: {:?}", bluforge_core::tv::tmdb_season(63926, 1).map(|e| e.len()));
+                    println!(
+                        "tmdb season: {:?}",
+                        bluforge_core::tv::tmdb_season(63926, 1).map(|e| e.len())
+                    );
                     match bluforge_core::tv::lookup_series(&dbg, 1) {
                         Ok(Some(sr)) => println!(
                             "lookup    : {} (tmdb {:?}) eps={} poster={}",
@@ -364,18 +522,18 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
                             }
                             if *chapters {
                                 let first = p.items.first().map(|i| i.title_index).unwrap_or(0);
-                                let anime = disc
-                                    .streams(first)
-                                    .unwrap_or_default()
-                                    .iter()
-                                    .any(|s| s.kind == "audio" && s.lang.as_deref() == Some("jpn"));
+                                let anime =
+                                    disc.streams(first).unwrap_or_default().iter().any(|s| {
+                                        s.kind == "audio" && s.lang.as_deref() == Some("jpn")
+                                    });
                                 let marks = disc.chapters(first).unwrap_or_default();
                                 for it in &p.items {
                                     let mut ch: Vec<bluforge_core::disc::Chapter> = marks
                                         .iter()
                                         .filter(|c| {
                                             c.start_secs >= it.start_secs - 1.0
-                                                && c.start_secs < it.start_secs + it.duration_secs - 0.5
+                                                && c.start_secs
+                                                    < it.start_secs + it.duration_secs - 0.5
                                         })
                                         .map(|c| bluforge_core::disc::Chapter {
                                             start_secs: c.start_secs - it.start_secs,
@@ -383,7 +541,10 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
                                         })
                                         .collect();
                                     if anime {
-                                        bluforge_core::rip::label_anime_chapters(&mut ch, it.duration_secs);
+                                        bluforge_core::rip::label_anime_chapters(
+                                            &mut ch,
+                                            it.duration_secs,
+                                        );
                                     }
                                     let fmt: Vec<String> = ch
                                         .iter()
@@ -502,10 +663,15 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
         Cmd::Libs => {
             bluforge_core::Disc::init_env();
             let (aacs, bdplus) = bluforge_core::Disc::decryption_backend();
+            let chosen = bluforge_core::Disc::resolve_backend_for(None);
             println!("bluforge-core : {}", bluforge_core::version());
             println!("libbluray     : {}", bluforge_core::disc::library_version());
+            println!("chosen backend: {}", chosen.label());
             println!("AACS backend  : {}", aacs.as_deref().unwrap_or("(default)"));
-            println!("BD+ backend   : {}", bdplus.as_deref().unwrap_or("(default)"));
+            println!(
+                "BD+ backend   : {}",
+                bdplus.as_deref().unwrap_or("(default)")
+            );
             println!("config dir    : {}", bluforge_core::config_dir().display());
         }
         Cmd::Iso {
@@ -519,7 +685,11 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
                 source: resolve_source(source),
                 keydb: Some(keys::keydb_path()),
                 dest: dest.clone(),
-                format: if *folder { IsoFormat::Folder } else { IsoFormat::Iso },
+                format: if *folder {
+                    IsoFormat::Folder
+                } else {
+                    IsoFormat::Iso
+                },
                 label: label.clone(),
             };
             let mut last = String::new();
@@ -554,7 +724,9 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
             tv_subs,
             start_episode,
         } => {
-            use bluforge_core::{Container, EncodeSettings, RipMode, RipProgress, RipRequest, VideoCodec};
+            use bluforge_core::{
+                Container, EncodeSettings, RipMode, RipProgress, RipRequest, VideoCodec,
+            };
             let container_kind = if container.eq_ignore_ascii_case("mp4") {
                 Container::Mp4
             } else {
@@ -578,7 +750,9 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
                     },
                 }
             } else {
-                RipMode::Remux { container: container_kind }
+                RipMode::Remux {
+                    container: container_kind,
+                }
             };
             let req = RipRequest {
                 source: resolve_source(source),
@@ -620,7 +794,11 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
                 let pct = p.percent as i64;
                 if pct != last {
                     last = pct;
-                    eprint!("\r  {pct:>3}%  {:.0} fps  {}          ", p.fps, p.speed.trim());
+                    eprint!(
+                        "\r  {pct:>3}%  {:.0} fps  {}          ",
+                        p.fps,
+                        p.speed.trim()
+                    );
                 }
             })?;
             if dest.is_empty() {
@@ -692,7 +870,9 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
                                 .into_iter()
                                 .find(|h| h.id == *id)
                                 .ok_or_else(|| {
-                                    bluforge_core::CoreError::Config(format!("no cover {source}:{id}"))
+                                    bluforge_core::CoreError::Config(format!(
+                                        "no cover {source}:{id}"
+                                    ))
                                 })?,
                             None => {
                                 return Err(bluforge_core::CoreError::Config(format!(
@@ -727,14 +907,12 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
                     );
                 }
                 CoversCmd::Login => {
-                    let user = cfg
-                        .hirescovers_user
-                        .clone()
-                        .ok_or_else(|| bluforge_core::CoreError::Config("no hirescovers_user".into()))?;
-                    let pass = cfg
-                        .hirescovers_pass
-                        .clone()
-                        .ok_or_else(|| bluforge_core::CoreError::Config("no hirescovers_pass".into()))?;
+                    let user = cfg.hirescovers_user.clone().ok_or_else(|| {
+                        bluforge_core::CoreError::Config("no hirescovers_user".into())
+                    })?;
+                    let pass = cfg.hirescovers_pass.clone().ok_or_else(|| {
+                        bluforge_core::CoreError::Config("no hirescovers_pass".into())
+                    })?;
                     let cookie = covers::login_hirescovers(&user, &pass)?;
                     if covers::verify_cookie(&cookie).unwrap_or(false) {
                         eprintln!("login ok: secure_image.php returned an original");
@@ -810,6 +988,41 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
         }
     }
     Ok(())
+}
+
+/// Lowercase hex without a `0x` prefix, if valid.
+fn norm_hex(s: &str) -> Option<String> {
+    let t = s
+        .trim()
+        .trim_start_matches("0x")
+        .trim_start_matches("0X")
+        .to_ascii_lowercase();
+    if !t.is_empty() && t.chars().all(|c| c.is_ascii_hexdigit()) {
+        Some(t)
+    } else {
+        None
+    }
+}
+
+/// Resolve a disc id from `--disc <id>` or `--from <path>`.
+fn resolve_disc_id(
+    disc: &Option<String>,
+    from: &Option<std::path::PathBuf>,
+) -> Result<String, bluforge_core::CoreError> {
+    if let Some(d) = disc {
+        return match norm_hex(d).filter(|s| s.len() == 40) {
+            Some(id) => Ok(id),
+            None => Err(bluforge_core::CoreError::Keys(format!("bad disc id '{d}'"))),
+        };
+    }
+    if let Some(p) = from {
+        return bluforge_core::keys::disc_id_for_path(p).ok_or_else(|| {
+            bluforge_core::CoreError::Keys(format!("no AACS/Unit_Key_RO.inf under {}", p.display()))
+        });
+    }
+    Err(bluforge_core::CoreError::Keys(
+        "give --disc <id> or --from <mounted disc>".into(),
+    ))
 }
 
 fn print_keys(json: bool, st: keys::KeyDbStatus) -> Result<(), bluforge_core::CoreError> {

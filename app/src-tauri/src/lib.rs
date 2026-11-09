@@ -161,7 +161,11 @@ fn cover_thumb(url: String) -> Option<String> {
     if bytes.len() > 6_000_000 {
         return None;
     }
-    let mime = if ctype.contains("png") { "image/png" } else { "image/jpeg" };
+    let mime = if ctype.contains("png") {
+        "image/png"
+    } else {
+        "image/jpeg"
+    };
     Some(format!("data:{mime};base64,{}", b64(&bytes)))
 }
 
@@ -189,7 +193,11 @@ struct SaveItem {
 /// Save the chosen cover / poster / disc label into `dest_dir`, named after the
 /// rip so they sit alongside it.
 #[tauri::command]
-fn save_covers(dest_dir: String, stem: String, items: Vec<SaveItem>) -> Result<Vec<SavedCover>, String> {
+fn save_covers(
+    dest_dir: String,
+    stem: String,
+    items: Vec<SaveItem>,
+) -> Result<Vec<SavedCover>, String> {
     let cfg = AppConfig::load();
     let cookie = bluforge_core::covers::cookie(&cfg);
     let dir = std::path::PathBuf::from(&dest_dir);
@@ -225,7 +233,8 @@ fn save_covers(dest_dir: String, stem: String, items: Vec<SaveItem>) -> Result<V
 /// Detect the episodes on a TV/anime disc (clip boundaries + TMDB titles).
 #[tauri::command]
 fn tv_plan(source: String, start: Option<u32>) -> Result<bluforge_core::tv::Plan, String> {
-    let disc = bluforge_core::Disc::open(std::path::Path::new(&source), None).map_err(|e| e.to_string())?;
+    let disc = bluforge_core::Disc::open(std::path::Path::new(&source), None)
+        .map_err(|e| e.to_string())?;
     let info = disc.info().map_err(|e| e.to_string())?;
     bluforge_core::tv::plan(&disc, &info, None, start).map_err(|e| e.to_string())
 }
@@ -301,7 +310,10 @@ fn start_rip(
 }
 
 #[tauri::command]
-fn author_start(app: AppHandle, request: bluforge_core::author::AuthorRequest) -> Result<(), String> {
+fn author_start(
+    app: AppHandle,
+    request: bluforge_core::author::AuthorRequest,
+) -> Result<(), String> {
     let app2 = app.clone();
     std::thread::spawn(move || {
         let res = bluforge_core::author::run(&request, |p| {

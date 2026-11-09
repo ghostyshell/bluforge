@@ -159,8 +159,12 @@ fn disc_memory_start(slug: &str, season: u32, disc: Option<u32>) -> Option<u32> 
     // Anything earlier in the same season tells us where this disc should start.
     let mut start: Option<u32> = None;
     for (k, r) in &mem {
-        let Some(rest) = k.strip_prefix(&prefix) else { continue };
-        let Ok(other) = rest.parse::<u32>() else { continue };
+        let Some(rest) = k.strip_prefix(&prefix) else {
+            continue;
+        };
+        let Ok(other) = rest.parse::<u32>() else {
+            continue;
+        };
         if disc.map(|d| other < d).unwrap_or(true) {
             let next = r.first + r.count;
             start = Some(start.map(|s| s.max(next)).unwrap_or(next));
@@ -198,17 +202,25 @@ pub fn episode_clips(clips: &[Clip]) -> Vec<Clip> {
     clips
         .iter()
         .filter(|c| {
-            c.duration_secs >= MIN_EPISODE_SECS && (median <= 0.0 || c.duration_secs >= median * 0.5)
+            c.duration_secs >= MIN_EPISODE_SECS
+                && (median <= 0.0 || c.duration_secs >= median * 0.5)
         })
         .cloned()
         .collect()
 }
 
 fn get(url: &str) -> Result<String, CoreError> {
-    let ua = if url.contains("themoviedb.org") { TMDB_UA } else { UA };
+    let ua = if url.contains("themoviedb.org") {
+        TMDB_UA
+    } else {
+        UA
+    };
     let resp = ureq::get(url)
         .set("User-Agent", ua)
-        .set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+        .set(
+            "Accept",
+            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        )
         .set("Accept-Language", "en-US,en;q=0.9")
         .timeout(Duration::from_secs(30))
         .call()
@@ -329,8 +341,13 @@ fn jikan_series(query: &str, season: u32) -> Result<Option<Series>, CoreError> {
     let body = get(&format!(
         "https://api.jikan.moe/v4/anime?q={q}&type=tv&limit=5"
     ))?;
-    let v: serde_json::Value = serde_json::from_str(&body).map_err(|e| CoreError::Disc(e.to_string()))?;
-    let Some(first) = v.get("data").and_then(|d| d.as_array()).and_then(|a| a.first()) else {
+    let v: serde_json::Value =
+        serde_json::from_str(&body).map_err(|e| CoreError::Disc(e.to_string()))?;
+    let Some(first) = v
+        .get("data")
+        .and_then(|d| d.as_array())
+        .and_then(|a| a.first())
+    else {
         return Ok(None);
     };
     let mal_id = first.get("mal_id").and_then(|m| m.as_u64());
@@ -368,7 +385,10 @@ fn jikan_series(query: &str, season: u32) -> Result<Option<Series>, CoreError> {
     }
     Ok(Some(Series {
         name,
-        year: first.get("year").and_then(|y| y.as_u64()).map(|y| y.to_string()),
+        year: first
+            .get("year")
+            .and_then(|y| y.as_u64())
+            .map(|y| y.to_string()),
         tmdb_id: None,
         mal_id,
         poster,
@@ -500,7 +520,9 @@ pub fn plan(
         }
     }
     if best.is_empty() {
-        return Err(CoreError::Disc("no episode-sized titles or clips found".into()));
+        return Err(CoreError::Disc(
+            "no episode-sized titles or clips found".into(),
+        ));
     }
 
     // Number them. Discs are not always evenly split (this show is 8 + 4), so a
@@ -563,13 +585,7 @@ mod tests {
             out_secs: d,
             duration_secs: d,
         };
-        let clips = vec![
-            mk(1461.0),
-            mk(1461.0),
-            mk(1461.0),
-            mk(0.5),
-            mk(30.0),
-        ];
+        let clips = vec![mk(1461.0), mk(1461.0), mk(1461.0), mk(0.5), mk(30.0)];
         let eps = episode_clips(&clips);
         assert_eq!(eps.len(), 3);
         assert!(eps.iter().all(|c| c.duration_secs > 300.0));

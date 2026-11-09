@@ -6,7 +6,11 @@ const TMDB: &str = "https://www.themoviedb.org/search?query=Gladiator+II";
 fn try_req(name: &str, f: impl Fn(ureq::Request) -> ureq::Request) {
     let req = f(ureq::get(TMDB));
     match req.call() {
-        Ok(r) => println!("{name:<34} -> {} len={}", r.status(), r.header("content-length").unwrap_or("-")),
+        Ok(r) => println!(
+            "{name:<34} -> {} len={}",
+            r.status(),
+            r.header("content-length").unwrap_or("-")
+        ),
         Err(e) => println!("{name:<34} -> ERR {e}"),
     }
 }

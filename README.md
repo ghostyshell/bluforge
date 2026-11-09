@@ -13,6 +13,7 @@ authoring with custom menus and burning.
 | --- | --- |
 | Device discovery (IOKit, optical detection) | ✅ |
 | AACS key database (`KEYDB.cfg`) auto-fetch / store | ✅ |
+| Key store: `bluforge keys add / list / show / remove / import` | ✅ |
 | Disc inspection (titles, streams, HDR, AACS state) via libbluray | ✅ |
 | Rip: MKV / MP4 remux (lossless) | ✅ |
 | Rip: x264 / x265 / VideoToolbox encode | ✅ |
@@ -43,14 +44,16 @@ app/            Tauri v2 desktop app (React + TypeScript frontend)
   src-tauri/      Rust commands bridging the UI to core
 ```
 
-Decryption is Rust orchestration over libbluray plus an AACS/BD+ backend: by
-default `libaacs` + `libbdplus` from Homebrew. If **MakeMKV** is installed its
-`libmmbd` is preferred instead, since it is ABI-compatible and additionally
-handles LibreDrive, AACS bus encryption and BD+ (Homebrew's libbdplus ships no
-BD+ VM config, and some drives reject libaacs's built-in host certificate).
-`bluforge libs` prints the backend actually in use; override either choice with
-`LIBAACS_PATH` / `LIBBDPLUS_PATH`. ffmpeg is used only for muxing/encoding,
-never decryption.
+Decryption is Rust orchestration over libbluray plus an AACS/BD+ backend. The
+AACS backend is **native `libaacs` by default**, driven by the local `KEYDB.cfg`
+key store, so a keyed disc rips with no MakeMKV and no proprietary code. If
+**MakeMKV** is installed its `libmmbd` is used only as a fallback: for a disc
+whose key is not in KEYDB yet, and for BD+ (Homebrew's `libbdplus` ships no BD+
+VM config). Native libaacs cannot read a *mounted* volume, so a rip unmounts it
+and remounts it afterwards. `bluforge libs` and `bluforge disc` print the chosen
+backend; force one with `BLUFORGE_DECRYPT=aacs|mmbd`, or override the library
+paths with `LIBAACS_PATH` / `LIBBDPLUS_PATH`. ffmpeg is used only for
+muxing/encoding, never decryption.
 
 ## Build & run
 
@@ -61,6 +64,8 @@ Prerequisites (macOS, Homebrew): `ffmpeg libbluray libaacs libbdplus`, Rust, Nod
 cargo build --release
 ./target/release/bluforge devices          # find your drive / disc
 ./target/release/bluforge keys update       # refresh AACS keys
+./target/release/bluforge keys add --from /Volumes/MY_DISC --vuk 0x... # key a disc
+./target/release/bluforge keys list --keyed --limit 20
 ./target/release/bluforge disc /Volumes/MY_DISC   # inspect titles
 ./target/release/bluforge libs
 ./target/release/bluforge iso /Volumes/MY_DISC ~/movie.iso            # decrypted ISO
@@ -238,6 +243,9 @@ Tools:
 | `iso_start` | decrypted ISO or BDMV folder export |
 | `covers_search` / `covers_download` | cover art from hirescovers / dvdcover / TMDB |
 | `keys_update` | refresh KEYDB.cfg |
+| `keys_list` | list keyed discs (id, name) |
+| `keys_add` | add/replace a disc key (VUK and/or unit key) |
+| `keys_remove` | drop a disc's key entry |
 | `eject` | open the tray |
 | `config_get` / `config_set` | read or patch settings |
 | `preview_output` / `template_placeholders` | render the output template |
@@ -247,18 +255,27 @@ optical device automatically.
 
 ## Decryption backends
 
-Two AACS implementations can drive libbluray:
+Two AACS implementations can drive libbluray. **Native `libaacs` is the
+default**; MakeMKV's `libmmbd` is a fallback, not a requirement.
 
 | Backend | When | Notes |
 | --- | --- | --- |
-| `libmmbd` (MakeMKV) | default when MakeMKV is installed | Handles LibreDrive and drives whose AACS certificate is revoked; needs the MakeMKV app running. |
-| `libaacs` + KEYDB | `BLUFORGE_DECRYPT=aacs`, or automatically when MakeMKV is absent | No proprietary code. Works for discs listed in KEYDB; the app links its copy where libaacs looks (`~/Library/Preferences/aacs/KEYDB.cfg` on macOS). |
+| `libaacs` + KEYDB | default, whenever the disc is keyed | No proprietary code, no MakeMKV process. Decrypts from the disc's VUK/unit key in `KEYDB.cfg`; libaacs needs the raw device and an *unmounted* volume, which the rip arranges. |
+| `libmmbd` (MakeMKV) | the disc is not in KEYDB yet, or BD+ | ABI-compatible; the fallback while a disc is still unkeyed. Force with `BLUFORGE_DECRYPT=mmbd`. |
 
-`bluforge aacs <device> --disc <mount>` reads the drive's AACS volume ID and
-seeds libaacs's cache. On this drive the read needs an authenticated AGID
-(sense `05/6F/02` otherwise), and bus encryption is reported as supported, so
-discs that are neither in KEYDB nor decryptable by libaacs's own handshake still
-need MakeMKV's LibreDrive.
+Key a disc so it never needs MakeMKV again:
+
+```sh
+bluforge keys add --from /Volumes/MY_DISC --vuk 0x<VUK> [--unit-key 0x<UK>] --name "My Disc"
+bluforge keys list --keyed
+bluforge keys import /path/to/KEYDB.cfg     # merge a community database
+```
+
+The VUK (and, for AHD/AACS2 discs, the unit key) come from the disc's `KEYDB.cfg`
+entry, or from a one-off MakeMKV/FindVUK pass. `bluforge aacs <device> --disc
+<mount>` reads the drive's AACS volume ID and seeds libaacs's cache; on a drive
+that rejects libaacs's own AGID (sense `05/6F/02`) the KEYDB entry is what makes
+the disc decryptable.
 
 ## Configuration & data
 

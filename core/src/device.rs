@@ -36,7 +36,10 @@ impl BlockDevice {
     pub fn display(&self) -> String {
         match (&self.vendor, &self.product) {
             (Some(v), Some(p)) => format!("{v} {p}"),
-            _ => self.media_name.clone().unwrap_or_else(|| self.bsd_name.clone()),
+            _ => self
+                .media_name
+                .clone()
+                .unwrap_or_else(|| self.bsd_name.clone()),
         }
     }
 }
@@ -188,9 +191,20 @@ mod mac {
     fn registry_path(entry: IoObject) -> String {
         let mut buf = [0i8; 1024];
         let mut size = buf.len() as u32;
-        unsafe { IORegistryEntryGetPath(entry, b"IOService\0".as_ptr() as *const c_char, buf.as_mut_ptr(), &mut size) };
-        let s = unsafe { CStr::from_ptr(buf.as_ptr()) }.to_string_lossy().into_owned();
-        s.strip_prefix("IOService:").map(|x| x.to_string()).unwrap_or(s)
+        unsafe {
+            IORegistryEntryGetPath(
+                entry,
+                b"IOService\0".as_ptr() as *const c_char,
+                buf.as_mut_ptr(),
+                &mut size,
+            )
+        };
+        let s = unsafe { CStr::from_ptr(buf.as_ptr()) }
+            .to_string_lossy()
+            .into_owned();
+        s.strip_prefix("IOService:")
+            .map(|x| x.to_string())
+            .unwrap_or(s)
     }
 
     /// Collect vendor/product/revision/pdt/interconnect while walking the
@@ -231,7 +245,10 @@ mod mac {
                         let k = key("Vendor Name");
                         let vv = unsafe { CFDictionaryGetValue(d, k) };
                         chain.vendor = cf_string(vv);
-                        unsafe { CFRelease(k); CFRelease(d) };
+                        unsafe {
+                            CFRelease(k);
+                            CFRelease(d)
+                        };
                     }
                 }
             }
@@ -246,7 +263,10 @@ mod mac {
                         let k = key("Product Name");
                         let vv = unsafe { CFDictionaryGetValue(d, k) };
                         chain.product = cf_string(vv);
-                        unsafe { CFRelease(k); CFRelease(d) };
+                        unsafe {
+                            CFRelease(k);
+                            CFRelease(d)
+                        };
                     }
                 }
             }
@@ -267,7 +287,13 @@ mod mac {
                 }
             }
             let mut parent: IoObject = 0;
-            if unsafe { IORegistryEntryGetParentEntry(cur, b"IOService\0".as_ptr() as *const c_char, &mut parent) } != KERN_SUCCESS
+            if unsafe {
+                IORegistryEntryGetParentEntry(
+                    cur,
+                    b"IOService\0".as_ptr() as *const c_char,
+                    &mut parent,
+                )
+            } != KERN_SUCCESS
                 || parent == 0
             {
                 break;
@@ -391,7 +417,8 @@ pub fn list_optical() -> Vec<BlockDevice> {
         .collect()
 }
 
-pub fn human_bytes(n: u64) -> String {    const U: [&str; 6] = ["B", "KB", "MB", "GB", "TB", "PB"];
+pub fn human_bytes(n: u64) -> String {
+    const U: [&str; 6] = ["B", "KB", "MB", "GB", "TB", "PB"];
     let mut v = n as f64;
     let mut i = 0;
     while v >= 1000.0 && i < U.len() - 1 {
@@ -404,7 +431,6 @@ pub fn human_bytes(n: u64) -> String {    const U: [&str; 6] = ["B", "KB", "MB",
         format!("{v:.2} {}", U[i])
     }
 }
-
 
 /// Eject the optical drive's media.
 ///
@@ -429,7 +455,11 @@ pub fn eject() -> Result<String, crate::CoreError> {
             Ok(o) if o.status.success() => return Ok(format!("ejected {}", dev.bsd_name)),
             Ok(o) => {
                 let t = String::from_utf8_lossy(&o.stderr).trim().to_string();
-                last = if t.is_empty() { format!("{prog} failed") } else { t };
+                last = if t.is_empty() {
+                    format!("{prog} failed")
+                } else {
+                    t
+                };
             }
             Err(e) => last = format!("{prog}: {e}"),
         }

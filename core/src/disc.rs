@@ -2,7 +2,7 @@
 
 use std::ffi::{CStr, CString};
 use std::io::Read;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
@@ -69,10 +69,24 @@ mod ffi {
         pub fn bf_read(d: *mut c_void, buf: *mut u8, len: c_int) -> c_int;
         pub fn bf_seek(d: *mut c_void, ticks: u64);
         pub fn bf_version() -> *const c_char;
-        pub fn bf_export_decrypted(d: *mut c_void, dest: *const c_char, out_files: *mut libc::c_long) -> c_int;
-        pub fn bf_title_chapters(d: *mut c_void, title: u32, out: *mut BfChapter, max: c_int) -> c_int;
+        pub fn bf_export_decrypted(
+            d: *mut c_void,
+            dest: *const c_char,
+            out_files: *mut libc::c_long,
+        ) -> c_int;
+        pub fn bf_title_chapters(
+            d: *mut c_void,
+            title: u32,
+            out: *mut BfChapter,
+            max: c_int,
+        ) -> c_int;
         pub fn bf_title_clips(d: *mut c_void, title: u32, out: *mut BfClip, max: c_int) -> c_int;
-        pub fn bf_title_streams(d: *mut c_void, title: u32, out: *mut BfStream, max: c_int) -> c_int;
+        pub fn bf_title_streams(
+            d: *mut c_void,
+            title: u32,
+            out: *mut BfStream,
+            max: c_int,
+        ) -> c_int;
     }
 }
 
@@ -168,6 +182,24 @@ fn dr_label(dr: u8) -> Option<String> {
     }
 }
 
+/// AACS/BD+ decrypt backend.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DecryptBackend {
+    /// Native Homebrew libaacs (no MakeMKV involved).
+    Aacs,
+    /// MakeMKV's libmmbd (`libaacs`/`libbdplus` ABI compatible).
+    Mmbd,
+}
+
+impl DecryptBackend {
+    pub fn label(self) -> &'static str {
+        match self {
+            DecryptBackend::Aacs => "libaacs (native)",
+            DecryptBackend::Mmbd => "libmmbd (MakeMKV)",
+        }
+    }
+}
+
 /// An open Blu-ray disc. Cheap to keep open; `send` because libbluray is
 /// accessed under our own locking.
 pub struct Disc {
@@ -178,70 +210,153 @@ pub struct Disc {
 unsafe impl Send for Disc {}
 
 impl Disc {
-    /// Point libbluray at the AACS / BD+ libraries before the first `bd_open`.
-    ///
-    /// libbluray `dlopen`s these *by name* and appends `.dylib`; Homebrew's
-    /// `/opt/homebrew/lib` is not on dyld's search path, so we resolve real
-    /// paths and export them. When MakeMKV is installed its `libmmbd` is
-    /// preferred for **both** AACS and BD+: it is libaacs/libbdplus ABI
-    /// compatible, does BD+ natively, and handles LibreDrive plus AACS bus
-    /// encryption (which plain libaacs cannot do on drives that enforce
-    /// revocation). Homebrew's libbdplus also ships without a BD+ VM config,
-    /// so libmmbd additionally covers that. Export `LIBAACS_PATH` /
-    /// `LIBBDPLUS_PATH` to override either choice.
-    pub fn init_env() {
-        use std::env;
-        use std::path::Path;
-
-        let have = |p: &str| Path::new(p).is_file();
-
-        // `BLUFORGE_DECRYPT=aacs` runs without MakeMKV at all; `=mmbd` forces
-        // MakeMKV's library. Default: MakeMKV when installed (it covers revoked
-        // drives and discs missing from KEYDB), libaacs when it is not.
-        let forced = env::var("BLUFORGE_DECRYPT").unwrap_or_default();
-        let aacs_path = ["/opt/homebrew/lib/libaacs", "/usr/local/lib/libaacs"]
+    /// Path to Homebrew's libaacs, when installed.
+    fn libaacs_path() -> Option<&'static str> {
+        ["/opt/homebrew/lib/libaacs", "/usr/local/lib/libaacs"]
             .into_iter()
-            .find(|c| have(&format!("{c}.dylib")));
+            .find(|c| Path::new(&format!("{c}.dylib")).is_file())
+    }
 
-        let mmbd = [
+    /// Path to MakeMKV's libmmbd, when installed.
+    fn libmmbd_path() -> Option<&'static str> {
+        [
             "/Applications/MakeMKV.app/Contents/lib/libmmbd_new",
             "/Applications/MakeMKV.app/Contents/lib/libmmbd_old",
             "/usr/local/lib/libmmbd",
             "/opt/homebrew/lib/libmmbd",
         ]
         .into_iter()
-        .find(|c| have(&format!("{c}.dylib")));
+        .find(|c| Path::new(&format!("{c}.dylib")).is_file())
+    }
 
-        if env::var_os("LIBAACS_PATH").is_none() {
-            match (forced.as_str(), mmbd, aacs_path) {
-                ("aacs", _, Some(c)) => env::set_var("LIBAACS_PATH", c),
-                ("mmbd", Some(c), _) => env::set_var("LIBAACS_PATH", c),
-                (_, Some(c), _) => env::set_var("LIBAACS_PATH", c),
-                (_, None, Some(c)) => env::set_var("LIBAACS_PATH", c),
-                _ => {}
+    /// Disc id of `source`, read from its `AACS/Unit_Key_RO.inf` (following a
+    /// `/dev/rdiskN` node to its mount point).
+    pub fn disc_id_for_source(source: &Path) -> Option<String> {
+        if let Some(id) = crate::keys::disc_id_for_path(source) {
+            return Some(id);
+        }
+        if let Some(s) = source.to_str() {
+            if s.starts_with("/dev/") {
+                if let Some(mp) = crate::device::mount_point_for_device(s) {
+                    return crate::keys::disc_id_for_path(Path::new(&mp));
+                }
             }
         }
+        None
+    }
 
-        // libaacs reads KEYDB.cfg from its own config dir, not ours. Point it at
-        // the database we maintain so discs that are in KEYDB decrypt without
-        // any proprietary library.
-        if forced != "mmbd" {
-            Self::link_keydb_for_libaacs(&crate::keys::keydb_path());
+    fn disc_is_keyed(source: &Path) -> bool {
+        Self::disc_id_for_source(source)
+            .map(|id| crate::keys::has(&id).unwrap_or(false))
+            .unwrap_or(false)
+    }
+
+    /// Which decrypt backend to use. Native libaacs is preferred; MakeMKV's
+    /// libmmbd is only the fallback for a disc we cannot key yet (its id absent
+    /// from KEYDB) or when libaacs is not installed. `BLUFORGE_DECRYPT=aacs`
+    /// forces libaacs, `=mmbd` forces libmmbd.
+    pub fn resolve_backend_for(source: Option<&Path>) -> DecryptBackend {
+        match std::env::var("BLUFORGE_DECRYPT")
+            .unwrap_or_default()
+            .to_ascii_lowercase()
+            .as_str()
+        {
+            "aacs" | "native" | "libaacs" => return DecryptBackend::Aacs,
+            "mmbd" | "makemkv" | "libmmbd" => return DecryptBackend::Mmbd,
+            _ => {}
         }
+        if Self::libaacs_path().is_none() {
+            return DecryptBackend::Mmbd;
+        }
+        if Self::libmmbd_path().is_none() {
+            return DecryptBackend::Aacs;
+        }
+        match source {
+            Some(s) if !Self::disc_is_keyed(s) => DecryptBackend::Mmbd,
+            _ => DecryptBackend::Aacs,
+        }
+    }
 
-        if env::var_os("LIBBDPLUS_PATH").is_none() {
-            match mmbd {
-                Some(c) => env::set_var("LIBBDPLUS_PATH", c),
-                None => {
-                    for c in ["/opt/homebrew/lib/libbdplus", "/usr/local/lib/libbdplus"] {
-                        if have(&format!("{c}.dylib")) {
-                            env::set_var("LIBBDPLUS_PATH", c);
-                            break;
-                        }
+    /// True when `v` is a library path we resolve ourselves, as opposed to one
+    /// the user exported by hand.
+    fn is_our_lib(v: &str) -> bool {
+        const AACS: [&str; 2] = ["/opt/homebrew/lib/libaacs", "/usr/local/lib/libaacs"];
+        const MMBD: [&str; 4] = [
+            "/Applications/MakeMKV.app/Contents/lib/libmmbd_new",
+            "/Applications/MakeMKV.app/Contents/lib/libmmbd_old",
+            "/usr/local/lib/libmmbd",
+            "/opt/homebrew/lib/libmmbd",
+        ];
+        const BDPLUS: [&str; 2] = ["/opt/homebrew/lib/libbdplus", "/usr/local/lib/libbdplus"];
+        AACS.iter()
+            .chain(MMBD.iter())
+            .chain(BDPLUS.iter())
+            .any(|c| *c == v)
+    }
+
+    fn user_set(var: &str) -> bool {
+        std::env::var(var)
+            .map(|v| !Self::is_our_lib(&v))
+            .unwrap_or(false)
+    }
+
+    fn apply_env(backend: DecryptBackend) {
+        use std::env;
+
+        // Overwrite a path we set earlier (so a backend switch takes effect),
+        // but never a path the user exported themselves.
+        if !Self::user_set("LIBAACS_PATH") {
+            match backend {
+                DecryptBackend::Aacs => {
+                    if let Some(c) = Self::libaacs_path().or_else(Self::libmmbd_path) {
+                        env::set_var("LIBAACS_PATH", c);
+                    }
+                }
+                DecryptBackend::Mmbd => {
+                    if let Some(c) = Self::libmmbd_path() {
+                        env::set_var("LIBAACS_PATH", c);
                     }
                 }
             }
         }
+
+        // libaacs reads KEYDB.cfg from its own config dir, not ours. Point it at
+        // the database we maintain so keyed discs decrypt with no proprietary
+        // library. BD+ still prefers libmmbd (Homebrew's libbdplus ships no BD+
+        // VM config), falling back to Homebrew libbdplus.
+        if backend == DecryptBackend::Aacs {
+            Self::link_keydb_for_libaacs(&crate::keys::keydb_path());
+        }
+        if !Self::user_set("LIBBDPLUS_PATH") {
+            if let Some(c) = Self::libmmbd_path() {
+                env::set_var("LIBBDPLUS_PATH", c);
+            } else {
+                for c in ["/opt/homebrew/lib/libbdplus", "/usr/local/lib/libbdplus"] {
+                    if Path::new(&format!("{c}.dylib")).is_file() {
+                        env::set_var("LIBBDPLUS_PATH", c);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    /// Point libbluray at the AACS / BD+ libraries before the first `bd_open`.
+    ///
+    /// libbluray `dlopen`s these *by name* and appends `.dylib`; Homebrew's
+    /// `/opt/homebrew/lib` is not on dyld's search path, so we resolve real
+    /// paths and export them. Native libaacs is the default; MakeMKV's libmmbd
+    /// (ABI compatible, and the only thing that handles BD+ on this stack) is
+    /// used only as a fallback or when forced. Export `LIBAACS_PATH` /
+    /// `LIBBDPLUS_PATH` to override either choice.
+    pub fn init_env() {
+        Self::apply_env(Self::resolve_backend_for(None));
+    }
+
+    /// As `init_env`, but selecting the backend from `source` (a keyed disc
+    /// uses native libaacs; an unkeyed one falls back to libmmbd).
+    pub fn init_env_for(source: &Path) {
+        Self::apply_env(Self::resolve_backend_for(Some(source)));
     }
 
     /// Which AACS / BD+ implementation libbluray will use, for diagnostics.
@@ -259,9 +374,13 @@ impl Disc {
             return;
         }
         let dir = if cfg!(target_os = "macos") {
-            std::env::var("HOME").ok().map(|h| PathBuf::from(h).join("Library/Preferences/aacs"))
+            std::env::var("HOME")
+                .ok()
+                .map(|h| PathBuf::from(h).join("Library/Preferences/aacs"))
         } else {
-            std::env::var("HOME").ok().map(|h| PathBuf::from(h).join(".config/aacs"))
+            std::env::var("HOME")
+                .ok()
+                .map(|h| PathBuf::from(h).join(".config/aacs"))
         };
         let Some(dir) = dir else { return };
         let link = dir.join("KEYDB.cfg");
@@ -281,7 +400,18 @@ impl Disc {
     /// Open a disc at `path` (a mounted volume, an ISO, or a `/dev/rdiskX`).
     /// `keydb` points at a KEYDB.cfg consumed by libaacs.
     pub fn open(path: &Path, keydb: Option<&Path>) -> Result<Disc, CoreError> {
-        Self::init_env();
+        let backend = Self::resolve_backend_for(Some(path));
+        Self::open_with_backend(path, keydb, backend)
+    }
+
+    /// As `open`, with an explicit backend. Used when the caller already chose
+    /// (eg. after unmounting, where auto-detection can no longer see the mount).
+    pub fn open_with_backend(
+        path: &Path,
+        keydb: Option<&Path>,
+        backend: DecryptBackend,
+    ) -> Result<Disc, CoreError> {
+        Self::apply_env(backend);
         #[cfg(have_bluray)]
         {
             let cpath = CString::new(path.to_string_lossy().as_bytes())
@@ -296,7 +426,9 @@ impl Disc {
             let handle = unsafe {
                 ffi::bf_open(
                     cpath.as_ptr(),
-                    ckey.as_ref().map(|c| c.as_ptr()).unwrap_or(std::ptr::null()),
+                    ckey.as_ref()
+                        .map(|c| c.as_ptr())
+                        .unwrap_or(std::ptr::null()),
                 )
             };
             if handle.is_null() {
@@ -353,13 +485,17 @@ impl Disc {
                 })
                 .collect();
             let main_t = if main >= 0 { Some(main as u32) } else { None };
-            let streams = main_t.and_then(|m| self.streams(m).ok()).unwrap_or_default();
+            let streams = main_t
+                .and_then(|m| self.streams(m).ok())
+                .unwrap_or_default();
             let vid = streams.iter().find(|s| s.kind == "video");
             let aud = streams.iter().find(|s| s.kind == "audio");
             Ok(DiscInfo {
                 video_codec: vid.map(|s| crate::rip::video_codec_label(s.coding_type).to_string()),
                 audio_codec: aud.map(|s| crate::rip::audio_codec_label(s.coding_type).to_string()),
-                audio_lang: aud.and_then(|s| s.lang.as_deref()).map(crate::rip::lang_name),
+                audio_lang: aud
+                    .and_then(|s| s.lang.as_deref())
+                    .map(crate::rip::lang_name),
                 name,
                 path: String::new(),
                 aacs: ffi::bf_has_aacs(self.handle) != 0,
@@ -381,7 +517,11 @@ impl Disc {
     pub fn chapters(&self, title: u32) -> Result<Vec<Chapter>, CoreError> {
         #[cfg(have_bluray)]
         unsafe {
-            let empty = ffi::BfChapter { start_secs: 0.0, duration_90k: 0, name: [0; 128] };
+            let empty = ffi::BfChapter {
+                start_secs: 0.0,
+                duration_90k: 0,
+                name: [0; 128],
+            };
             let mut buf = vec![empty; 512];
             let n = ffi::bf_title_chapters(
                 self.handle,
@@ -426,8 +566,12 @@ impl Disc {
                 duration_90k: 0,
             };
             let mut buf = vec![empty; 512];
-            let n =
-                ffi::bf_title_clips(self.handle, title, buf.as_mut_ptr(), buf.len() as libc::c_int);
+            let n = ffi::bf_title_clips(
+                self.handle,
+                title,
+                buf.as_mut_ptr(),
+                buf.len() as libc::c_int,
+            );
             if n < 0 {
                 return Err(CoreError::Disc("cannot read clip info".into()));
             }
@@ -462,8 +606,12 @@ impl Disc {
                 pid: 0,
             };
             let mut buf = vec![empty; 64];
-            let n =
-                ffi::bf_title_streams(self.handle, title, buf.as_mut_ptr(), buf.len() as libc::c_int);
+            let n = ffi::bf_title_streams(
+                self.handle,
+                title,
+                buf.as_mut_ptr(),
+                buf.len() as libc::c_int,
+            );
             if n < 0 {
                 return Err(CoreError::Disc("cannot read stream info".into()));
             }
@@ -483,7 +631,11 @@ impl Disc {
                             _ => "subtitle",
                         }
                         .into(),
-                        lang: if lang.trim().is_empty() { None } else { Some(lang) },
+                        lang: if lang.trim().is_empty() {
+                            None
+                        } else {
+                            Some(lang)
+                        },
                         coding_type: s.coding_type,
                         format: s.format,
                         rate: s.rate,
@@ -499,7 +651,8 @@ impl Disc {
         }
     }
 
-    pub fn select(&self, title: u32) -> Result<(), CoreError> {        #[cfg(have_bluray)]
+    pub fn select(&self, title: u32) -> Result<(), CoreError> {
+        #[cfg(have_bluray)]
         unsafe {
             if ffi::bf_select_title(self.handle, title) == 0 {
                 return Err(CoreError::Disc(format!("cannot select title {title}")));
@@ -585,7 +738,9 @@ impl Drop for Disc {
 pub fn library_version() -> String {
     #[cfg(have_bluray)]
     unsafe {
-        CStr::from_ptr(ffi::bf_version()).to_string_lossy().into_owned()
+        CStr::from_ptr(ffi::bf_version())
+            .to_string_lossy()
+            .into_owned()
     }
     #[cfg(not(have_bluray))]
     {
@@ -602,9 +757,16 @@ pub fn library_version() -> String {
 #[cfg(target_os = "macos")]
 pub fn aacs_volume_id(device: &Path) -> Option<[u8; 16]> {
     extern "C" {
-        fn bf_aacs_volume_id(name: *const std::os::raw::c_char, out: *mut u8) -> std::os::raw::c_int;
+        fn bf_aacs_volume_id(
+            name: *const std::os::raw::c_char,
+            out: *mut u8,
+        ) -> std::os::raw::c_int;
     }
-    let name = device.file_name()?.to_string_lossy().trim_start_matches('r').to_string();
+    let name = device
+        .file_name()?
+        .to_string_lossy()
+        .trim_start_matches('r')
+        .to_string();
     let cname = std::ffi::CString::new(name).ok()?;
     let mut out = [0u8; 16];
     let rc = unsafe { bf_aacs_volume_id(cname.as_ptr(), out.as_mut_ptr()) };
@@ -671,6 +833,76 @@ pub fn aacs_unmount(device: &Path) -> bool {
         .status()
         .map(|s| s.success())
         .unwrap_or(false)
+}
+
+/// Whole-disk BSD name behind `source`: a `/dev/diskN` / `/dev/rdiskN` node, or
+/// the device backing a mounted optical volume.
+fn bsd_name_for(source: &Path) -> Option<String> {
+    let s = source.to_string_lossy();
+    if let Some(rest) = s.strip_prefix("/dev/") {
+        let rest = rest.strip_prefix('r').unwrap_or(rest);
+        return if rest.starts_with("disk") {
+            Some(rest.to_string())
+        } else {
+            None
+        };
+    }
+    crate::device::list_optical()
+        .into_iter()
+        .find(|d| d.mount_point.as_deref() == Some(s.as_ref()))
+        .map(|d| d.bsd_name)
+}
+
+/// The raw whole-disk node for an optical `source`, or `None` when `source` is
+/// a plain file/folder (ISO, BDMV dir). A mounted volume hands back the still
+/// AACS-encrypted bytes, so the device is required.
+pub fn raw_device_for(source: &Path) -> Option<PathBuf> {
+    let s = source.to_string_lossy();
+    if s.starts_with("/dev/rdisk") {
+        return Some(source.to_path_buf());
+    }
+    bsd_name_for(source).map(|b| PathBuf::from(format!("/dev/r{b}")))
+}
+
+/// Prepare a `source` for reading: prefer the raw device and, when `unmount`,
+/// unmount the volume first (native libaacs cannot decrypt while the volume is
+/// mounted). Returns the source to open and, if it needs restoring, the device
+/// to remount afterwards.
+pub fn prepare_source(source: &Path, unmount: bool) -> (PathBuf, Option<PathBuf>) {
+    let Some(raw) = raw_device_for(source) else {
+        return (source.to_path_buf(), None);
+    };
+    if unmount {
+        if let Some(bsd) = bsd_name_for(source) {
+            let _ = aacs_unmount(&PathBuf::from(format!("/dev/{bsd}")));
+            std::thread::sleep(std::time::Duration::from_millis(300));
+        }
+    }
+    tracing::info!(source = %source.display(), raw = %raw.display(), unmount, "prepare source for decrypt");
+    (raw.clone(), if unmount { Some(raw) } else { None })
+}
+
+/// Best-effort remount of a device returned by `prepare_source`.
+pub fn remount(device: &Path) {
+    if let Some(bsd) = bsd_name_for(device) {
+        let _ = std::process::Command::new("diskutil")
+            .arg("mountDisk")
+            .arg(format!("/dev/{bsd}"))
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+    }
+}
+
+/// Remounts a device on drop, so a rip that unmounted a volume puts it back.
+pub struct RemountGuard(pub Option<PathBuf>);
+
+impl Drop for RemountGuard {
+    fn drop(&mut self) {
+        if let Some(d) = &self.0 {
+            remount(d);
+        }
+    }
 }
 
 pub struct TitleReader<'a> {

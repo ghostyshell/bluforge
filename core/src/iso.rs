@@ -42,7 +42,13 @@ pub struct IsoProgress {
 fn sanitize_label(s: &str) -> String {
     let cleaned: String = s
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_uppercase() } else { '_' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() {
+                c.to_ascii_uppercase()
+            } else {
+                '_'
+            }
+        })
         .collect();
     let trimmed = cleaned.trim_matches('_');
     if trimmed.is_empty() {
@@ -75,7 +81,14 @@ fn build_iso(dir: &Path, dest: &Path, label: &str) -> Result<(), CoreError> {
 
     if which("hdiutil").is_some() {
         let out = Command::new("hdiutil")
-            .args(["makehybrid", "-udf", "-udf-volume-name", label, "-iso-volume-name", label])
+            .args([
+                "makehybrid",
+                "-udf",
+                "-udf-volume-name",
+                label,
+                "-iso-volume-name",
+                label,
+            ])
             .arg("-o")
             .arg(dest)
             .arg(dir)
@@ -111,9 +124,9 @@ fn build_iso(dir: &Path, dest: &Path, label: &str) -> Result<(), CoreError> {
         ));
     }
 
-    Err(CoreError::Disc(
-        last_error.unwrap_or_else(|| "no ISO builder found (install cdrtools for mkisofs)".into()),
-    ))
+    Err(CoreError::Disc(last_error.unwrap_or_else(|| {
+        "no ISO builder found (install cdrtools for mkisofs)".into()
+    })))
 }
 
 /// The device node backing a mount point, if any.
@@ -141,6 +154,7 @@ fn device_for_mount(mp: &str) -> Option<String> {
 /// hands back the raw (still AACS-encrypted) bytes. So a mounted volume - or a
 /// `/dev/diskN` node - is mapped to its raw device. BD root enumeration on a
 /// device is handled by the root probe in the shim.
+#[allow(dead_code)]
 fn export_source(source: &Path) -> Result<PathBuf, CoreError> {
     let s = source.to_string_lossy();
     if s.starts_with("/dev/rdisk") {
@@ -166,16 +180,17 @@ pub fn run<F>(req: &IsoRequest, mut on_progress: F) -> Result<(), CoreError>
 where
     F: FnMut(IsoProgress),
 {
-    let source = export_source(&req.source)?;
-    let disc = Disc::open(&source, req.keydb.as_deref())?;
+    let backend = Disc::resolve_backend_for(Some(&req.source));
+    let (source, remount) =
+        crate::disc::prepare_source(&req.source, backend == crate::disc::DecryptBackend::Aacs);
+    let _remount = crate::disc::RemountGuard(remount);
+    let disc = Disc::open_with_backend(&source, req.keydb.as_deref(), backend)?;
     let info = disc.info()?;
     let label = req
         .label
         .clone()
         .filter(|s| !s.trim().is_empty())
-        .unwrap_or_else(|| {
-            crate::device::source_name(&req.source.to_string_lossy(), &info.name)
-        });
+        .unwrap_or_else(|| crate::device::source_name(&req.source.to_string_lossy(), &info.name));
     let label = sanitize_label(&label);
 
     let (work, temp) = match req.format {
