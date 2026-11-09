@@ -251,6 +251,32 @@ impl Disc {
             .unwrap_or(false)
     }
 
+    /// Pick the backend for a rip/export. A keyed disc uses libaacs. An unkeyed
+    /// disc first tries to derive the key from the drive itself (native); if
+    /// that fails (eg. a revoked host certificate) it falls back to libmmbd.
+    pub fn plan_backend(source: &Path) -> DecryptBackend {
+        let backend = Self::resolve_backend_for(Some(source));
+        if backend != DecryptBackend::Aacs || Self::disc_is_keyed(source) {
+            return backend;
+        }
+        if Self::libmmbd_path().is_none() {
+            return backend;
+        }
+        let mount = Self::aacs_mount_path(source);
+        match crate::native::derive_and_store(&mount) {
+            Ok((k, added)) => {
+                if added {
+                    tracing::info!(id = %k.id, "derived disc key natively");
+                }
+                DecryptBackend::Aacs
+            }
+            Err(e) => {
+                tracing::warn!("native key derivation failed ({e}); falling back to libmmbd");
+                DecryptBackend::Mmbd
+            }
+        }
+    }
+
     /// Which decrypt backend to use. Native libaacs is preferred; MakeMKV's
     /// libmmbd is only the fallback for a disc we cannot key yet (its id absent
     /// from KEYDB) or when libaacs is not installed. `BLUFORGE_DECRYPT=aacs`
@@ -400,7 +426,7 @@ impl Disc {
     /// For the libaacs backend: a *mounted* path to the volume. libaacs resolves
     /// the BSD device from statfs and then unmounts/remounts it itself, so it
     /// must be handed a mounted path, not `/dev/rdiskN`. Mounts it if needed.
-    fn aacs_mount_path(path: &Path) -> PathBuf {
+    pub fn aacs_mount_path(path: &Path) -> PathBuf {
         let s = path.to_string_lossy();
         if !s.starts_with("/dev/") {
             return path.to_path_buf();

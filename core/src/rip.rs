@@ -1493,7 +1493,7 @@ where
     }
     // Native libaacs cannot decrypt while the volume is mounted, so open the raw
     // device and unmount it for the rip; libmmbd only needs the raw device.
-    let backend = Disc::resolve_backend_for(Some(&req_in.source));
+    let backend = Disc::plan_backend(&req_in.source);
     let disc_id = Disc::disc_id_for_source(&req_in.source);
     let keyed = disc_id
         .as_deref()

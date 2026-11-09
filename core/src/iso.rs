@@ -180,7 +180,7 @@ pub fn run<F>(req: &IsoRequest, mut on_progress: F) -> Result<(), CoreError>
 where
     F: FnMut(IsoProgress),
 {
-    let backend = Disc::resolve_backend_for(Some(&req.source));
+    let backend = Disc::plan_backend(&req.source);
     let (source, remount) =
         crate::disc::prepare_source(&req.source, backend == crate::disc::DecryptBackend::Mmbd);
     let _remount = crate::disc::RemountGuard(remount);
