@@ -182,7 +182,7 @@ where
 {
     let backend = Disc::resolve_backend_for(Some(&req.source));
     let (source, remount) =
-        crate::disc::prepare_source(&req.source, backend == crate::disc::DecryptBackend::Aacs);
+        crate::disc::prepare_source(&req.source, backend == crate::disc::DecryptBackend::Mmbd);
     let _remount = crate::disc::RemountGuard(remount);
     let disc = Disc::open_with_backend(&source, req.keydb.as_deref(), backend)?;
     let info = disc.info()?;

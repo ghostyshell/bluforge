@@ -41,6 +41,8 @@ fn main() {
             if target_os == "macos" {
                 // AACS volume-ID read (libaacs cannot reach the drive on macOS).
                 b.file("src/aacs_mmc.c");
+                // Native auth + MKB derivation, reusing libaacs's inner crypto.
+                b.file("src/aacs_native.c");
                 b.flag_if_supported("-fobjc-arc");
             }
             for inc in &includes {
@@ -63,6 +65,12 @@ fn main() {
             if target_os == "macos" {
                 println!("cargo:rustc-link-lib=framework=IOKit");
                 println!("cargo:rustc-link-lib=framework=CoreFoundation");
+                // libaacs internals (crypto/MKB/MMC) linked statically for the
+                // native keyless path.
+                println!("cargo:rustc-link-lib=static=aacs");
+                println!("cargo:rustc-link-lib=dylib=gcrypt");
+                println!("cargo:rustc-link-lib=dylib=gpg-error");
+                println!("cargo:rustc-link-lib=framework=DiskArbitration");
             }
             println!("cargo:rustc-cfg=have_bluray");
         }

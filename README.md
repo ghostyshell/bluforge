@@ -55,8 +55,10 @@ backend; force one with `BLUFORGE_DECRYPT=aacs|mmbd`, or override the library
 paths with `LIBAACS_PATH` / `LIBBDPLUS_PATH`. ffmpeg is used only for
 muxing/encoding, never decryption.
 
-See [`docs/decryption.md`](docs/decryption.md) for the AACS split, the working
-setup, the drive traps, and the remaining gap (native AGID drive auth).
+A keyless disc can be keyed from the drive itself with `bluforge keys native`
+(authenticate + derive from the MKB, no MakeMKV); BD+ VM data for libbdplus
+installs with `bluforge bdplus --install`. See
+[`docs/decryption.md`](docs/decryption.md) for the full picture.
 
 ## Build & run
 

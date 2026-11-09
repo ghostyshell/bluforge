@@ -153,6 +153,12 @@ enum Cmd {
     Eject,
     /// Show linked library versions.
     Libs,
+    /// BD+ VM data for libbdplus (needed to rip BD+ discs without MakeMKV).
+    Bdplus {
+        /// Download and install the public VM data into libbdplus's config dir.
+        #[arg(long)]
+        install: bool,
+    },
     /// Export a decrypted ISO (or `--folder`): all AACS/BD+ removed.
     Iso {
         /// Disc source: mounted volume, BDMV folder, ISO, or /dev/rdiskN.
@@ -241,6 +247,16 @@ enum KeysAction {
         /// Human name for the entry.
         #[arg(long)]
         name: Option<String>,
+    },
+    /// Derive a key from the inserted disc: authenticate to the drive and
+    /// recover the key from the disc's MKB. No MakeMKV, no existing KEYDB entry.
+    Native {
+        /// Mounted disc / volume (default: the mounted optical volume).
+        #[arg(long)]
+        from: Option<std::path::PathBuf>,
+        /// Print the derived key instead of storing it.
+        #[arg(long)]
+        print: bool,
     },
     /// List known discs.
     List {
@@ -394,6 +410,35 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
                     id,
                     name.clone().unwrap_or_default()
                 );
+            }
+            KeysAction::Native { from, print } => {
+                let mount = match from {
+                    Some(p) => p.clone(),
+                    None => bluforge_core::device::list_optical()
+                        .into_iter()
+                        .find_map(|d| d.mount_point.map(std::path::PathBuf::from))
+                        .ok_or_else(|| {
+                            bluforge_core::CoreError::Device(
+                                "no mounted optical volume; pass --from <mount>".into(),
+                            )
+                        })?,
+                };
+                if *print {
+                    let k = bluforge_core::native::derive(&mount)?;
+                    println!("disc      : {}", k.name);
+                    println!("id        : 0x{}", k.id);
+                    println!("volume id : 0x{}", k.vid);
+                    println!("media key : 0x{}", k.media_key);
+                    println!("vuk       : 0x{}", k.vuk);
+                } else {
+                    let (k, added) = bluforge_core::native::derive_and_store(&mount)?;
+                    eprintln!(
+                        "{} 0x{} {}",
+                        if added { "derived" } else { "already keyed" },
+                        k.id,
+                        k.name
+                    );
+                }
             }
             KeysAction::List { limit, keyed } => {
                 let all = keys::list_at(&keys::keydb_path(), None)?;
@@ -664,6 +709,23 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
             Ok(m) => println!("{m}"),
             Err(e) => return Err(e),
         },
+        Cmd::Bdplus { install } => {
+            if *install {
+                let dir = bluforge_core::bdplus::install()?;
+                eprintln!("installed BD+ VM data at {}", dir.display());
+            } else {
+                let dir = bluforge_core::bdplus::config_dir();
+                println!("BD+ vm config : {}", dir.display());
+                println!(
+                    "installed     : {}",
+                    if bluforge_core::bdplus::installed() {
+                        "yes"
+                    } else {
+                        "no (run `bluforge bdplus --install`)"
+                    }
+                );
+            }
+        }
         Cmd::Libs => {
             bluforge_core::Disc::init_env();
             let (aacs, bdplus) = bluforge_core::Disc::decryption_backend();

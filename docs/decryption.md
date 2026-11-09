@@ -54,15 +54,42 @@ is preserved on refresh.
 
 ## Getting a key for a new disc
 
-Because role 1 is unbuilt, a disc absent from KEYDB needs its VUK (and, for an
-AHD/AACS2 disc, its unit key) from an external oracle: the community KEYDB that
-ships with BluForge, or a one-off MakeMKV/FindVUK pass. Then:
+Preferred: derive it from the disc itself. No MakeMKV, no external oracle.
+
+```sh
+bluforge keys native --from /Volumes/MY_DISC   # authenticate, derive, store
+bluforge keys native --print                   # print only (default: mounted disc)
+```
+
+That runs the native path: drive authentication (AGID + host certificate) to
+read the volume id, MKB -> media key using the KEYDB device keys, then media key
++ volume id -> VUK. The result is written to KEYDB, so the disc then rips with
+no MakeMKV.
+
+If the drive rejects the shipped host certificate (below), fall back to an
+external oracle and store the key by hand:
 
 ```sh
 bluforge keys add --from /Volumes/MY_DISC --vuk 0x<VUK> [--unit-key 0x<UK>]
 ```
 
-After that the disc needs no MakeMKV.
+## BD+ discs
+
+BD+ is separate from AACS. libbdplus runs the BD+ VM but ships no VM data:
+
+```sh
+bluforge bdplus --install
+```
+
+unpacks the public `bdplus-vm0.bz2` into libbdplus's config dir; BD+ discs then
+decrypt through libbdplus, no MakeMKV.
+
+## Known limit: the shipped host certificate
+
+Authentication needs a host certificate + private key, carried in the community
+KEYDB header (`| HC |`, marked "Revoked in MKBv72"). It is small, so a disc or
+drive firmware that enforces revocation can reject it; then use libmmbd or an
+external-oracle key. A newer host certificate is the remaining gap.
 
 ## Traps seen in practice
 
@@ -76,8 +103,11 @@ After that the disc needs no MakeMKV.
   manual second command.
 - **`/dev/rdiskN` numbers change** when the drive re-enumerates; never cache the
   node, re-read it (`bluforge devices`).
-- **Do not unmount unless the backend needs it**: libaacs does, libmmbd does not,
-  and remounting a fragile drive can itself be slow.
+- **libaacs must be handed a *mounted* path.** It resolves the BSD device from
+  `statfs` and then unmounts/remounts around exclusive access itself. Handing it
+  `/dev/rdiskN` (or a pre-unmounted volume) is why it reported "Could not find
+  matching IOBDServices". libmmbd is the opposite: it wants the raw device with
+  the volume unmounted.
 - The `output is shorter than the title - disc read error?` warning fires on a
   genuine dropped read, and can also fire spuriously on a title whose PTS is
   compressed. Check the frame count, not just the warning.
@@ -87,9 +117,9 @@ bus-encryption flag set), ripped with zero MakeMKV.
 
 ## Not built / declined
 
-- **Native AGID drive authentication** (extract MakeMKV's host cert + device
-  keys, or a firmware/LibreDrive vendor unlock) so an unkeyed disc decrypts with
-  no external key source at all. This is the remaining gap.
-- **`keys from-makemkv`**: parse MakeMKV's `_private_data.tar` `hkd_*.bin` key
-  cache. The format is opaque in practice; the community KEYDB is the practical
-  source.
+- **AACS2/UHD from scratch.** AACS1 derives MK -> VUK and is handled; the AACS2
+  MKB type and the read-data-key path are not. A UHD disc not in KEYDB still
+  needs an external oracle.
+- **`keys from-makemkv`**: parse MakeMKV's `_private_data.tar` (`hkd_*.bin` is a
+  private container; the community KEYDB is the practical source).
+- Vendor firmware / LibreDrive unlock is not needed given the above.

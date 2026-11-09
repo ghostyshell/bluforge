@@ -5,6 +5,7 @@
 use std::path::PathBuf;
 
 pub mod author;
+pub mod bdplus;
 pub mod config;
 pub mod covers;
 pub mod device;
@@ -12,6 +13,7 @@ pub mod disc;
 pub mod iso;
 pub mod keys;
 pub mod metadata;
+pub mod native;
 pub mod rip;
 pub mod template;
 pub mod tv;

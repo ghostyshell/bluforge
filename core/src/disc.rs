@@ -271,10 +271,10 @@ impl Disc {
         if Self::libmmbd_path().is_none() {
             return DecryptBackend::Aacs;
         }
-        match source {
-            Some(s) if !Self::disc_is_keyed(s) => DecryptBackend::Mmbd,
-            _ => DecryptBackend::Aacs,
-        }
+        // Prefer libaacs even for a disc that is not in KEYDB: it can
+        // authenticate to the drive and derive the key itself.
+        let _ = source;
+        DecryptBackend::Aacs
     }
 
     /// True when `v` is a library path we resolve ourselves, as opposed to one
@@ -397,6 +397,32 @@ impl Disc {
         }
     }
 
+    /// For the libaacs backend: a *mounted* path to the volume. libaacs resolves
+    /// the BSD device from statfs and then unmounts/remounts it itself, so it
+    /// must be handed a mounted path, not `/dev/rdiskN`. Mounts it if needed.
+    fn aacs_mount_path(path: &Path) -> PathBuf {
+        let s = path.to_string_lossy();
+        if !s.starts_with("/dev/") {
+            return path.to_path_buf();
+        }
+        let Some(bsd) = bsd_name_for(path) else {
+            return path.to_path_buf();
+        };
+        if let Some(mp) = crate::device::mount_point_for_device(&bsd) {
+            return PathBuf::from(mp);
+        }
+        let _ = std::process::Command::new("diskutil")
+            .arg("mount")
+            .arg(format!("/dev/{bsd}"))
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        crate::device::mount_point_for_device(&bsd)
+            .map(PathBuf::from)
+            .unwrap_or_else(|| path.to_path_buf())
+    }
+
     /// Open a disc at `path` (a mounted volume, an ISO, or a `/dev/rdiskX`).
     /// `keydb` points at a KEYDB.cfg consumed by libaacs.
     pub fn open(path: &Path, keydb: Option<&Path>) -> Result<Disc, CoreError> {
@@ -412,9 +438,14 @@ impl Disc {
         backend: DecryptBackend,
     ) -> Result<Disc, CoreError> {
         Self::apply_env(backend);
+        let open_path = if backend == DecryptBackend::Aacs {
+            Self::aacs_mount_path(path)
+        } else {
+            path.to_path_buf()
+        };
         #[cfg(have_bluray)]
         {
-            let cpath = CString::new(path.to_string_lossy().as_bytes())
+            let cpath = CString::new(open_path.to_string_lossy().as_bytes())
                 .map_err(|e| CoreError::Disc(e.to_string()))?;
             let ckey = match keydb {
                 Some(k) => Some(

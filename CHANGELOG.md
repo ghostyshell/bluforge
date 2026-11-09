@@ -6,6 +6,12 @@ All notable changes to BluForge. Newest first.
 
 ### Added
 
+- **Native key derivation for an unkeyed disc** (`bluforge keys native`): the
+  drive is authenticated (AGID + host certificate) to read the volume id, the
+  media key is recovered from the disc's own MKB with the KEYDB device keys, and
+  the VUK is derived. No MakeMKV, no pre-existing KEYDB entry.
+- **`bluforge bdplus [--install]`**: install the public BD+ VM data into
+  libbdplus's config dir, so BD+ discs also come off MakeMKV.
 - **Native libaacs decryption is now the default.** A disc whose key is in
   `KEYDB.cfg` decrypts and rips with no MakeMKV. MakeMKV's `libmmbd` is used
   only as a fallback (unkeyed disc, or BD+). Force either backend with
@@ -24,6 +30,10 @@ All notable changes to BluForge. Newest first.
 
 ### Changed
 
+- The libaacs backend is handed a *mounted* volume (libaacs resolves the drive
+  via statfs and manages unmount/remount itself); an unkeyed disc now routes to
+  libaacs, not libmmbd. The native path links libaacs's inner crypto/MKB/MMC
+  helpers (`libaacs.a`) so the AACS maths is not reimplemented.
 - Native libaacs cannot read a mounted volume on this stack, so a rip now
   unmounts the disc, reads the raw `/dev/rdiskN`, and remounts afterwards. The
   backend is resolved before the unmount and threaded through nested opens.
