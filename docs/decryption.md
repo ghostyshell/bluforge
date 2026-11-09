@@ -129,6 +129,24 @@ disc still ends up on libaacs (MakeMKV is used once, per disc, never as the
 decryptor). Verified on the Danganronpa disc: the VID/MK/VUK recovered this way
 match the reference values exactly.
 
+### What this replaces, and the one thing it does not
+
+MakeMKV does four things; three are now ours:
+
+- **Media key** — ours (device keys + MKB, offline). MakeMKV not involved.
+- **VUK** — ours (`AES-G(MK, VID)`). MakeMKV not involved.
+- **RDK / bus encryption** — ours (read from `discatt.dat`, cached where libaacs
+  looks; `SDF_STOP` keeps MakeMKV from hiding it by enabling LibreDrive).
+- **VID** — still needs a non-revoked host certificate to authenticate. MakeMKV
+  rides on *its own* certificate here, and that certificate is not extractable
+  from the binaries as raw bytes: MakeMKV obfuscates its key tables (neither the
+  public device keys nor the host cert appear verbatim, and no single-byte-XOR
+  variant does either). So `makemkvcon` is kept purely as a VID oracle.
+
+If/when a host cert newer than this drive's revocation list is available, put it
+in the KEYDB header and `bluforge keys native` derives everything itself and even
+`makemkvcon` goes away.
+
 ## Traps seen in practice
 
 - **The drive drops off the USB bus** under sustained reads (HL-DT-ST BD-RE
