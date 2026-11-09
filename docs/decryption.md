@@ -84,12 +84,22 @@ bluforge bdplus --install
 unpacks the public `bdplus-vm0.bz2` into libbdplus's config dir; BD+ discs then
 decrypt through libbdplus, no MakeMKV.
 
-## Known limit: the shipped host certificate
+## Known limit: the host certificate is revoked on this drive
 
 Authentication needs a host certificate + private key, carried in the community
-KEYDB header (`| HC |`, marked "Revoked in MKBv72"). It is small, so a disc or
-drive firmware that enforces revocation can reject it; then use libmmbd or an
-external-oracle key. A newer host certificate is the remaining gap.
+KEYDB header (`| HC |`). The public ones are old: the shipped one is revoked in
+MKBv72, and the newest published one (`0xffff80000217`) in MKBv82. This drive is
+bus-encryption-capable and has already seen an AACS2 MKBv77 disc (a UHD rip), so
+its host revocation list rejects **both** — native auth currently returns SCSI
+`05/6F/00` at the `SEND KEY` step and the rip falls back to libmmbd.
+
+So on this drive, keyless AACS1 decryption still needs a key; native auth works
+mechanically and will succeed once a host cert newer than the drive's revocation
+list is available (or on a drive that has not seen a v72+/AACS2 v77 disc). Until
+then: `bluforge keys native` for the derivation attempt, and libmmbd as the
+fallback (`plan_backend` does both automatically).
+
+We now print the SCSI sense on auth failure, so the reason is never a guess.
 
 ## Traps seen in practice
 
@@ -103,6 +113,10 @@ external-oracle key. A newer host certificate is the remaining gap.
   manual second command.
 - **`/dev/rdiskN` numbers change** when the drive re-enumerates; never cache the
   node, re-read it (`bluforge devices`).
+- **A disc read right after authentication needs a moment.** Our MMC auth takes
+  exclusive access, and on release the USB drive re-enumerates and the media
+  briefly disappears. The native path remounts and waits for the volume to
+  return before handing off.
 - **libaacs must be handed a *mounted* path.** It resolves the BSD device from
   `statfs` and then unmounts/remounts around exclusive access itself. Handing it
   `/dev/rdiskN` (or a pre-unmounted volume) is why it reported "Could not find

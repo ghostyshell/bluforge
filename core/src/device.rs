@@ -383,10 +383,17 @@ mod mac {
 pub use mac::list;
 
 /// Mount point of any volume on the given device node, if currently mounted.
+/// Accepts `/dev/diskN`, `/dev/rdiskN`, or a bare `diskN`.
 pub fn mount_point_for_device(dev: &str) -> Option<String> {
+    let want = dev.trim_start_matches("/dev/").trim_start_matches('r');
+    let norm = |p: &str| {
+        p.trim_start_matches("/dev/")
+            .trim_start_matches('r')
+            .to_string()
+    };
     list()
         .into_iter()
-        .find(|d| d.device_path.as_deref() == Some(dev))
+        .find(|d| d.device_path.as_deref().map(norm).as_deref() == Some(want) || d.bsd_name == want)
         .and_then(|d| d.mount_point)
 }
 

@@ -30,10 +30,8 @@ typedef struct {
 extern int crypto_init(void);
 extern int crypto_aes128d(const uint8_t *key, const uint8_t *data, uint8_t *dst);
 extern int crypto_aesg3(const uint8_t *D, uint8_t *lsubk, uint8_t *rsubk, uint8_t *pk);
-extern MMC *mmc_open(const char *path);
-extern void mmc_close(MMC *mmc);
-extern int mmc_read_auth(MMC *mmc, const uint8_t *host_priv_key, const uint8_t *host_cert,
-                         int request, uint8_t *p1, uint8_t *p2);
+extern int bf_aacs_auth_vid(const char *bsd_name, const unsigned char *host_priv,
+                            const unsigned char *host_cert, unsigned char out[16]);
 extern MKB *mkb_init(uint8_t *data, size_t len);
 extern void mkb_close(MKB *mkb);
 extern uint32_t mkb_type(MKB *mkb);
@@ -200,30 +198,23 @@ static int media_key(MKB *m, const bf_dk_t *dks, int n, uint8_t *mk)
 }
 
 // Returns BF_OK and fills out_vid/out_mk/out_vuk (16 bytes each).
-int bf_native_key(const char *mount,
+int bf_native_key(const char *bsd_name,
                   const uint8_t *host_priv, const uint8_t *host_cert,
                   const uint8_t *mkb_data, size_t mkb_len,
                   const bf_dk_t *dks, int ndks,
                   uint8_t *out_vid, uint8_t *out_mk, uint8_t *out_vuk)
 {
-    MMC *mmc;
     MKB *m;
     uint8_t vid[16], mk[16];
     uint8_t *buf;
     int rc, i;
 
-    if (!mount || !host_priv || !host_cert || !mkb_data || mkb_len < 16) {
+    if (!bsd_name || !host_priv || !host_cert || !mkb_data || mkb_len < 16) {
         return BF_ERR_MKB;
     }
     crypto_init();
 
-    mmc = mmc_open(mount);
-    if (!mmc) {
-        fprintf(stderr, "native: could not open the drive at %s\n", mount);
-        return BF_ERR_AUTH;
-    }
-    rc = mmc_read_auth(mmc, host_priv, host_cert, MMC_READ_VID, vid, NULL);
-    mmc_close(mmc);
+    rc = bf_aacs_auth_vid(bsd_name, host_priv, host_cert, vid);
     if (rc) {
         fprintf(stderr, "native: drive authentication failed (rc=%d)\n", rc);
         return BF_ERR_AUTH;

@@ -166,8 +166,21 @@ pub fn derive(mount: &Path) -> Result<NativeKey, CoreError> {
         CoreError::Disc(format!("no AACS/Unit_Key_RO.inf under {}", mount.display()))
     })?;
 
-    let cpath = std::ffi::CString::new(mount.to_string_lossy().as_bytes())
-        .map_err(|e| CoreError::Disc(e.to_string()))?;
+    let bsd = crate::disc::bsd_name_for(mount).ok_or_else(|| {
+        CoreError::Disc(format!(
+            "cannot resolve the optical device for {}",
+            mount.display()
+        ))
+    })?;
+    let cpath =
+        std::ffi::CString::new(bsd.as_bytes()).map_err(|e| CoreError::Disc(e.to_string()))?;
+
+    // The mounted volume holds the drive, which blocks SCSITask creation. The
+    // things we need from the mount (MKB, disc id) are already read; unmount,
+    // authenticate, then put it back.
+    let dev = std::path::PathBuf::from(format!("/dev/{bsd}"));
+    let _ = crate::disc::aacs_unmount(&dev);
+    std::thread::sleep(std::time::Duration::from_millis(400));
 
     let mut vid = [0u8; 16];
     let mut mk = [0u8; 16];
@@ -186,6 +199,18 @@ pub fn derive(mount: &Path) -> Result<NativeKey, CoreError> {
             vuk.as_mut_ptr(),
         )
     };
+    // Releasing exclusive access makes the drive re-appear; give the OS time to
+    // re-read and remount the volume before the caller opens it again.
+    for _ in 0..12 {
+        crate::disc::remount(&dev);
+        if crate::device::list_optical()
+            .iter()
+            .any(|d| d.mount_point.is_some())
+        {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(500));
+    }
     if rc != 0 {
         return Err(CoreError::Disc(format!(
             "native AACS failed (code {rc}); is a disc inserted and the volume mounted?"

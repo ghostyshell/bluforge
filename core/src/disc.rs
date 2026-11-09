@@ -434,7 +434,11 @@ impl Disc {
         let Some(bsd) = bsd_name_for(path) else {
             return path.to_path_buf();
         };
-        if let Some(mp) = crate::device::mount_point_for_device(&bsd) {
+        let cands = [s.to_string(), format!("/dev/{bsd}"), format!("/dev/r{bsd}")];
+        if let Some(mp) = cands
+            .iter()
+            .find_map(|c| crate::device::mount_point_for_device(c))
+        {
             return PathBuf::from(mp);
         }
         let _ = std::process::Command::new("diskutil")
@@ -444,7 +448,9 @@ impl Disc {
             .stderr(std::process::Stdio::null())
             .status();
         std::thread::sleep(std::time::Duration::from_millis(500));
-        crate::device::mount_point_for_device(&bsd)
+        cands
+            .iter()
+            .find_map(|c| crate::device::mount_point_for_device(c))
             .map(PathBuf::from)
             .unwrap_or_else(|| path.to_path_buf())
     }
@@ -894,7 +900,7 @@ pub fn aacs_unmount(device: &Path) -> bool {
 
 /// Whole-disk BSD name behind `source`: a `/dev/diskN` / `/dev/rdiskN` node, or
 /// the device backing a mounted optical volume.
-fn bsd_name_for(source: &Path) -> Option<String> {
+pub fn bsd_name_for(source: &Path) -> Option<String> {
     let s = source.to_string_lossy();
     if let Some(rest) = s.strip_prefix("/dev/") {
         let rest = rest.strip_prefix('r').unwrap_or(rest);
@@ -921,7 +927,7 @@ pub fn raw_device_for(source: &Path) -> Option<PathBuf> {
     bsd_name_for(source).map(|b| PathBuf::from(format!("/dev/r{b}")))
 }
 
-/// Prepare a `source` for reading: prefer the raw device and, when `unmount`,
+/// Prepare a `source` for reading: prefer the raw device. `unmount` is best
 /// unmount the volume first (native libaacs cannot decrypt while the volume is
 /// mounted). Returns the source to open and, if it needs restoring, the device
 /// to remount afterwards.

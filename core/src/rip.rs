@@ -1499,8 +1499,7 @@ where
         .as_deref()
         .map(|i| crate::keys::has(i).unwrap_or(false))
         .unwrap_or(false);
-    let (source, remount) =
-        crate::disc::prepare_source(&req_in.source, backend == crate::disc::DecryptBackend::Mmbd);
+    let (source, remount) = crate::disc::prepare_source(&req_in.source, false);
     let _remount = crate::disc::RemountGuard(remount);
     let mut owned = req_in.clone();
     owned.source = source;

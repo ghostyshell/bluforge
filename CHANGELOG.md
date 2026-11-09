@@ -28,6 +28,13 @@ All notable changes to BluForge. Newest first.
 - `docs/decryption.md`: the AACS split, the working setup, the traps, and the
   remaining gap (native AGID drive auth).
 
+### Fixed
+
+- `mount_point_for_device` accepted only an exact `/dev/...` string, so a
+  `/dev/diskN` source failed to resolve its mount point. That made a keyed disc
+  look unkeyed (routing to the native attempt and libmmbd instead of libaacs).
+  It now matches on the BSD name regardless of `/dev/` or `r` prefix.
+
 ### Changed
 
 - The libaacs backend is handed a *mounted* volume (libaacs resolves the drive

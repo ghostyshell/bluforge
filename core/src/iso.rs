@@ -181,8 +181,7 @@ where
     F: FnMut(IsoProgress),
 {
     let backend = Disc::plan_backend(&req.source);
-    let (source, remount) =
-        crate::disc::prepare_source(&req.source, backend == crate::disc::DecryptBackend::Mmbd);
+    let (source, remount) = crate::disc::prepare_source(&req.source, false);
     let _remount = crate::disc::RemountGuard(remount);
     let disc = Disc::open_with_backend(&source, req.keydb.as_deref(), backend)?;
     let info = disc.info()?;
