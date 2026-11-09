@@ -31,7 +31,7 @@ authoring with custom menus and burning.
 ## Architecture
 
 ```
-core/           bluforge-core — framework-agnostic engine (Rust)
+core/           bluforge-core - framework-agnostic engine (Rust)
   device.rs       IOKit device enumeration, optical detection
   keys.rs         KEYDB.cfg fetch + store + validation
   disc.rs         libbluray FFI (titles, decrypted title streaming)
@@ -39,7 +39,7 @@ core/           bluforge-core — framework-agnostic engine (Rust)
   rip.rs          ffmpeg orchestration (remux / encode) with progress
   iso.rs          decrypted ISO / backup-folder export
   config.rs       persisted settings
-cli/            `bluforge` — headless CLI for testing the engine
+cli/            `bluforge` - headless CLI for testing the engine
 app/            Tauri v2 desktop app (React + TypeScript frontend)
   src-tauri/      Rust commands bridging the UI to core
 ```
@@ -54,6 +54,9 @@ and remounts it afterwards. `bluforge libs` and `bluforge disc` print the chosen
 backend; force one with `BLUFORGE_DECRYPT=aacs|mmbd`, or override the library
 paths with `LIBAACS_PATH` / `LIBBDPLUS_PATH`. ffmpeg is used only for
 muxing/encoding, never decryption.
+
+See [`docs/decryption.md`](docs/decryption.md) for the AACS split, the working
+setup, the drive traps, and the remaining gap (native AGID drive auth).
 
 ## Build & run
 
