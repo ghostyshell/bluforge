@@ -307,6 +307,24 @@ fn read_header(keydb: &Path) -> Result<Header, CoreError> {
         }
     }
 
+    // A host certificate/key supplied by the environment wins (lets a user
+    // bring their own licensed certificate without editing KEYDB).
+    let env_priv = std::env::var("BLUFORGE_HOST_PRIV")
+        .ok()
+        .and_then(|v| hexbytes(&v));
+    let env_cert = std::env::var("BLUFORGE_HOST_CERT")
+        .ok()
+        .and_then(|v| hexbytes(&v));
+    if let (Some(k), Some(c)) = (env_priv, env_cert) {
+        if k.len() == 20 && c.len() == 92 {
+            return Ok(Header {
+                host_priv: k,
+                host_cert: c,
+                dks,
+            });
+        }
+    }
+
     let host_priv =
         host_priv.ok_or_else(|| CoreError::Keys("KEYDB has no host certificate".into()))?;
     let host_cert =

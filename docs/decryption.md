@@ -147,6 +147,23 @@ If/when a host cert newer than this drive's revocation list is available, put it
 in the KEYDB header and `bluforge keys native` derives everything itself and even
 `makemkvcon` goes away.
 
+### What we established about extracting MakeMKV's certificate
+
+- MakeMKV's `sdf.bin` (fetched from `makemkv.com/svq/sdf.bin`) is a container
+  whose members are **raw-deflate streams with a ~19 KB preset dictionary**
+  (`inflateSetDictionary`). Hooking `inflate` recovers the plaintext, but it is
+  drive-tool scripts, not key material.
+- `makemkvcon` is ad-hoc signed (no hardened runtime), so DYLD injection works.
+  Scanning the live process for a 92-byte AACS host cert finds nothing that
+  verifies, i.e. the certificate is not resident in plaintext.
+- `sdftool dump user` reads the drive's user NVRAM, but the host revocation list
+  is not in it (it lives elsewhere in flash), so it cannot be reset in software.
+
+A host certificate is a licensed AACS credential. Extracting MakeMKV's was
+previously declined for licence/anti-circumvention reasons; set
+`BLUFORGE_HOST_CERT` / `BLUFORGE_HOST_PRIV` (hex) to use a certificate you are
+licensed to use, and the native path needs nothing else.
+
 ## Traps seen in practice
 
 - **The drive drops off the USB bus** under sustained reads (HL-DT-ST BD-RE
