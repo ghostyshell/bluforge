@@ -143,7 +143,15 @@ implemented in Phase 18; the saved menu documents from Phase 6 feed its names.
 - Unit tests cover the IFO parser and the ffmpeg argument builder; the actual
   `dvdvideo` read needs a real disc to exercise.
 
-## Phase 16 - Burning - partial
+## Phase 16 - Burning - implemented, write untested
+
+- Live drive: an LG BD-RE BU40N (USB) was detected, a pressed AACS Blu-ray was
+  read (60 titles), decrypted with libaacs and a lossless title rip completed
+  (H.264 + AC-3 + PGS). The inserted disc was a BD-ROM, so no write could be run.
+- Native key recovery needs the drive's LibreDrive vendor read; on this stock
+  1.03 firmware it fails ("no LibreDrive VID record", authentication rc=-10),
+  so `keys native` does not replace an existing KEYDB entry here.
+
 
 - `burn <image.iso> --device /dev/rdiskN [--yes]` writes a single-title ISO with
   growisofs (cdrecord fallback). It refuses a mounted device or a missing image,

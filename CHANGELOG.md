@@ -24,6 +24,18 @@ All notable changes to Keepsake Atelier. Newest first.
   vendor read. MakeMKV's `discatt.dat` is now only a fallback for a drive whose
   LibreDrive vendor read fails.
 
+### Verified
+
+- **Live disc pass (LG BD-RE BU40N, pressed AACS Blu-ray):** disc info and the
+  60-title map, the menu document parse (BD-J first play/top menu + 49 nav
+  titles), tree verification, and a lossless title rip (H.264 + AC-3 + PGS,
+  24.5 s MKV) all worked. `hdiutil burn` sees the drive and a 17 MiB authored
+  UDF 2.50 image passes `-sizequery`; an actual write still needs a blank
+  BD-RE/BD-R (the inserted disc was a pressed BD-ROM).
+- Native key recovery could not be exercised: this drive's stock firmware has
+  no LibreDrive vendor read ("no LibreDrive VID record"), so `keys native`
+  fails here while libaacs + the existing KEYDB entry decrypts normally.
+
 ### Added
 
 - **Authored BD-J title menus (opt-in):** `author --menu` adds a real 1920x1080
