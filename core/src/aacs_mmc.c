@@ -1,10 +1,14 @@
 // AACS MMC access on macOS via IOKit/SCSITaskDeviceInterface.
 //
-// Two entry points:
-//   bf_aacs_volume_id   - unauthenticated READ DISC STRUCTURE 0x80 (works only
-//                         on drives that serve the VID to an unauthenticated AGID)
-//   bf_aacs_auth_vid    - full AACS drive authentication (AGID + host
-//                         certificate), then read the VID.
+// Three entry points:
+//   bf_aacs_vid_libredrive - vendor READ BUFFER 0x3c from a LibreDrive drive,
+//                            which returns the decrypted VID with no
+//                            authentication at all. This is what MakeMKV does.
+//   bf_aacs_volume_id      - unauthenticated READ DISC STRUCTURE 0x80 (works
+//                            only on drives that serve the VID to an
+//                            unauthenticated AGID)
+//   bf_aacs_auth_vid       - full AACS drive authentication (AGID + host
+//                            certificate), then read the VID.
 //
 // We drive the SCSI layer ourselves rather than libaacs's MMC because libaacs's
 // darwin backend cannot resolve the device (statfs on /dev/rdiskN) and hides the
@@ -36,6 +40,7 @@ extern int crypto_aes_cmac_16(const unsigned char *data, const unsigned char *ae
 #define SEND_KEY 0xa3
 #define REPORT_KEY 0xa4
 #define READ_DISC_STRUCTURE 0xad
+#define READ_BUFFER 0x3c
 #define KEY_CLASS_AACS 0x02
 #define RK_AGID 0x00
 #define RK_DRIVE_CERT_CHALLENGE 0x01
@@ -207,6 +212,24 @@ static int read_disc_structure(BfDev *d, unsigned char agid, unsigned char forma
     return send_mmc(d, cdb, buf, 0, len);
 }
 
+static int read_buffer(BfDev *d, unsigned int buffer_id, unsigned int offset,
+                        unsigned char *buf, unsigned int len)
+{
+    unsigned char cdb[CDB_LEN];
+    memset(cdb, 0, CDB_LEN);
+    cdb[0] = READ_BUFFER;
+    cdb[1] = 0x01; // mode: read buffer data
+    cdb[2] = (buffer_id >> 8) & 0xff;
+    cdb[3] = buffer_id & 0xff;
+    cdb[4] = (offset >> 16) & 0xff;
+    cdb[5] = (offset >> 8) & 0xff;
+    cdb[6] = offset & 0xff;
+    cdb[7] = (len >> 16) & 0xff;
+    cdb[8] = (len >> 8) & 0xff;
+    cdb[9] = len & 0xff;
+    return send_mmc(d, cdb, buf, 0, len);
+}
+
 static int alloc_agid(BfDev *d, unsigned char *agid)
 {
     int i;
@@ -221,6 +244,59 @@ static int alloc_agid(BfDev *d, unsigned char *agid)
     }
     *agid = (buf[7] >> 6) & 0x03;
     return 0;
+}
+
+// LibreDrive vendor read of the AACS volume id.
+//
+// A LibreDrive-patched MediaTek drive (this one is a BU40N 1.03) decrypts the
+// AACS VID in its own firmware and serves it over vendor READ BUFFER buffer id
+// 0x4410 as a table of 36-byte records:
+//
+//     00 22 | 00 50 | <16-byte VID> | 16 zero bytes
+//     ^len   ^type
+//
+// MakeMKV reads exactly this (one 36-byte record per drive open) and never
+// sends SEND KEY / REPORT KEY, which is why it works with a revoked host
+// certificate and why LibreDrive mode shows up in its log. The drive ignores
+// the buffer offset: any offset returns the first record.
+int bf_aacs_vid_libredrive(const char *bsd_name, unsigned char out[16])
+{
+    BfDev d;
+    unsigned char buf[36];
+    unsigned char *big = NULL;
+    int rc, i;
+
+    if (open_dev(bsd_name, &d)) {
+        return -10;
+    }
+    memset(buf, 0, sizeof(buf));
+    rc = read_buffer(&d, 0x4410, 0, buf, sizeof(buf));
+    // Length 0x22 and record type 0x50 identify the AACS VID entry.
+    if (rc == 0 && buf[0] == 0x00 && buf[1] == 0x22 && buf[2] == 0x00 && buf[3] == 0x50) {
+        memcpy(out, buf + 4, 16);
+        close_dev(&d);
+        return 0;
+    }
+    // The record table could start with a different entry; scan the whole
+    // buffer for the VID record before giving up.
+    big = malloc(9216);
+    if (big) {
+        memset(big, 0, 9216);
+        if (read_buffer(&d, 0x4410, 0, big, 9216) == 0) {
+            for (i = 0; i + 36 <= 9216; i += 36) {
+                if (big[i] == 0x00 && big[i + 1] == 0x22 && big[i + 2] == 0x00 && big[i + 3] == 0x50) {
+                    memcpy(out, big + i + 4, 16);
+                    free(big);
+                    close_dev(&d);
+                    return 0;
+                }
+            }
+        }
+        free(big);
+    }
+    fprintf(stderr, "aacs-mmc: no LibreDrive VID record in buffer 0x4410\n");
+    close_dev(&d);
+    return -13;
 }
 
 // Unauthenticated read of the volume id (may fail with "authentication required").

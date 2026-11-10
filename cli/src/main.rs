@@ -248,8 +248,9 @@ enum KeysAction {
         #[arg(long)]
         name: Option<String>,
     },
-    /// Derive a key from the inserted disc: authenticate to the drive and
-    /// recover the key from the disc's MKB. No MakeMKV, no existing KEYDB entry.
+    /// Derive a key from the inserted disc: read the volume id from the drive
+    /// and recover the key from the disc's MKB. No MakeMKV, no host certificate,
+    /// no existing KEYDB entry.
     Native {
         /// Mounted disc / volume (default: the mounted optical volume).
         #[arg(long)]

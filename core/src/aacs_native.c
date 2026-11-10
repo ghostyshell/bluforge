@@ -32,6 +32,7 @@ extern int crypto_aes128d(const uint8_t *key, const uint8_t *data, uint8_t *dst)
 extern int crypto_aesg3(const uint8_t *D, uint8_t *lsubk, uint8_t *rsubk, uint8_t *pk);
 extern int bf_aacs_auth_vid(const char *bsd_name, const unsigned char *host_priv,
                             const unsigned char *host_cert, unsigned char out[16]);
+extern int bf_aacs_vid_libredrive(const char *bsd_name, unsigned char out[16]);
 extern MKB *mkb_init(uint8_t *data, size_t len);
 extern void mkb_close(MKB *mkb);
 extern uint32_t mkb_type(MKB *mkb);
@@ -247,15 +248,27 @@ int bf_native_key(const char *bsd_name,
     uint8_t *buf;
     int rc, i;
 
-    if (!bsd_name || !host_priv || !host_cert || !mkb_data || mkb_len < 16) {
+    if (!bsd_name || !mkb_data || mkb_len < 16) {
         return BF_ERR_MKB;
     }
     crypto_init();
 
-    rc = bf_aacs_auth_vid(bsd_name, host_priv, host_cert, vid);
+    // Preferred: the drive's LibreDrive firmware returns the decrypted VID over
+    // vendor READ BUFFER, no AACS authentication required. This is what MakeMKV
+    // uses, and it is why a revoked host certificate does not matter.
+    rc = bf_aacs_vid_libredrive(bsd_name, vid);
     if (rc) {
-        fprintf(stderr, "native: drive authentication failed (rc=%d)\n", rc);
-        return BF_ERR_AUTH;
+        if (!host_priv || !host_cert) {
+            fprintf(stderr, "native: no LibreDrive vendor VID and no host certificate\n");
+            return BF_ERR_AUTH;
+        }
+        // Fallback: authenticate with a host certificate (only an unrevoked one
+        // works on this drive) and read the VID the standard way.
+        rc = bf_aacs_auth_vid(bsd_name, host_priv, host_cert, vid);
+        if (rc) {
+            fprintf(stderr, "native: drive authentication failed (rc=%d)\n", rc);
+            return BF_ERR_AUTH;
+        }
     }
 
     buf = malloc(mkb_len);

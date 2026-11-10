@@ -252,14 +252,12 @@ impl Disc {
     }
 
     /// Pick the backend for a rip/export. A keyed disc uses libaacs. An unkeyed
-    /// disc first tries to derive the key from the drive itself (native); if
-    /// that fails (eg. a revoked host certificate) it falls back to libmmbd.
+    /// disc first tries to derive the key from the drive itself (native: the
+    /// drive's LibreDrive VID read plus the disc's own MKB); if that fails it
+    /// falls back to MakeMKV's `discatt.dat` and finally to libmmbd.
     pub fn plan_backend(source: &Path) -> DecryptBackend {
         let backend = Self::resolve_backend_for(Some(source));
         if backend != DecryptBackend::Aacs || Self::disc_is_keyed(source) {
-            return backend;
-        }
-        if Self::libmmbd_path().is_none() {
             return backend;
         }
         let mount = Self::aacs_mount_path(source);
@@ -268,22 +266,26 @@ impl Disc {
                 if added {
                     tracing::info!(id = %k.id, "derived disc key natively");
                 }
+                return DecryptBackend::Aacs;
+            }
+            Err(e) => tracing::info!("native disc key derivation failed ({e})"),
+        }
+        if Self::libmmbd_path().is_none() {
+            // libaacs can still decrypt if the VID is cached or the drive
+            // authenticates on its own; only the extra oracle is unavailable.
+            return DecryptBackend::Aacs;
+        }
+        tracing::info!("trying MakeMKV discatt (VID)");
+        match crate::native::from_makemkv_and_store(&mount) {
+            Ok((k, added)) => {
+                if added {
+                    tracing::info!(id = %k.id, "derived disc key via MakeMKV VID");
+                }
                 DecryptBackend::Aacs
             }
-            Err(e) => {
-                tracing::info!("native auth failed ({e}); trying MakeMKV discatt (VID)");
-                match crate::native::from_makemkv_and_store(&mount) {
-                    Ok((k, added)) => {
-                        if added {
-                            tracing::info!(id = %k.id, "derived disc key via MakeMKV VID");
-                        }
-                        DecryptBackend::Aacs
-                    }
-                    Err(e2) => {
-                        tracing::warn!("MakeMKV VID path failed ({e2}); falling back to libmmbd");
-                        DecryptBackend::Mmbd
-                    }
-                }
+            Err(e2) => {
+                tracing::warn!("MakeMKV VID path failed ({e2}); falling back to libmmbd");
+                DecryptBackend::Mmbd
             }
         }
     }
@@ -822,16 +824,21 @@ pub fn library_version() -> String {
     }
 }
 
-/// `Read` adapter over a selected title (yields decrypted MPEG-TS).
 /// Read the 16-byte AACS volume ID straight from the drive on macOS.
 ///
 /// libaacs needs it to derive the volume-unique key, but its own macOS MMC layer
-/// cannot find the drive on this stack, so we issue READ DISC STRUCTURE (0x80)
-/// ourselves and hand the result back through its cache.
+/// cannot find the drive on this stack, so we ask the drive ourselves. A
+/// LibreDrive drive hands the decrypted VID over a vendor READ BUFFER with no
+/// authentication at all; otherwise fall back to the standard unauthenticated
+/// READ DISC STRUCTURE (0x80), which a revoked-certificate drive rejects.
 #[cfg(target_os = "macos")]
 pub fn aacs_volume_id(device: &Path) -> Option<[u8; 16]> {
     extern "C" {
         fn bf_aacs_volume_id(
+            name: *const std::os::raw::c_char,
+            out: *mut u8,
+        ) -> std::os::raw::c_int;
+        fn bf_aacs_vid_libredrive(
             name: *const std::os::raw::c_char,
             out: *mut u8,
         ) -> std::os::raw::c_int;
@@ -843,6 +850,10 @@ pub fn aacs_volume_id(device: &Path) -> Option<[u8; 16]> {
         .to_string();
     let cname = std::ffi::CString::new(name).ok()?;
     let mut out = [0u8; 16];
+    let rc = unsafe { bf_aacs_vid_libredrive(cname.as_ptr(), out.as_mut_ptr()) };
+    if rc == 0 {
+        return Some(out);
+    }
     let rc = unsafe { bf_aacs_volume_id(cname.as_ptr(), out.as_mut_ptr()) };
     if rc == 0 {
         Some(out)

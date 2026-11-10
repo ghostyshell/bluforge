@@ -14,14 +14,22 @@ AACS has two independent halves:
    The VUK yields unit/title keys that drive AES-128-CBC over 6144-byte units
    (first 16 bytes clear, address-derived IV). Standard published math.
 
-BluForge does **not** implement (1). It does (2) through libaacs, driven by the
-local `KEYDB.cfg`.
+BluForge does both:
+1. through the drive's **LibreDrive vendor read**, which returns the already
+   decrypted VID with no certificate and no `SEND KEY`/`REPORT KEY`
+   (see "The VID, solved natively" below), with host-certificate
+   authentication as the fallback for a drive that is not LibreDrive-enabled;
+2. through libaacs, driven by the local `KEYDB.cfg`.
 
 ## How BluForge decrypts today
 
 - **Native libaacs is the default** backend. It reads the disc's VUK and unit
   key from `KEYDB.cfg` and never touches the drive's MMC, so role 1 is moot for a
   keyed disc.
+- An **unkeyed** disc is keyed first, natively: `plan_backend` reads the VID
+  from the drive, recovers the media key from the disc's own MKB with the KEYDB
+  device keys, derives the VUK, and stores the entry. The rip then proceeds on
+  libaacs like any keyed disc.
 - libaacs is only reliable against the **raw device** with the volume
   **unmounted** on this macOS stack; it has failed against a mounted volume.
   `disc::prepare_source` therefore unmounts the disc, opens `/dev/rdiskN`, and
@@ -32,9 +40,10 @@ local `KEYDB.cfg`.
   mount point and silently pick the wrong library. This is why the rip threads
   `DecryptBackend` into `open`/`split_clips`/`probe_sub_events` rather than each
   call site resolving on its own.
-- MakeMKV's `libmmbd` is the fallback: a disc with no KEYDB entry, or BD+
-  (Homebrew's `libbdplus` ships no BD+ VM config). Force either backend with
-  `BLUFORGE_DECRYPT=aacs|mmbd`. `bluforge libs` / `disc` print the choice.
+- MakeMKV's `libmmbd` is the last-resort fallback: a disc that still cannot be
+  keyed, or BD+ (Homebrew's `libbdplus` ships no BD+ VM config). Force either
+  backend with `BLUFORGE_DECRYPT=aacs|mmbd`. `bluforge libs` / `disc` print the
+  choice.
 
 libaacs's own macOS MMC layer cannot even find the device ("Could not find
 matching IOBDServices mounted @ /dev/rdiskN"), so it is driven entirely from
@@ -57,17 +66,18 @@ is preserved on refresh.
 Preferred: derive it from the disc itself. No MakeMKV, no external oracle.
 
 ```sh
-bluforge keys native --from /Volumes/MY_DISC   # authenticate, derive, store
+bluforge keys native --from /Volumes/MY_DISC   # read VID, derive, store
 bluforge keys native --print                   # print only (default: mounted disc)
 ```
 
-That runs the native path: drive authentication (AGID + host certificate) to
-read the volume id, MKB -> media key using the KEYDB device keys, then media key
-+ volume id -> VUK. The result is written to KEYDB, so the disc then rips with
-no MakeMKV.
+That runs the native path: the VID comes from the drive (LibreDrive vendor read,
+or host-certificate authentication if the vendor read is unavailable), the media
+key from the disc's own MKB and the KEYDB device keys, then VUK = AES-G(MK, VID).
+The result is written to KEYDB, so the disc then rips with no MakeMKV.
 
-If the drive rejects the shipped host certificate (below), fall back to an
-external oracle and store the key by hand:
+On a LibreDrive drive this needs **no certificate at all**. On a non-LibreDrive
+drive whose revocation list has rejected every published certificate, fall back
+to an external oracle and store the key by hand:
 
 ```sh
 bluforge keys add --from /Volumes/MY_DISC --vuk 0x<VUK> [--unit-key 0x<UK>]
@@ -84,31 +94,56 @@ bluforge bdplus --install
 unpacks the public `bdplus-vm0.bz2` into libbdplus's config dir; BD+ discs then
 decrypt through libbdplus, no MakeMKV.
 
-## Known limit: the host certificate is revoked on this drive
+## The VID, solved natively (LibreDrive vendor read)
 
-Authentication needs a host certificate + private key, carried in the community
-KEYDB header (`| HC |`). The public ones are old: the shipped one is revoked in
-MKBv72, and the newest published one (`0xffff80000217`) in MKBv82. This drive is
-bus-encryption-capable and has already seen an AACS2 MKBv77 disc (a UHD rip), so
-its host revocation list rejects **both** — native auth currently returns SCSI
-`05/6F/00` at the `SEND KEY` step and the rip falls back to libmmbd.
+The standard `READ DISC STRUCTURE (0x80)` cannot supply the VID on this drive:
+with an allocated AGID it returns SCSI `05/6F/02` (authentication required), and
+it returns the same after MakeMKV has put the drive into LibreDrive mode, so
+LibreDrive does not widen the standard command.
 
-So on this drive, keyless AACS1 decryption still needs a key; native auth works
-mechanically and will succeed once a host cert newer than the drive's revocation
-list is available (or on a drive that has not seen a v72+/AACS2 v77 disc). Until
-then: `bluforge keys native` for the derivation attempt, and libmmbd as the
-fallback (`plan_backend` does both automatically).
+The actual mechanism was captured by launching `makemkvcon` **under lldb** (a
+launch, not an attach, so no root and no SIP change) and breaking on
+`SCSITaskClass::SetCommandDescriptorBlock` in Apple's `SCSITaskLib` plugin. The
+complete drive conversation during a backup:
 
-We now print the SCSI sense on auth failure, so the reason is never a guess.
+| opcode | command | count |
+| --- | --- | --- |
+| `0x12` | INQUIRY | 22 |
+| `0x25` / `0x28` | READ CAPACITY / READ(10) | 8 / 250 |
+| `0x3c` | **READ BUFFER** | 1050 |
+| `0x46` | GET CONFIGURATION | 44 |
+| `0x51` / `0x43` | MODE SENSE | 16 |
+| `0xad` | READ DISC STRUCTURE | 36 |
+| `0xbb` | SET CD SPEED | 12 |
+| `0xa3` / `0xa4` | SEND KEY / REPORT KEY | **0 / 0** |
 
-## Bypass: recover the key from MakeMKV's VID
+Zero `SEND KEY` and zero `REPORT KEY`, and no writes of any kind. The VID comes
+from a vendor read:
 
-MakeMKV ships its own (unrevoked) host certificate and, during a backup, writes
-what it authenticated for into `discatt.dat`:
+    READ BUFFER (0x3c), mode 1, buffer id 0x4410, 36 bytes
+      -> 00 22 | 00 50 | <16-byte VID> | 16 zero bytes
+         ^len    ^type
 
-   04 00 00 80 00 00 00 10 <16-byte VID>
-   04 00 00 84 00 00 00 20 <32-byte RDK>   (only if bus encryption / no LibreDrive)
-   01 03 00 38 00 00 00 5C <92-byte drive cert>
+Reading the whole buffer (9216 bytes) yields 256 identical records; the drive
+ignores the buffer offset and returns the first record for any offset. So the
+LibreDrive firmware decrypts the VID itself and serves it over READ BUFFER, which
+is why revoked host certificates and `SEND KEY` never matter to MakeMKV.
+
+`bf_aacs_vid_libredrive()` in `core/src/aacs_mmc.c` issues exactly that read.
+`bf_native_key()` prefers it and only falls back to host-certificate
+authentication when the vendor read fails. That closes the last MakeMKV
+dependency: `bluforge keys native` needs no certificate and never runs
+`makemkvcon`. Verified on the Danganronpa disc: the VID recovered this way is
+`BA4E09AE31DE87E680D05E229E03F4AB`, matching KEYDB exactly.
+
+## Fallback: MakeMKV's `discatt.dat` (non-LibreDrive drives)
+
+Kept for a drive without LibreDrive firmware. MakeMKV writes what it read into
+`discatt.dat`:
+
+    04 00 00 80 00 00 00 10 <16-byte VID>
+    04 00 00 84 00 00 00 20 <32-byte RDK>   (only if bus encryption / no LibreDrive)
+    01 03 00 38 00 00 00 5C <92-byte drive cert>
 
 The MK needs **no** host certificate (device keys + MKB, offline), and
 `VUK = AES-G(MK, VID)`. So MakeMKV only has to supply the VID.
@@ -124,34 +159,30 @@ The MK needs **no** host certificate (device keys + MKB, offline), and
   for them (the RDK is what lets libaacs read bus-encrypted/UHD discs without an
   HC).
 
-`plan_backend` tries this automatically after native auth fails, so an unkeyed
-disc still ends up on libaacs (MakeMKV is used once, per disc, never as the
-decryptor). Verified on the Danganronpa disc: the VID/MK/VUK recovered this way
-match the reference values exactly.
+`plan_backend` tries this only after the native path fails, so an unkeyed disc
+still ends up on libaacs (MakeMKV is used once, per disc, never as the
+decryptor).
 
-### What this replaces, and the one thing it does not
+### What this replaces
 
-MakeMKV does four things; three are now ours:
+MakeMKV does four things; all four are now ours:
 
-- **Media key** — ours (device keys + MKB, offline). MakeMKV not involved.
-- **VUK** — ours (`AES-G(MK, VID)`). MakeMKV not involved.
-- **RDK / bus encryption** — ours (read from `discatt.dat`, cached where libaacs
-  looks; `SDF_STOP` keeps MakeMKV from hiding it).
-- **VID** — still needs something to authenticate or bypass AACS.
+- **Media key**: ours (device keys + MKB, offline). MakeMKV not involved.
+- **VUK**: ours (`AES-G(MK, VID)`). MakeMKV not involved.
+- **RDK / bus encryption**: ours (read from `discatt.dat` when a drive needs it,
+  cached where libaacs looks).
+- **VID**: ours, from the drive's LibreDrive vendor READ BUFFER (or host
+  authentication when the drive is not LibreDrive-enabled).
 
-Correction to an earlier assumption: MakeMKV does **not** ship a host
-certificate. Its own log says `Using LibreDrive mode (v06.3 ...)`: it drives the
-disc through its own IO layer (`libdriveio`) in vendor/LibreDrive mode and reads
-what it needs directly, which is why revoked certificates do not affect it. That
-is also why scanning its process for a 92-byte AACS host cert finds nothing that
-verifies, and why its `sdf.bin` (raw-deflate + preset dictionary) holds only
-drive-tool scripts.
+MakeMKV does **not** ship a host certificate. Its own log says
+`Using LibreDrive mode (v06.3 ...)`, and the captured CDBs confirm it never sends
+`SEND KEY`/`REPORT KEY`. That is also why scanning its process for a 92-byte
+AACS host cert finds nothing that verifies, and why its `sdf.bin`
+(raw-deflate + preset dictionary) holds only drive-tool scripts.
 
-So a complete replacement of the VID step means reimplementing libdriveio's
-vendor-mode reads (enable LibreDrive, read raw metadata incl. the VID), not
-extracting a key. Until then `makemkvcon` is kept purely as a VID oracle, and
-`BLUFORGE_HOST_CERT` / `BLUFORGE_HOST_PRIV` let a licensed certificate take its
-place on drives/certs where that still works.
+`makemkvcon` is now only a last-resort oracle for a non-LibreDrive drive, and
+`BLUFORGE_HOST_CERT` / `BLUFORGE_HOST_PRIV` let a licensed certificate replace
+even that.
 
 ## Traps seen in practice
 

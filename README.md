@@ -56,8 +56,8 @@ paths with `LIBAACS_PATH` / `LIBBDPLUS_PATH`. ffmpeg is used only for
 muxing/encoding, never decryption.
 
 A keyless disc can be keyed from the drive itself with `bluforge keys native`
-(authenticate + derive from the MKB, no MakeMKV); BD+ VM data for libbdplus
-installs with `bluforge bdplus --install`. See
+(read the volume id from the drive, derive from the disc's own MKB, no MakeMKV);
+BD+ VM data for libbdplus installs with `bluforge bdplus --install`. See
 [`docs/decryption.md`](docs/decryption.md) for the full picture.
 
 ## Build & run
@@ -266,7 +266,7 @@ default**; MakeMKV's `libmmbd` is a fallback, not a requirement.
 | Backend | When | Notes |
 | --- | --- | --- |
 | `libaacs` + KEYDB | default, whenever the disc is keyed | No proprietary code, no MakeMKV process. Decrypts from the disc's VUK/unit key in `KEYDB.cfg`; libaacs needs the raw device and an *unmounted* volume, which the rip arranges. |
-| `libmmbd` (MakeMKV) | the disc is not in KEYDB yet, or BD+ | ABI-compatible; the fallback while a disc is still unkeyed. Force with `BLUFORGE_DECRYPT=mmbd`. |
+| `libmmbd` (MakeMKV) | a disc that cannot be keyed natively, or BD+ | ABI-compatible; last-resort fallback. Force with `BLUFORGE_DECRYPT=mmbd`. |
 
 Key a disc so it never needs MakeMKV again:
 
@@ -277,10 +277,10 @@ bluforge keys import /path/to/KEYDB.cfg     # merge a community database
 ```
 
 The VUK (and, for AHD/AACS2 discs, the unit key) come from the disc's `KEYDB.cfg`
-entry, or from a one-off MakeMKV/FindVUK pass. `bluforge aacs <device> --disc
-<mount>` reads the drive's AACS volume ID and seeds libaacs's cache; on a drive
-that rejects libaacs's own AGID (sense `05/6F/02`) the KEYDB entry is what makes
-the disc decryptable.
+entry, from `bluforge keys native` (VID read from the drive, media key from the
+disc's own MKB), or from a one-off MakeMKV/FindVUK pass. `bluforge aacs <device>
+--disc <mount>` reads the drive's AACS volume ID (LibreDrive vendor read, or the
+standard command if the drive serves it) and seeds libaacs's cache.
 
 ## Configuration & data
 

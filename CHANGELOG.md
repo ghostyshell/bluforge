@@ -4,12 +4,30 @@ All notable changes to BluForge. Newest first.
 
 ## Unreleased
 
+### Changed
+
+- `plan_backend` tries the fully native key derivation even when MakeMKV is not
+  installed, and `bluforge aacs` prints the VID obtained from the LibreDrive
+  vendor read. MakeMKV's `discatt.dat` is now only a fallback for a drive whose
+  LibreDrive vendor read fails.
+
 ### Added
 
+- **Native VID acquisition, no certificate and no MakeMKV.** A LibreDrive drive
+  (this BU40N) decrypts the AACS volume id in its own firmware and serves it over
+  vendor `READ BUFFER (0x3c)` buffer id `0x4410`: a 36-byte record
+  `00 22 | 00 50 | <16-byte VID> | 16 zeros`. `bf_aacs_vid_libredrive()` issues
+  that read, and `bf_native_key()` prefers it, so `bluforge keys native` now
+  derives VID, MK, and VUK with **no host certificate at all**. The certificate
+  path remains as the fallback for a non-LibreDrive drive.
+  (`makemkvcon` sends zero `SEND KEY`/`REPORT KEY` and writes nothing to the
+  drive; the mechanism was captured by launching it under lldb and breaking on
+  `SCSITaskClass::SetCommandDescriptorBlock`.)
 - **Native key derivation for an unkeyed disc** (`bluforge keys native`): the
-  drive is authenticated (AGID + host certificate) to read the volume id, the
-  media key is recovered from the disc's own MKB with the KEYDB device keys, and
-  the VUK is derived. No MakeMKV, no pre-existing KEYDB entry.
+  drive is read for the volume id (LibreDrive vendor read, or AGID + host
+  certificate when needed), the media key is recovered from the disc's own MKB
+  with the KEYDB device keys, and the VUK is derived. No MakeMKV, no pre-existing
+  KEYDB entry.
 - **`bluforge bdplus [--install]`**: install the public BD+ VM data into
   libbdplus's config dir, so BD+ discs also come off MakeMKV.
 - **Native libaacs decryption is now the default.** A disc whose key is in

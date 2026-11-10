@@ -1,4 +1,4 @@
-//! Native AACS key recovery: authenticate to the drive and derive a disc's key
+//! Native AACS key recovery: read the drive's volume id and derive a disc's key
 //! from its own MKB, with no MakeMKV and no pre-existing KEYDB entry.
 //!
 //! The heavy lifting (AES/AES-G3/ECDSA, the MKB record parser, the MMC auth
@@ -261,12 +261,16 @@ fn as_u32(s: &str) -> Option<u32> {
 }
 
 struct Header {
-    host_priv: Vec<u8>,
-    host_cert: Vec<u8>,
+    host_priv: Option<Vec<u8>>,
+    host_cert: Option<Vec<u8>>,
     dks: Vec<BfDk>,
 }
 
 /// Host certificate and device keys from the KEYDB header (`| HC |`, `| DK |`).
+///
+/// The certificate is optional: a LibreDrive drive returns the VID itself, so
+/// `derive` only needs the device keys. A certificate is still read when present
+/// because it is the fallback path for a drive that is not LibreDrive-enabled.
 fn read_header(keydb: &Path) -> Result<Header, CoreError> {
     let text = std::fs::read_to_string(keydb)
         .map_err(|e| CoreError::Keys(format!("{}: {e}", keydb.display())))?;
@@ -318,17 +322,13 @@ fn read_header(keydb: &Path) -> Result<Header, CoreError> {
     if let (Some(k), Some(c)) = (env_priv, env_cert) {
         if k.len() == 20 && c.len() == 92 {
             return Ok(Header {
-                host_priv: k,
-                host_cert: c,
+                host_priv: Some(k),
+                host_cert: Some(c),
                 dks,
             });
         }
     }
 
-    let host_priv =
-        host_priv.ok_or_else(|| CoreError::Keys("KEYDB has no host certificate".into()))?;
-    let host_cert =
-        host_cert.ok_or_else(|| CoreError::Keys("KEYDB has no host certificate".into()))?;
     if dks.is_empty() {
         return Err(CoreError::Keys("KEYDB has no device keys".into()));
     }
@@ -373,7 +373,7 @@ pub fn derive(mount: &Path) -> Result<NativeKey, CoreError> {
 
     // The mounted volume holds the drive, which blocks SCSITask creation. The
     // things we need from the mount (MKB, disc id) are already read; unmount,
-    // authenticate, then put it back.
+    // read the VID, then put it back.
     let dev = std::path::PathBuf::from(format!("/dev/{bsd}"));
     let _ = crate::disc::aacs_unmount(&dev);
     std::thread::sleep(std::time::Duration::from_millis(400));
@@ -381,11 +381,20 @@ pub fn derive(mount: &Path) -> Result<NativeKey, CoreError> {
     let mut vid = [0u8; 16];
     let mut mk = [0u8; 16];
     let mut vuk = [0u8; 16];
+    // The vendor VID read needs no certificate; only the fallback does.
+    let host_priv = header
+        .host_priv
+        .as_deref()
+        .map_or(std::ptr::null(), |v| v.as_ptr());
+    let host_cert = header
+        .host_cert
+        .as_deref()
+        .map_or(std::ptr::null(), |v| v.as_ptr());
     let rc = unsafe {
         bf_native_key(
             cpath.as_ptr(),
-            header.host_priv.as_ptr(),
-            header.host_cert.as_ptr(),
+            host_priv,
+            host_cert,
             mkb.as_ptr(),
             mkb.len(),
             header.dks.as_ptr(),
