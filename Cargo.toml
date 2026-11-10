@@ -6,6 +6,7 @@ members = ["core", "cli", "app/src-tauri"]
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
+authors = ["Keepsake Atelier"]
 repository = "https://github.com/ghostyshell/keepsake-atelier"
 
 [workspace.dependencies]

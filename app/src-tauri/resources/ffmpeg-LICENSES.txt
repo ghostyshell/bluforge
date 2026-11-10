@@ -13,7 +13,7 @@ ffmpeg is GPLv2+ (--enable-gpl). x264 is GPLv2, x265 is GPLv2, and
 libdvdread/libdvdnav are GPLv2+. The sources are the projects listed
 above; keep the source offer with the app when distributing it.
 
----- /Users/akshat/Code/keepsake-atelier/vendor/ffmpeg/src/ffmpeg/COPYING.GPLv2
+---- vendor/ffmpeg/src/ffmpeg/COPYING.GPLv2
                     GNU GENERAL PUBLIC LICENSE
                        Version 2, June 1991
 
@@ -354,7 +354,7 @@ consider it more useful to permit linking proprietary applications with the
 library.  If this is what you want to do, use the GNU Lesser General
 Public License instead of this License.
 
----- /Users/akshat/Code/keepsake-atelier/vendor/ffmpeg/src/x264/COPYING
+---- vendor/ffmpeg/src/x264/COPYING
 		    GNU GENERAL PUBLIC LICENSE
 		       Version 2, June 1991
 
@@ -696,7 +696,7 @@ consider it more useful to permit linking proprietary applications with the
 library.  If this is what you want to do, use the GNU Library General
 Public License instead of this License.
 
----- /Users/akshat/Code/keepsake-atelier/vendor/ffmpeg/src/x265/COPYING
+---- vendor/ffmpeg/src/x265/COPYING
 		    GNU GENERAL PUBLIC LICENSE
 		       Version 2, June 1991
 
@@ -1041,7 +1041,7 @@ Public License instead of this License.
 This program is also available under a commercial proprietary license.
 For more information, contact us at license @ x265.com.
 
----- /Users/akshat/Code/keepsake-atelier/vendor/ffmpeg/src/libdvdread-7.1.1/COPYING
+---- vendor/ffmpeg/src/libdvdread-7.1.1/COPYING
                     GNU GENERAL PUBLIC LICENSE
                        Version 2, June 1991
 
@@ -1383,7 +1383,7 @@ consider it more useful to permit linking proprietary applications with the
 library.  If this is what you want to do, use the GNU Library General
 Public License instead of this License.
 
----- /Users/akshat/Code/keepsake-atelier/vendor/ffmpeg/src/libdvdnav-7.0.0/COPYING
+---- vendor/ffmpeg/src/libdvdnav-7.0.0/COPYING
 		    GNU GENERAL PUBLIC LICENSE
 		       Version 2, June 1991
 

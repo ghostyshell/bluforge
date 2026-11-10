@@ -3,6 +3,7 @@ name = "keepsake-atelier-app"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+authors.workspace = true
 description = "Keepsake Atelier desktop app"
 
 [lib]

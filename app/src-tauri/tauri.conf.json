@@ -49,7 +49,9 @@
       "resources/ffprobe": "ffprobe",
       "resources/ffmpeg-LICENSES.txt": "ffmpeg-LICENSES.txt",
       "resources/00000.jar": "00000.jar"
-    }
+    },
+    "publisher": "Keepsake Atelier",
+    "copyright": "Copyright 2026 Keepsake Atelier"
   },
   "plugins": {
     "updater": {

@@ -196,7 +196,7 @@ codesign --force --sign - "$RES/ffprobe" >/dev/null 2>&1 || true
     echo
     for f in "$SRC/ffmpeg/COPYING.GPLv2" "$SRC/x264/COPYING" "$SRC/x265/COPYING" \
              "$SRC/libdvdread-$DVDREAD_VER/COPYING" "$SRC/libdvdnav-$DVDNAV_VER/COPYING"; do
-        [ -f "$f" ] && { echo "---- $f"; cat "$f"; echo; }
+        [ -f "$f" ] && { echo "---- ${f#"$ROOT/"}"; cat "$f"; echo; }
     done
 } > "$RES/ffmpeg-LICENSES.txt"
 
