@@ -692,6 +692,27 @@ fn keys_native(source: Option<String>) -> Result<serde_json::Value, String> {
 /// Install the public BD+ VM data so BD+ discs decrypt without MakeMKV.
 /// The KEYDB entry for the inserted disc, if one exists.
 #[tauri::command]
+fn keys_search(query: String, limit: usize) -> Result<Vec<keepsake_core::keys::KeyEntry>, String> {
+    keepsake_core::keys::search_at(&keepsake_core::keys::keydb_path(), &query, limit)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn keys_remove(id: String) -> Result<bool, String> {
+    keepsake_core::keys::remove_at(&keepsake_core::keys::keydb_path(), &id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn keys_import(path: String) -> Result<(usize, usize), String> {
+    keepsake_core::keys::import_at(
+        &keepsake_core::keys::keydb_path(),
+        std::path::Path::new(&path),
+    )
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn key_entry(source: String) -> Result<Option<keepsake_core::keys::KeyEntry>, String> {
     let mount = menu_source(&source);
     let Some(id) = keepsake_core::keys::disc_id_for_path(&mount) else {
@@ -983,6 +1004,9 @@ pub fn run() {
             keys_native,
             key_entry,
             keys_set_units,
+            keys_search,
+            keys_remove,
+            keys_import,
             bdplus_install,
             disc_streams,
             queue_add,

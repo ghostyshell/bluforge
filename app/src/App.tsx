@@ -94,6 +94,9 @@ export default function App() {
   const [unitsText, setUnitsText] = useState("");
   const [unitsBusy, setUnitsBusy] = useState(false);
   const [keyEpoch, setKeyEpoch] = useState(0);
+  const [keyQuery, setKeyQuery] = useState("");
+  const [keyHits, setKeyHits] = useState<KeyEntry[]>([]);
+  const [keyBusy, setKeyBusy] = useState(false);
   const [container, setContainer] = useState<"mkv" | "mp4">("mkv");
   const [lossless, setLossless] = useState(true);
   const [enc, setEnc] = useState<EncodeSettings>({
@@ -374,6 +377,30 @@ export default function App() {
     } catch (e) { setError(String(e)); }
   };
 
+  // Queue every real title (skip menus/trailers under a minute). In TV mode the
+  // episode plan is one job, so queue that instead.
+  const enqueueAll = async () => {
+    if (tvPlan) {
+      await enqueueRip();
+      return;
+    }
+    if (!disc) return;
+    const targets = disc.titles.filter((t) => t.duration_secs >= 60);
+    if (targets.length === 0) {
+      setToast("no titles at least a minute long");
+      return;
+    }
+    setError(null);
+    try {
+      for (const t of targets) {
+        const req = ripRequest(t.index);
+        if (req) await api.queueAdd(req);
+      }
+      await refreshQueue();
+      setToast(`${targets.length} title(s) queued`);
+    } catch (e) { setError(String(e)); }
+  };
+
   const patchTab = (role: CoverRole, p: Partial<TabState>) =>
     setTabs((t) => ({ ...t, [role]: { ...t[role], ...p } }));
 
@@ -583,6 +610,37 @@ export default function App() {
     } catch (e) { setError(String(e)); setDvdProgress(null); }
   };
 
+  const searchKeys = async () => {
+    setKeyBusy(true);
+    try {
+      setKeyHits(await api.keysSearch(keyQuery, 20));
+    } catch (e) { setError(String(e)); } finally { setKeyBusy(false); }
+  };
+
+  const importKeys = async () => {
+    try {
+      const { open } = await import("@tauri-apps/plugin-dialog");
+      const picked = await open({
+        multiple: false,
+        filters: [{ name: "KEYDB", extensions: ["cfg"] }],
+      });
+      if (typeof picked !== "string") return;
+      const [added, skipped] = await api.keysImport(picked);
+      await refresh();
+      setKeyEpoch((n) => n + 1);
+      setToast(`imported ${added} (${skipped} already present)`);
+    } catch (e) { setError(String(e)); }
+  };
+
+  const removeKey = async (id: string) => {
+    try {
+      const gone = await api.keysRemove(id);
+      setKeyHits((h) => h.filter((e) => e.id !== id));
+      setKeyEpoch((n) => n + 1);
+      setToast(gone ? "key removed" : "not found");
+    } catch (e) { setError(String(e)); }
+  };
+
   const keys = snap?.keys;
   const optical = snap?.optical ?? [];
   const runningJob = queue.find((j) => j.state === "running") ?? null;
@@ -714,7 +772,14 @@ export default function App() {
           {/* Titles */}
           {disc && (
             <section className="card">
-              <h2>Titles</h2>
+              <div className="row between" style={{ marginBottom: 6 }}>
+                <h2>Titles</h2>
+                <button className="ghost sm" disabled={!!runningJob}
+                  title="Queue every title of at least one minute (skips menus and trailers)"
+                  onClick={() => void enqueueAll()}>
+                  Queue all
+                </button>
+              </div>
               <div className="sub" style={{ marginBottom: 10 }}>Select what to rip. The main feature is preselected.</div>
               <div className="titles">
                 {disc.titles.map((t: Title) => (
@@ -725,6 +790,9 @@ export default function App() {
                         <b>Playlist {String(t.playlist).padStart(5, "0")}</b>
                         {t.is_main && <span className="badge">main</span>}
                         {t.dynamic_range && <span className="badge hdr">{t.dynamic_range}</span>}
+                        {queue.some((j) => j.title === t.index && (j.state === "queued" || j.state === "running")) && (
+                          <span className="badge">queued</span>
+                        )}
                       </div>
                       <div className="meta">
                         {fmtDuration(t.duration_secs)} · {t.resolution ?? "?"} · {t.chapters} chapters · audio {t.audio_streams}
@@ -1131,6 +1199,42 @@ export default function App() {
                 </button>
               </details>
             )}
+
+            <details className="group" style={{ marginTop: 8 }}>
+              <summary>Key store</summary>
+              <div className="row" style={{ gap: 6, marginTop: 8 }}>
+                <input
+                  className="grow"
+                  value={keyQuery}
+                  placeholder="name or disc id"
+                  onChange={(e) => setKeyQuery(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") void searchKeys(); }}
+                />
+                <button className="ghost sm" onClick={() => void searchKeys()} disabled={keyBusy}>
+                  {keyBusy ? "…" : "Search"}
+                </button>
+                <button className="ghost sm" onClick={() => void importKeys()}>Import</button>
+              </div>
+              {keyHits.length > 0 && (
+                <div style={{ display: "grid", gap: 6, marginTop: 8 }}>
+                  {keyHits.map((e) => (
+                    <div key={e.id} className="row" style={{ gap: 8 }}>
+                      <span className="mono sub" style={{ width: 76 }} title={e.id}>{e.id.slice(0, 8)}…</span>
+                      <span className="grow truncate" title={e.name ?? ""}>{e.name ?? ""}</span>
+                      <span className="badge">
+                        {e.vuk ? "V" : ""}{e.unit_keys.length ? `U${e.unit_keys.length}` : ""}
+                      </span>
+                      <button className="ghost sm" onClick={() => void removeKey(e.id)}>remove</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {keyHits.length === 0 && !keyBusy && (
+                <div className="sub" style={{ marginTop: 6 }}>
+                  Search the database (first 20 shown) or import another KEYDB.cfg.
+                </div>
+              )}
+            </details>
           </section>
 
           <section className="card" style={{ marginTop: 16 }}>

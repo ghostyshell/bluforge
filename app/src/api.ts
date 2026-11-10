@@ -412,6 +412,10 @@ export const api = {
     invoke<DiscMenu>("menu_apply", { template, target, save }),
   menuRemove: (template: string) => invoke<string>("menu_remove", { template }),
   keyEntry: (source: string) => invoke<KeyEntry | null>("key_entry", { source }),
+  keysSearch: (query: string, limit: number) =>
+    invoke<KeyEntry[]>("keys_search", { query, limit }),
+  keysRemove: (id: string) => invoke<boolean>("keys_remove", { id }),
+  keysImport: (path: string) => invoke<[number, number]>("keys_import", { path }),
   keysSetUnits: (source: string, keys: string[]) =>
     invoke<KeyEntry>("keys_set_units", { source, keys }),
   keysNative: (source: string | null) =>

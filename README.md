@@ -30,7 +30,7 @@ The engine, CLI binary and crate names are still `keepsake-atelier`.
 | MCP server (all features as tools, localhost, off by default) | ✅ |
 | Blu-ray authoring (BDMV / ISO) | ✅ |
 | Disc menu documents (parse, edit, save, apply to another disc) | ✅ |
-| Batch rip queue | ✅ |
+| Batch rip queue (single titles, or **Queue all**) | ✅ |
 | Authored menus (generate a menu for a disc you author) | 🚧 |
 | Burning to disc | 🚧 |
 | Self-update wiring (Tauri updater) | ✅ (needs a signed release) |
@@ -275,6 +275,10 @@ keepsake-atelier author ep*.mkv --out "/path/Set" --split 25      # BD-25 per di
   authored tree. The generated navigation follows the libbluray parser layouts;
   a hardware-player pass is still worth doing.
 
+In the app the Titles card has **Queue all** (every title of at least a minute,
+skipping menus and trailers), and the keys panel has a searchable key store
+with import and remove.
+
 In the app: the **Author a disc** card (choose several files, optional split
 size). Over MCP: `author_start` with `inputs` and `split_gb`.
 
@@ -330,10 +334,11 @@ Tools:
 | `author_start` | author one or several files, optionally split per disc |
 | `verify` | check a BDMV tree: navigation, playlists, clips |
 | `dvd_info` / `dvd_start` | list DVD titles / rip one (MPEG-2 + AC-3/DTS copy) |
+| `clone_start` | 1:1 encrypted disc copy to an ISO |
 | `doctor` | installed tools and which capability each missing piece blocks |
 | `covers_search` / `covers_download` | cover art from hirescovers / dvdcover / TMDB |
 | `keys_update` | refresh KEYDB.cfg |
-| `keys_list` | list keyed discs (id, name) |
+| `keys_list` | list keyed discs (id, name), optionally filtered |
 | `keys_add` | add/replace a disc key (VUK and/or unit key) |
 | `keys_remove` | drop a disc's key entry |
 | `key_entry` / `keys_set_units` | inspect a disc entry / edit AACS2 unit keys |

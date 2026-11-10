@@ -349,6 +349,30 @@ pub fn set_unit_keys_at(
     Ok(entry)
 }
 
+/// Entries whose name or disc id contains `query` (case-insensitive).
+pub fn search_at(path: &Path, query: &str, limit: usize) -> Result<Vec<KeyEntry>, CoreError> {
+    let q = query
+        .trim()
+        .trim_start_matches("0x")
+        .trim_start_matches("0X")
+        .to_ascii_lowercase();
+    let mut out = Vec::new();
+    for e in parse_file(path)? {
+        if out.len() >= limit {
+            break;
+        }
+        let name_match = e
+            .name
+            .as_deref()
+            .map(|n| n.to_ascii_lowercase().contains(&q))
+            .unwrap_or(false);
+        if q.is_empty() || e.id.contains(&q) || name_match {
+            out.push(e);
+        }
+    }
+    Ok(out)
+}
+
 /// True when the database holds an entry for `disc_id`.
 pub fn has_at(path: &Path, disc_id: &str) -> Result<bool, CoreError> {
     let Some(id) = normalize_id(disc_id) else {
@@ -579,6 +603,36 @@ mod tests {
         assert_eq!(back.vuk.as_deref(), Some("bb"));
         assert_eq!(back.unit_keys.len(), 2);
         assert_eq!(back.name.as_deref(), Some("Test Disc"));
+    }
+
+    #[test]
+    fn searches_by_name_and_id() {
+        let dir = std::env::temp_dir().join(format!("keepsake-keys-search-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("KEYDB.cfg");
+        for (id, name) in [
+            ("aa".repeat(20), "Alpha Movie"),
+            ("bb".repeat(20), "Beta Show"),
+            ("cc".repeat(20), "Gamma"),
+        ] {
+            upsert_at(
+                &path,
+                &KeyEntry {
+                    id,
+                    name: Some(name.into()),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        }
+        assert_eq!(search_at(&path, "beta", 10).unwrap().len(), 1);
+        assert_eq!(
+            search_at(&path, "0xBB", 10).unwrap()[0].name.as_deref(),
+            Some("Beta Show")
+        );
+        assert_eq!(search_at(&path, "", 2).unwrap().len(), 2);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

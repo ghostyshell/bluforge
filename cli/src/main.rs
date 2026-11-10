@@ -377,6 +377,9 @@ enum KeysAction {
         /// Only entries that carry a key.
         #[arg(long)]
         keyed: bool,
+        /// Filter by name or disc id (case-insensitive).
+        #[arg(long)]
+        search: Option<String>,
     },
     /// Remove a disc's entry.
     Remove {
@@ -693,8 +696,15 @@ fn run(cli: &Cli) -> Result<(), keepsake_core::CoreError> {
                     }
                 }
             }
-            KeysAction::List { limit, keyed } => {
-                let all = keys::list_at(&keys::keydb_path(), None)?;
+            KeysAction::List {
+                limit,
+                keyed,
+                search,
+            } => {
+                let all = match search {
+                    Some(q) => keys::search_at(&keys::keydb_path(), q, *limit)?,
+                    None => keys::list_at(&keys::keydb_path(), Some(*limit))?,
+                };
                 let mut shown = 0usize;
                 for e in all {
                     let has_key = e.vuk.is_some() || !e.unit_keys.is_empty();

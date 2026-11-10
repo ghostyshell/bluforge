@@ -498,8 +498,13 @@ fn run_tool(name: &str, args: Value) -> Result<Value, String> {
         }
         "keys_list" => {
             let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(40) as usize;
-            let rows: Vec<Value> = keys::list_at(&keys::keydb_path(), None)
-                .map_err(|e| e.to_string())?
+            let search = args.get("search").and_then(|v| v.as_str());
+            let all = match search {
+                Some(q) => keys::search_at(&keys::keydb_path(), q, limit),
+                None => keys::list_at(&keys::keydb_path(), None),
+            }
+            .map_err(|e| e.to_string())?;
+            let rows: Vec<Value> = all
                 .into_iter()
                 .filter(|e| e.vuk.is_some() || !e.unit_keys.is_empty())
                 .take(limit)
@@ -915,6 +920,63 @@ struct IsoArgs {
 }
 
 #[derive(Deserialize)]
+struct CloneArgs {
+    source: String,
+    dest: String,
+}
+
+fn start_clone(args: Value) -> Result<Value, String> {
+    let a: CloneArgs =
+        serde_json::from_value(args).map_err(|e| format!("bad clone arguments: {e}"))?;
+    require_free_slot()?;
+    let req = keepsake_core::clone::CloneRequest {
+        source: PathBuf::from(resolve_source(&a.source)),
+        dest: PathBuf::from(&a.dest),
+    };
+    let id = NEXT_JOB.fetch_add(1, Ordering::SeqCst);
+    let cancel = Arc::new(AtomicBool::new(false));
+    {
+        let mut v = jobs().lock().unwrap();
+        v.push(Job {
+            id,
+            kind: "clone".into(),
+            state: "running".into(),
+            message: "starting".into(),
+            percent: 0.0,
+            dest: Some(a.dest.clone()),
+            error: None,
+            cancel: Some(cancel.clone()),
+        });
+    }
+    let cancel2 = cancel.clone();
+    std::thread::spawn(move || {
+        let res = keepsake_core::clone::run(&req, &cancel2, |p| {
+            job_update(id, |j| {
+                j.percent = p.percent;
+                j.message = p.message.clone();
+            });
+        });
+        match res {
+            Ok(bytes) => job_update(id, |j| {
+                j.state = "done".into();
+                j.percent = 100.0;
+                j.message = format!("wrote {bytes} bytes");
+            }),
+            Err(e) => job_update(id, |j| {
+                j.state = if cancel2.load(Ordering::SeqCst) {
+                    "cancelled".into()
+                } else {
+                    "error".into()
+                };
+                j.message = e.to_string();
+                j.error = Some(e.to_string());
+            }),
+        }
+    });
+    Ok(json!({ "id": id, "dest": a.dest }))
+}
+
+#[derive(Deserialize)]
 struct DvdArgs {
     source: String,
     title: u16,
@@ -1131,6 +1193,14 @@ fn tools() -> Vec<Value> {
             }, "required": ["source"] }
         }),
         json!({
+            "name": "clone_start",
+            "description": "1:1 sector copy of a disc to an ISO image (AACS/BD+ kept). Returns a job id.",
+            "inputSchema": { "type": "object", "properties": {
+                "source": src("Raw device (/dev/rdiskN) or a readable file."),
+                "dest": { "type": "string", "description": "Output .iso." }
+            }, "required": ["source", "dest"] }
+        }),
+        json!({
             "name": "dvd_info",
             "description": "List a DVD-Video's titles (number, chapters, angles, duration).",
             "inputSchema": { "type": "object", "properties": { "source": src("Mounted DVD or VIDEO_TS directory (a raw device resolves to its mount).") }, "required": ["source"] }
@@ -1300,9 +1370,10 @@ fn tools() -> Vec<Value> {
         }),
         json!({
             "name": "keys_list",
-            "description": "List keyed discs in the local key store (disc id + name).",
+            "description": "List keyed discs in the local key store (disc id + name), optionally filtered by name or id.",
             "inputSchema": { "type": "object", "properties": {
-                "limit": { "type": "integer" }
+                "limit": { "type": "integer" },
+                "search": { "type": "string", "description": "Filter by name or disc id (case-insensitive)." }
             } }
         }),
         json!({

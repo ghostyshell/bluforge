@@ -26,6 +26,12 @@ All notable changes to Keepsake Atelier. Newest first.
 
 ### Added
 
+- **Queue all and a key-store browser:** the Titles card can queue every real
+  title (>= 1 minute) with a "queued" badge per row, and the keys panel searches
+  the 189k-entry KEYDB (name or id, first 20), imports another KEYDB.cfg and
+  removes entries. `keys list --search` and the MCP `keys_list` `search` filter
+  do the same from the CLI/agents.
+- **MCP `clone_start`:** the 1:1 encrypted disc copy is now a job tool too.
 - **DVD-Video support:** `dvd list` reads the VMG title table from
   `VIDEO_TS.IFO`, and `dvd rip --title N` copies MPEG-2 + AC-3/DTS with the
   bundled `dvdvideo` demuxer (no re-encode, optional VobSub subtitles). The app
