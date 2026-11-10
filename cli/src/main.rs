@@ -183,6 +183,11 @@ enum Cmd {
         /// Output .iso file.
         dest: std::path::PathBuf,
     },
+    /// Verify a BDMV tree: navigation, playlists and clip files.
+    Verify {
+        /// Mounted disc, disc root, or BDMV folder.
+        path: std::path::PathBuf,
+    },
     /// Show effective configuration and paths.
     Config,
     /// Parse, edit and save a disc's title menu as a reusable template.
@@ -1276,6 +1281,62 @@ fn run(cli: &Cli) -> Result<(), keepsake_core::CoreError> {
                 },
             )?;
             eprintln!("\nwrote {} ({} bytes)", dest.display(), written);
+        }
+        Cmd::Verify { path } => {
+            let report = keepsake_core::verify::run(path)?;
+            if cli.json {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&report)
+                        .map_err(|e| keepsake_core::CoreError::Config(e.to_string()))?
+                );
+            } else {
+                println!("tree      : {}", report.path);
+                println!(
+                    "first play: {}",
+                    report
+                        .first_play
+                        .map(|o| format!("movie object {o}"))
+                        .unwrap_or_else(|| "none".into())
+                );
+                println!(
+                    "top menu  : {}",
+                    report
+                        .top_menu
+                        .map(|o| format!("movie object {o}"))
+                        .unwrap_or_else(|| "none".into())
+                );
+                println!("titles    : {}", report.titles.len());
+                for t in &report.titles {
+                    println!(
+                        "  #{:<3} object {:<3} playlist {:<6} {:<3} clips  {:>8}  {:>2} marks{}",
+                        t.index,
+                        t.object
+                            .map(|o| o.to_string())
+                            .unwrap_or_else(|| "-".into()),
+                        t.playlist
+                            .map(|p| format!("{p:05}"))
+                            .unwrap_or_else(|| "-".into()),
+                        t.clips.len(),
+                        menu_clock(t.duration_secs.unwrap_or(0.0)),
+                        t.chapters.unwrap_or(0),
+                        if t.errors.is_empty() { "" } else { "  ERRORS" }
+                    );
+                }
+                for w in &report.warnings {
+                    println!("warning   : {w}");
+                }
+                for e in &report.errors {
+                    println!("error     : {e}");
+                }
+                println!("result    : {}", if report.ok { "ok" } else { "FAILED" });
+            }
+            if !report.ok {
+                return Err(keepsake_core::CoreError::Disc(format!(
+                    "{} problem(s) in the tree",
+                    report.errors.len()
+                )));
+            }
         }
         Cmd::Config => {
             let cfg = AppConfig::load();

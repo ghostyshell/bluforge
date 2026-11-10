@@ -244,6 +244,26 @@ export type StreamInfo = {
   pid: number;
 };
 
+export type VerifyTitle = {
+  index: number;
+  object?: number | null;
+  playlist?: number | null;
+  clips?: string[];
+  duration_secs?: number | null;
+  chapters?: number | null;
+  errors?: string[];
+};
+
+export type VerifyReport = {
+  path: string;
+  first_play: number | null;
+  top_menu: number | null;
+  titles: VerifyTitle[];
+  errors: string[];
+  warnings: string[];
+  ok: boolean;
+};
+
 export type KeyEntry = {
   id: string;
   name: string | null;
@@ -357,6 +377,7 @@ export const api = {
   keysNative: (source: string | null) =>
     invoke<NativeKeyResult>("keys_native", { source }),
   bdplusInstall: () => invoke<string>("bdplus_install"),
+  verify: (path: string) => invoke<VerifyReport>("verify", { path }),
   discStreams: (path: string, title: number) =>
     invoke<StreamInfo[]>("disc_streams", { path, title }),
   queueAdd: (request: RipRequest) => invoke<number>("queue_add", { request }),

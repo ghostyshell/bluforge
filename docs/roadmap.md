@@ -125,6 +125,18 @@ consume a saved document directly.
   libbluray (two titles, patched clip names, navigation parses). Unit tests
   cover the index/movie-object bytes, clip renaming and the size grouping.
 
+## Phase 13 - BDMV verification - done
+
+- `verify` parses `index.bdmv`, `MovieObject.bdmv` and every playlist without
+  libbluray, maps each title to its movie object and playlist, checks the clip
+  files exist, and reports duration and mark counts. BD-J titles are reported as
+  unchecked.
+- `keepsake-atelier verify <path>` (JSON with `--json`, non-zero exit on
+  problems), a **Verify** button next to Eject and next to Author in the app,
+  and an MCP `verify` tool.
+- Unit tested against generated and broken trees; also run against the authored
+  two-title disc and a deliberately damaged copy.
+
 ## Parity with DVDFab-class apps
 
 What the app covers today, against the ripping-suite feature set:
@@ -132,6 +144,7 @@ What the app covers today, against the ripping-suite feature set:
 | Capability | Status |
 | --- | --- |
 | Disc inspection: titles, playlists, durations, chapters | done |
+| Tree verification (navigation, playlists, clips) | done |
 | Track list per title (codecs, languages) | done |
 | Rip: lossless remux to MKV/MP4 | done |
 | Rip: x264/x265/VideoToolbox encode | done |

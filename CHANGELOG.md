@@ -26,6 +26,11 @@ All notable changes to Keepsake Atelier. Newest first.
 
 ### Added
 
+- **BDMV verification:** `keepsake-atelier verify <path>` (and **Verify** in the
+  app, plus an MCP `verify` tool) parses index/MovieObject and every playlist
+  directly, maps each title to its playlist, checks the clip files exist, and
+  reports duration and mark counts. Non-zero exit and per-title errors on
+  problems; BD-J titles are reported as unchecked.
 - **Multi-title authoring and BD-25/50 splitting:** `author` takes several
   inputs and writes one title each into a BDMV folder, renumbering clips and
   generating `index.bdmv`/`MovieObject.bdmv` (one `PlayPL` object per title,

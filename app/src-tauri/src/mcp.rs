@@ -312,6 +312,11 @@ fn run_tool(name: &str, args: Value) -> Result<Value, String> {
             serde_json::to_value(plan).map_err(|e| e.to_string())
         }
         "rip_start" => start_rip(args),
+        "verify" => {
+            let path = resolve_source(&str_arg(&args, "path")?);
+            let report = keepsake_core::verify::run(Path::new(&path)).map_err(|e| e.to_string())?;
+            serde_json::to_value(report).map_err(|e| e.to_string())
+        }
         "key_entry" => {
             let source = resolve_source(&str_arg(&args, "source")?);
             let mount = mount_for(&source);
@@ -1044,6 +1049,11 @@ fn tools() -> Vec<Value> {
                 "series": { "type": "string", "description": "Series name override for the TMDB lookup." },
                 "start": { "type": "integer", "description": "First episode number on this disc (overrides the remembered mapping)." }
             }, "required": ["source"] }
+        }),
+        json!({
+            "name": "verify",
+            "description": "Verify a BDMV tree: index/MovieObject navigation, playlists and clip files. Returns per-title results and errors.",
+            "inputSchema": { "type": "object", "properties": { "path": src("Disc root, BDMV folder or mounted volume.") }, "required": ["path"] }
         }),
         json!({
             "name": "key_entry",

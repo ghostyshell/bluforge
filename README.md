@@ -86,6 +86,7 @@ cargo build --release
 ./target/release/keepsake-atelier disc /Volumes/MY_DISC   # inspect titles
 ./target/release/keepsake-atelier libs
 ./target/release/keepsake-atelier iso /Volumes/MY_DISC ~/movie.iso            # decrypted ISO
+./target/release/keepsake-atelier verify /Volumes/MY_DISC            # check navigation/clips
 ./target/release/keepsake-atelier clone /dev/rdisk4 ~/movie-clone.iso         # 1:1, encrypted
 ./target/release/keepsake-atelier rip /Volumes/MY_DISC                        # main title -> ~/Downloads
 ./target/release/keepsake-atelier rip /dev/rdisk5 --title 3 ~/Movies/out.mkv  # explicit title + output
@@ -260,6 +261,20 @@ keepsake-atelier author ep*.mkv --out "/path/Set" --split 25      # BD-25 per di
 In the app: the **Author a disc** card (choose several files, optional split
 size). Over MCP: `author_start` with `inputs` and `split_gb`.
 
+### Verifying a tree
+
+```bash
+keepsake-atelier verify /path/Set/Disc1
+keepsake-atelier verify /Volumes/MY_DISC --json
+```
+
+Reads `index.bdmv` and `MovieObject.bdmv` directly and checks that every HDMV
+title's movie object plays a playlist that exists, and that every clip a
+playlist references has its `.clpi` and `.m2ts`. It prints the title map and
+per-title duration/mark count, exits non-zero on problems, and warns about BD-J
+titles it cannot check. **Verify** in the app (next to Eject, and next to
+Author) runs the same check.
+
 ## MCP server
 
 Every capability is available as an MCP tool, served by the app itself on
@@ -295,11 +310,15 @@ Tools:
 | `rip_start` | remux or encode, movie or TV; returns a job id |
 | `job_status` / `job_cancel` | progress and cancellation for rips and exports |
 | `iso_start` | decrypted ISO or BDMV folder export |
+| `author_start` | author one or several files, optionally split per disc |
+| `verify` | check a BDMV tree: navigation, playlists, clips |
 | `covers_search` / `covers_download` | cover art from hirescovers / dvdcover / TMDB |
 | `keys_update` | refresh KEYDB.cfg |
 | `keys_list` | list keyed discs (id, name) |
 | `keys_add` | add/replace a disc key (VUK and/or unit key) |
 | `keys_remove` | drop a disc's key entry |
+| `key_entry` / `keys_set_units` | inspect a disc entry / edit AACS2 unit keys |
+| `menu_parse` / `menu_list` / `menu_show` / `menu_edit` / `menu_apply` / `menu_remove` | disc menu documents |
 | `eject` | open the tray |
 | `config_get` / `config_set` | read or patch settings |
 | `preview_output` / `template_placeholders` | render the output template |

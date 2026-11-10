@@ -17,6 +17,7 @@ import {
   type StreamInfo,
   type SubSel,
   type Title,
+  type VerifyReport,
 } from "./api";
 import { Menus } from "./Menus";
 import logo from "./assets/logo.png";
@@ -529,6 +530,18 @@ export default function App() {
     } catch (e) { setError(String(e)); setCloneProgress(null); }
   };
 
+  const verifyTree = async (target: string) => {
+    if (!target) return;
+    try {
+      const r: VerifyReport = await api.verify(target);
+      if (r.ok) {
+        setToast(`tree ok: ${r.titles.length} title(s)`);
+      } else {
+        setError(r.errors.slice(0, 5).join("; "));
+      }
+    } catch (e) { setError(String(e)); }
+  };
+
   const keys = snap?.keys;
   const optical = snap?.optical ?? [];
   const runningJob = queue.find((j) => j.state === "running") ?? null;
@@ -565,6 +578,11 @@ export default function App() {
                     ))}
               </div>
               <div className="row" style={{ gap: 6 }}>
+                <button className="ghost sm" disabled={!discPath}
+                  title="Check index/MovieObject, playlists and clip files"
+                  onClick={() => void verifyTree(discPath)}>
+                  Verify
+                </button>
                 <button className="ghost sm" disabled={optical.length === 0}
                   onClick={async () => { try { setToast(await api.eject()); } catch (e) { setError(String(e)); } }}>
                   Eject
@@ -824,9 +842,15 @@ export default function App() {
                 folder (choose a destination without .iso), with generated index and navigation.
                 Chapter marks are kept.
               </p>
-              <button className="primary" disabled={authorFiles.length === 0 || !authorOut || authorBusy} onClick={startAuthor}>
-                {authorBusy ? "Authoring…" : "Author disc"}
-              </button>
+              <div className="row" style={{ gap: 8 }}>
+                <button className="ghost" disabled={!authorOut || authorBusy}
+                  onClick={() => void verifyTree(authorOut)}>
+                  Verify output
+                </button>
+                <button className="primary" disabled={authorFiles.length === 0 || !authorOut || authorBusy} onClick={startAuthor}>
+                  {authorBusy ? "Authoring…" : "Author disc"}
+                </button>
+              </div>
             </div>
             {authorProg && (
               <div style={{ marginTop: 12 }}>
