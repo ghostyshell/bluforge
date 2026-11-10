@@ -6,6 +6,7 @@ use std::path::PathBuf;
 
 pub mod author;
 pub mod bdplus;
+pub mod clone;
 pub mod config;
 pub mod covers;
 pub mod device;
@@ -19,6 +20,7 @@ pub mod rip;
 pub mod template;
 pub mod tv;
 
+pub use clone::{CloneProgress, CloneRequest};
 pub use config::AppConfig;
 pub use covers::{CoverHit, CoverSource};
 pub use disc::{Chapter, DecryptBackend, Disc, DiscInfo, StreamInfo, Title};

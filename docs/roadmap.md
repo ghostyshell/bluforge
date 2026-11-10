@@ -92,6 +92,16 @@ consume a saved document directly.
   the unit-key table; `bluforge keys` already stores and uses one when present.
 - Next: derive/import unit keys and show the disc's AACS generation in the app.
 
+## Phase 11 - 1:1 disc clone - done
+
+- `bluforge clone <device> <image.iso>` copies the raw sectors, preserving
+  AACS/BD+, and `Clone 1:1` in the ISO panel does the same from the app.
+- Progress is byte-based (block size and count come from the drive on macOS),
+  the copy is uncached, a drive drop stops with the byte offset, and cancelling
+  removes the partial image.
+- Covered by unit tests using a file as the source, so the copy loop and cancel
+  path are exercised without hardware.
+
 ## Parity with DVDFab-class apps
 
 What the app covers today, against the ripping-suite feature set:
@@ -109,7 +119,7 @@ What the app covers today, against the ripping-suite feature set:
 | Native AACS key derivation, BD+ VM | done |
 | Cover art | done |
 | DVD (`VIDEO_TS`) ripping | not started |
-| 1:1 encrypted disc clone | not started (decrypted copy only) |
+| 1:1 encrypted disc clone | done |
 | BD-25 / BD-50 splitting | not started |
 | Burning to disc | not started |
 | Cinavia detection/removal | not implemented |

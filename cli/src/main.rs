@@ -172,6 +172,13 @@ enum Cmd {
         #[arg(long)]
         label: Option<String>,
     },
+    /// 1:1 sector copy of a disc to an ISO (keeps AACS/BD+; archival image).
+    Clone {
+        /// Raw device, eg. /dev/rdisk4.
+        source: std::path::PathBuf,
+        /// Output .iso file.
+        dest: std::path::PathBuf,
+    },
     /// Show effective configuration and paths.
     Config,
     /// Parse, edit and save a disc's title menu as a reusable template.
@@ -1201,6 +1208,25 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
                     eprintln!("hirescovers cookie stored");
                 }
             }
+        }
+        Cmd::Clone { source, dest } => {
+            let cancel = std::sync::atomic::AtomicBool::new(false);
+            eprintln!("cloning {} -> {}", source.display(), dest.display());
+            let written = bluforge_core::clone::run(
+                &bluforge_core::CloneRequest {
+                    source: source.clone(),
+                    dest: dest.clone(),
+                },
+                &cancel,
+                |p| {
+                    if p.total > 0 {
+                        eprint!("\r  {:>5.1}%  {}", p.percent, p.message);
+                    } else {
+                        eprint!("\r  {}", p.message);
+                    }
+                },
+            )?;
+            eprintln!("\nwrote {} ({} bytes)", dest.display(), written);
         }
         Cmd::Config => {
             let cfg = AppConfig::load();

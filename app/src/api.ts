@@ -244,6 +244,14 @@ export type StreamInfo = {
   pid: number;
 };
 
+export type CloneProgress = {
+  percent: number;
+  bytes: number;
+  total: number;
+  message: string;
+  done: boolean;
+};
+
 export type QueueJob = {
   id: number;
   title: number | null;
@@ -350,4 +358,14 @@ export const api = {
     listen<{ id: number; progress: RipProgress }>("queue://progress", (e) =>
       cb(e.payload),
     ),
+  cloneStart: (request: { source: string; dest: string }) =>
+    invoke<void>("clone_start", { request }),
+  onCloneProgress: (cb: (p: CloneProgress) => void): Promise<UnlistenFn> =>
+    listen<CloneProgress>("clone://progress", (e) => cb(e.payload)),
+  onCloneDone: (
+    cb: (p: { bytes: number; dest: string }) => void,
+  ): Promise<UnlistenFn> =>
+    listen<{ bytes: number; dest: string }>("clone://done", (e) => cb(e.payload)),
+  onCloneError: (cb: (msg: string) => void): Promise<UnlistenFn> =>
+    listen<string>("clone://error", (e) => cb(e.payload)),
 };

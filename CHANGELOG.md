@@ -22,6 +22,10 @@ All notable changes to Keepsake Atelier. Newest first.
 
 ### Added
 
+- **1:1 disc clone** (`bluforge clone`, and "Clone 1:1" in the app): a raw
+  sector copy that keeps AACS/BD+ intact, for an archival image or a burner.
+  Uncached reads, byte-based progress, cancel removes the partial file. Unit
+  tested against a file source.
 - **Batch rip queue** in the desktop app: "Start rip" enqueues the selected
   title (or TV plan), and `+` on a title row queues that title. Jobs run one at
   a time, with a queue panel for state, progress, cancel and cleanup. In-memory

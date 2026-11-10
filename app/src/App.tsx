@@ -5,6 +5,7 @@ import {
   type DiscInfo,
   type EncodeSettings,
   type AudioSel,
+  type CloneProgress,
   type CoverHit,
   type IsoProgress,
   type MovieHit,
@@ -118,6 +119,7 @@ export default function App() {
   const [progress, setProgress] = useState<RipProgress | null>(null);
   const [isoProgress, setIsoProgress] = useState<IsoProgress | null>(null);
   const [isoBusy, setIsoBusy] = useState(false);
+  const [cloneProgress, setCloneProgress] = useState<CloneProgress | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -455,6 +457,9 @@ export default function App() {
       api.onIsoProgress((p) => setIsoProgress(p)),
       api.onIsoDone(() => { setIsoBusy(false); setToast("Decrypted ISO written"); }),
       api.onIsoError((e) => { setIsoBusy(false); setError(e); }),
+      api.onCloneProgress((p) => setCloneProgress(p)),
+      api.onCloneDone(({ dest }) => { setCloneProgress(null); setToast("Clone written"); void api.reveal(dest); }),
+      api.onCloneError((e) => { setCloneProgress(null); setError(e); }),
     ];
     return () => { us.forEach((u) => u.then((f) => f())); };
   }, []);
@@ -478,6 +483,22 @@ export default function App() {
         label: disc?.name ?? null,
       });
     } catch (e) { setError(String(e)); setIsoBusy(false); }
+  };
+
+  const cloneDisc = async () => {
+    if (!discPath) return;
+    const dev = optical[0];
+    if (!dev) {
+      setError("cloning needs the raw optical device (/dev/rdiskN); reconnect the drive");
+      return;
+    }
+    const src = `/dev/r${dev.bsd_name}`;
+    const dest = isoPath.replace(/\.iso$/i, " - clone.iso");
+    setError(null);
+    setCloneProgress({ percent: 0, bytes: 0, total: 0, message: "starting", done: false });
+    try {
+      await api.cloneStart({ source: src, dest });
+    } catch (e) { setError(String(e)); setCloneProgress(null); }
   };
 
   const keys = snap?.keys;
@@ -1040,16 +1061,39 @@ export default function App() {
               <strong>Decrypted ISO</strong>
               <span className="hint">AACS/BD+ removed, plays anywhere</span>
             </div>
-            <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+            <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
               <button className="ghost" style={{ flex: 1, justifyContent: "center" }}
-                disabled={!discPath || isoBusy || !!busy || !!runningJob} onClick={() => exportIso("iso")}>
+                disabled={!discPath || isoBusy || !!busy || !!runningJob || !!cloneProgress} onClick={() => exportIso("iso")}>
                 Export .iso
               </button>
               <button className="ghost" style={{ flex: 1, justifyContent: "center" }}
-                disabled={!discPath || isoBusy || !!busy || !!runningJob} onClick={() => exportIso("folder")}>
+                disabled={!discPath || isoBusy || !!busy || !!runningJob || !!cloneProgress} onClick={() => exportIso("folder")}>
                 Export folder
               </button>
+              <button className="ghost" style={{ flex: 1, justifyContent: "center" }}
+                disabled={!discPath || !optical[0] || isoBusy || !!busy || !!runningJob || !!cloneProgress}
+                title="Bit-for-bit sector copy. Keeps AACS/BD+ (archival image)."
+                onClick={() => void cloneDisc()}>
+                Clone 1:1
+              </button>
             </div>
+            <p className="hint" style={{ marginTop: 6 }}>
+              Export .iso / folder are decrypted and playable. Clone 1:1 copies the raw
+              sectors with encryption intact.
+            </p>
+            {cloneProgress && (
+              <div style={{ marginTop: 12 }}>
+                <div className="progress" role="progressbar" aria-label="Clone progress"
+                  aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(cloneProgress.percent)}>
+                  <i style={{ width: `${cloneProgress.percent}%` }} />
+                </div>
+                <div className="stats" style={{ marginTop: 8 }} aria-live="polite">
+                  <span>{cloneProgress.percent.toFixed(0)}%</span>
+                  <span>{cloneProgress.message}</span>
+                  <button className="ghost sm" onClick={() => void api.cancelRip()}>cancel</button>
+                </div>
+              </div>
+            )}
             {isoProgress && (
               <div style={{ marginTop: 12 }}>
                 <div className="progress" role="progressbar" aria-label="ISO export progress"

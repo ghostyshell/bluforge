@@ -23,6 +23,7 @@ The engine, CLI binary and crate names are still `bluforge`.
 | Track defaults: English non-commentary audio, subtitles off | ✅ |
 | Cover art: search/view/download from HiResCovers, dvdcover.com, TMDB | ✅ |
 | Decrypted ISO / folder export | ✅ |
+| 1:1 encrypted disc clone | ✅ |
 | TV / anime: per-episode split, SxxExx titles, OP/ED/preview chapters | ✅ |
 | Desktop UI (Tauri v2) | ✅ |
 | MCP server (all features as tools, localhost, off by default) | ✅ |
@@ -83,6 +84,7 @@ cargo build --release
 ./target/release/bluforge disc /Volumes/MY_DISC   # inspect titles
 ./target/release/bluforge libs
 ./target/release/bluforge iso /Volumes/MY_DISC ~/movie.iso            # decrypted ISO
+./target/release/bluforge clone /dev/rdisk4 ~/movie-clone.iso         # 1:1, encrypted
 ./target/release/bluforge rip /Volumes/MY_DISC                        # main title -> ~/Downloads
 ./target/release/bluforge rip /dev/rdisk5 --title 3 ~/Movies/out.mkv  # explicit title + output
 

@@ -54,7 +54,11 @@ impl QueueJob {
             id: self.id,
             title: self.request.title,
             source: self.request.source.display().to_string(),
-            output: self.request.output.as_ref().map(|p| p.display().to_string()),
+            output: self
+                .request
+                .output
+                .as_ref()
+                .map(|p| p.display().to_string()),
             state: self.state.clone(),
             percent: self.percent,
             message: self.message.clone(),
@@ -231,11 +235,7 @@ fn queue_add(
 
 #[tauri::command]
 fn queue_list(state: State<RpState>) -> Vec<QueueJobView> {
-    state
-        .queue
-        .lock()
-        .map(|q| q.views())
-        .unwrap_or_default()
+    state.queue.lock().map(|q| q.views()).unwrap_or_default()
 }
 
 #[tauri::command]
@@ -542,10 +542,7 @@ fn menu_source(source: &str) -> PathBuf {
 }
 
 #[tauri::command]
-fn disc_streams(
-    path: String,
-    title: u32,
-) -> Result<Vec<bluforge_core::disc::StreamInfo>, String> {
+fn disc_streams(path: String, title: u32) -> Result<Vec<bluforge_core::disc::StreamInfo>, String> {
     let disc = bluforge_core::Disc::open(
         std::path::Path::new(&path),
         Some(&bluforge_core::keys::keydb_path()),
@@ -587,10 +584,7 @@ fn menu_load(template: String) -> Result<bluforge_core::menu::DiscMenu, String> 
 }
 
 #[tauri::command]
-fn menu_save(
-    template: String,
-    doc: bluforge_core::menu::DiscMenu,
-) -> Result<String, String> {
+fn menu_save(template: String, doc: bluforge_core::menu::DiscMenu) -> Result<String, String> {
     bluforge_core::menu::save(&bluforge_core::menu::store_dir(), &template, &doc)
         .map(|p| p.display().to_string())
         .map_err(|e| e.to_string())
@@ -628,8 +622,8 @@ fn menu_remove(template: String) -> Result<String, String> {
 #[tauri::command]
 fn keys_native(source: Option<String>) -> Result<serde_json::Value, String> {
     let mount = menu_source(source.as_deref().unwrap_or(""));
-    let (key, added) = bluforge_core::native::derive_and_store(&mount)
-        .map_err(|e| e.to_string())?;
+    let (key, added) =
+        bluforge_core::native::derive_and_store(&mount).map_err(|e| e.to_string())?;
     Ok(serde_json::json!({ "key": key, "added": added }))
 }
 
@@ -662,6 +656,47 @@ fn start_rip(
         running.store(false, Ordering::Relaxed);
         if let Err(e) = res {
             let _ = app2.emit("rip://error", e.to_string());
+        }
+    });
+    Ok(())
+}
+
+#[tauri::command]
+fn clone_start(
+    app: AppHandle,
+    state: State<RpState>,
+    request: bluforge_core::clone::CloneRequest,
+) -> Result<(), String> {
+    if state.running.load(Ordering::Relaxed) {
+        return Err("a rip or clone is already running".into());
+    }
+    state.cancel.store(false, Ordering::Relaxed);
+    state.running.store(true, Ordering::Relaxed);
+    let app2 = app.clone();
+    let cancel = state.cancel.clone();
+    let running = state.running.clone();
+    std::thread::spawn(move || {
+        let res = bluforge_core::clone::run(&request, &cancel, |p| {
+            let _ = app2.emit("clone://progress", p);
+        });
+        running.store(false, Ordering::Relaxed);
+        match res {
+            Ok(bytes) => {
+                let _ = app2.emit(
+                    "clone://done",
+                    serde_json::json!({
+                        "bytes": bytes,
+                        "dest": request.dest.display().to_string(),
+                    }),
+                );
+            }
+            Err(e) => {
+                let _ = app2.emit("clone://error", e.to_string());
+            }
+        }
+        // A clone can hold the drive while rips are queued; resume them.
+        if let Some(st) = app2.try_state::<RpState>() {
+            pump_queue(app2.clone(), &st);
         }
     });
     Ok(())
@@ -817,7 +852,8 @@ pub fn run() {
             queue_list,
             queue_cancel,
             queue_remove,
-            queue_clear
+            queue_clear,
+            clone_start
         ])
         .setup(|app| {
             let _ = app.get_webview_window("main");
