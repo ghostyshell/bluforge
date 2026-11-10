@@ -223,14 +223,16 @@ The test suite runs with `cargo test`.
 - [Menu templates](docs/menu-templates.md) - the menu-document format.
 - [Decryption](docs/decryption.md) - AACS, BD+ and the backends.
 - [ffmpeg](docs/ffmpeg.md) - how the bundled build is made.
+- [Platforms](docs/platforms.md) - what works on macOS, Linux and Windows.
 - [Roadmap](docs/roadmap.md) - phases and known limits.
 - [Site source](docs/site/README.md) - the GitHub Pages landing page.
 - [Contributing](CONTRIBUTING.md) - build, tests, style and the release process.
 
 ## Notes and limits
 
-- macOS first. The device and drive layer is macOS-specific; Windows and Linux
-  are not shipped.
+- macOS first. The macOS app is the reference build; the Linux CLI is built and
+  tested, and the Windows CLI is a preview. See
+  [docs/platforms.md](docs/platforms.md) for the per-platform matrix.
 - Cinavia is a proprietary audio watermark. There is no open detector or
   remover, and none is bundled.
 - Authored BD-J menus are verified in a JVM harness and by libbluray's parser,

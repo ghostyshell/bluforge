@@ -1,6 +1,7 @@
 // Thin C shim over libbluray so Rust does not have to mirror the (large,
 // version-sensitive) BLURAY_TITLE_INFO / BLURAY_STREAM_INFO struct layouts.
 #include <libbluray/bluray.h>
+#include <libbluray/bluray-version.h>
 #include <libbluray/filesystem.h>
 #include <stdio.h>
 #include <stdint.h>
@@ -9,6 +10,13 @@
 #include <strings.h>
 #include <sys/stat.h>
 #include <unistd.h>
+
+/* libbluray 1.5 added dynamic range, chapter names and Dolby Vision streams.
+   Distro packages still ship 1.3.x, so degrade cleanly instead of requiring a
+   source build just to read a disc. */
+#if BLURAY_VERSION < BLURAY_VERSION_CODE(1, 5, 0)
+#  define BF_OLD_BLURAY 1
+#endif
 
 typedef struct {
     uint32_t index;
@@ -69,7 +77,11 @@ int bf_titles(bf_disc_t *d, bf_title_t *out, int max) {
             if (cl->video_stream_count > 0) {
                 out[c].video_format = cl->video_streams[0].format;
                 out[c].video_rate = cl->video_streams[0].rate;
+#ifdef BF_OLD_BLURAY
+                out[c].dynamic_range = 0; /* SDR; the field does not exist yet */
+#else
                 out[c].dynamic_range = cl->video_streams[0].dynamic_range_type;
+#endif
             }
         }
         out[c].is_main = (i == (uint32_t)main_idx) ? 1 : 0;
@@ -104,9 +116,11 @@ int bf_title_chapters(bf_disc_t *d, uint32_t title, bf_chapter_t *out, int max) 
         memset(&out[c], 0, sizeof(out[c]));
         out[c].start_secs = ch->start / 90000.0;
         out[c].duration_90k = ch->duration;
+#ifndef BF_OLD_BLURAY
         if (ch->chapter_name) {
             snprintf(out[c].name, sizeof(out[c].name), "%s", ch->chapter_name);
         }
+#endif
         c++;
     }
     bd_free_title_info(ti);
@@ -177,7 +191,9 @@ int bf_title_streams(bf_disc_t *d, uint32_t title, bf_stream_t *out, int max) {
            PID order ffmpeg will use), deduped by PID, then audio and subs. */
         bf_put_streams(cl->video_streams, cl->video_stream_count, 0, out, &c, max);
         bf_put_streams_uniq(cl->sec_video_streams, cl->sec_video_stream_count, 0, out, &c, max);
+#ifndef BF_OLD_BLURAY
         bf_put_streams_uniq(cl->dv_streams, cl->dv_stream_count, 0, out, &c, max);
+#endif
         bf_put_streams(cl->audio_streams, cl->audio_stream_count, 1, out, &c, max);
         bf_put_streams(cl->pg_streams, cl->pg_stream_count, 2, out, &c, max);
     }

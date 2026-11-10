@@ -2,7 +2,8 @@
 
 ## Requirements
 
-- An Apple Silicon Mac (arm64). Intel builds do not ship yet.
+- An Apple Silicon or Intel Mac. Linux and Windows CLI builds are covered in
+  [Platforms](../platforms.md).
 - macOS 12 or newer.
 - A USB Blu-ray writer or reader for disc work. DVD drives work for DVD titles.
 - Free disk space: a lossless rip is roughly the size of the feature, and an

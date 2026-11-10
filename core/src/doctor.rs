@@ -86,7 +86,11 @@ pub fn run() -> DoctorReport {
         } else {
             "not loaded".into()
         },
-        Some("brew install libbluray"),
+        Some(if cfg!(target_os = "macos") {
+            "brew install libbluray"
+        } else {
+            "install libbluray (apt install libbluray2)"
+        }),
     ));
 
     // libaacs
@@ -94,9 +98,22 @@ pub fn run() -> DoctorReport {
     r.checks.push(check(
         "libaacs",
         aacs.is_some(),
-        aacs.map(|p| format!("{p}.dylib"))
-            .unwrap_or_else(|| "not installed".into()),
-        Some("brew install libaacs"),
+        aacs.map(|p| {
+            format!(
+                "{p}{}",
+                if cfg!(target_os = "macos") {
+                    ".dylib"
+                } else {
+                    ".so"
+                }
+            )
+        })
+        .unwrap_or_else(|| "not installed".into()),
+        Some(if cfg!(target_os = "macos") {
+            "brew install libaacs"
+        } else {
+            "install libaacs (apt install libaacs0)"
+        }),
     ));
 
     // libbdplus + VM data
@@ -106,12 +123,30 @@ pub fn run() -> DoctorReport {
         "libbdplus",
         bdplus.is_some(),
         match (bdplus, vm) {
-            (Some(p), true) => format!("{p}.dylib, VM installed"),
-            (Some(p), false) => format!("{p}.dylib, VM data missing"),
+            (Some(p), true) => format!(
+                "{p}{}, VM installed",
+                if cfg!(target_os = "macos") {
+                    ".dylib"
+                } else {
+                    ".so"
+                }
+            ),
+            (Some(p), false) => format!(
+                "{p}{}, VM data missing",
+                if cfg!(target_os = "macos") {
+                    ".dylib"
+                } else {
+                    ".so"
+                }
+            ),
             (None, _) => "not installed".into(),
         },
         Some(if vm {
-            "brew install libbdplus"
+            if cfg!(target_os = "macos") {
+                "brew install libbdplus"
+            } else {
+                "install libbdplus (apt install libbdplus0)"
+            }
         } else {
             "keepsake-atelier bdplus --install"
         }),
@@ -154,7 +189,11 @@ pub fn run() -> DoctorReport {
             if x265 { "yes" } else { "no" },
             if vt { "yes" } else { "no" }
         ),
-        Some("run scripts/build-ffmpeg.sh, or brew install ffmpeg"),
+        Some(if cfg!(target_os = "macos") {
+            "run scripts/build-ffmpeg.sh, or brew install ffmpeg"
+        } else {
+            "install ffmpeg (apt install ffmpeg)"
+        }),
     ));
     if !dvdvideo {
         r.checks.push(check(
@@ -178,7 +217,7 @@ pub fn run() -> DoctorReport {
             Some(p) => format!("{} ({ts_version})", p.display()),
             None => "not installed".into(),
         },
-        Some("put tsMuxeR in ~/Library/Application Support/keepsake-atelier/bin"),
+        Some("put tsMuxeR on PATH or in the keepsake-atelier data bin directory"),
     ));
 
     // KEYDB
@@ -229,14 +268,21 @@ pub fn run() -> DoctorReport {
         } else {
             "no writer front-end".into()
         },
-        Some("macOS hdiutil (built in), or brew install dvd+rw-tools"),
+        Some(if cfg!(target_os = "macos") {
+            "macOS hdiutil (built in), or brew install dvd+rw-tools"
+        } else if cfg!(target_os = "linux") {
+            "install dvd+rw-tools (growisofs)"
+        } else {
+            "no writer front-end on Windows yet; use a macOS or Linux machine"
+        }),
     ));
 
     // Data directory
     let dir = crate::config_dir();
+    let dir_ok = dir.is_dir() || std::fs::create_dir_all(&dir).is_ok();
     r.checks.push(check(
         "data directory",
-        dir.is_dir(),
+        dir_ok,
         dir.display().to_string(),
         None,
     ));
@@ -265,10 +311,15 @@ pub fn run() -> DoctorReport {
             "needs libbdplus and the VM data"
         },
     ));
+    let native_keys = cfg!(target_os = "macos");
     r.capabilities.push(cap(
         "Native key recovery",
-        true,
-        "LibreDrive drive + KEYDB device keys; VUK and AACS2 unit keys from the disc (no certificate, no MakeMKV)",
+        native_keys,
+        if native_keys {
+            "LibreDrive drive + KEYDB device keys; VUK and AACS2 unit keys from the disc (no certificate, no MakeMKV)"
+        } else {
+            "macOS only; use a KEYDB entry or libaacs on this platform"
+        },
     ));
     r.capabilities.push(cap(
         "Encode H.264 / HEVC",

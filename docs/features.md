@@ -214,8 +214,9 @@ claude mcp add --transport http keepsake http://127.0.0.1:8765/mcp
 
 ## Known limits
 
-- macOS first. The device and drive layer is macOS-specific; anything above it
-  is portable Rust, but Windows and Linux builds are not shipped yet.
+- macOS first. The macOS app is the reference build. The Linux CLI is built and
+  tested, and the Windows CLI is a preview with no drive discovery yet. See
+  [Platforms](platforms.md).
 - Cinavia is a proprietary audio watermark. There is no open detector
   or remover, and none is bundled.
 - Authored BD-J menus are verified in a JVM harness and by libbluray's parser,

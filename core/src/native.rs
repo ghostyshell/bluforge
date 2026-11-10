@@ -19,6 +19,7 @@ struct BfDk {
     u_shift: u8,
 }
 
+#[cfg(target_os = "macos")]
 extern "C" {
     fn bf_media_key(
         mkb: *const u8,
@@ -99,6 +100,7 @@ fn discatt_for(exe: &std::path::Path) -> Option<Vec<u8>> {
 
 /// Recover the disc keys via MakeMKV's `discatt.dat` (VID/RDK) plus our offline
 /// MKB derivation. Returns the key and the (optional) drive cert + RDK.
+#[cfg(target_os = "macos")]
 pub fn from_makemkv(
     mount: &Path,
 ) -> Result<(NativeKey, Option<Vec<u8>>, Option<Vec<u8>>), CoreError> {
@@ -164,6 +166,7 @@ fn aacs_dir() -> std::path::PathBuf {
 
 /// Store the key in KEYDB and cache VID/RDK where libaacs looks for them
 /// (RDK is per drive+disc; needed for bus-encrypted discs once the HC is dead).
+#[cfg(target_os = "macos")]
 pub fn from_makemkv_and_store(mount: &Path) -> Result<(NativeKey, bool), CoreError> {
     let (key, dc, rdk) = from_makemkv(mount)?;
     let path = keys::keydb_path();
@@ -200,6 +203,7 @@ pub fn from_makemkv_and_store(mount: &Path) -> Result<(NativeKey, bool), CoreErr
     Ok((key, added))
 }
 
+#[cfg(target_os = "macos")]
 extern "C" {
     fn bf_native_key(
         mount: *const libc::c_char,
@@ -403,6 +407,7 @@ fn read_mkb(mount: &Path) -> Result<Vec<u8>, CoreError> {
 }
 
 /// Derive the disc key at `mount` (a mounted volume) natively.
+#[cfg(target_os = "macos")]
 pub fn derive(mount: &Path) -> Result<NativeKey, CoreError> {
     let keydb = keys::keydb_path();
     let header = read_header(&keydb)?;
@@ -491,6 +496,7 @@ pub fn derive(mount: &Path) -> Result<NativeKey, CoreError> {
 
 /// Derive and store the key in KEYDB. Returns the entry (already existing ones
 /// are left untouched).
+#[cfg(target_os = "macos")]
 pub fn derive_and_store(mount: &Path) -> Result<(NativeKey, bool), CoreError> {
     let key = derive(mount)?;
     let path = keys::keydb_path();
@@ -553,4 +559,37 @@ mod unit_key_tests {
         assert!(unit_keys_from(Some(&d), false, &VUK).is_empty());
         assert!(unit_keys_from(None, true, &VUK).is_empty());
     }
+}
+
+// Native key recovery links libaacs internals and the macOS MMC layer. The
+// other platforms use libaacs with a KEYDB entry instead; keep the same API so
+// the CLI and MCP tools build and return a clear error.
+#[cfg(not(target_os = "macos"))]
+pub fn from_makemkv(
+    _mount: &Path,
+) -> Result<(NativeKey, Option<Vec<u8>>, Option<Vec<u8>>), CoreError> {
+    Err(CoreError::Disc(
+        "native AACS key recovery is macOS-only; add a KEYDB entry or use libaacs".into(),
+    ))
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn from_makemkv_and_store(_mount: &Path) -> Result<(NativeKey, bool), CoreError> {
+    Err(CoreError::Disc(
+        "native AACS key recovery is macOS-only; add a KEYDB entry or use libaacs".into(),
+    ))
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn derive(_mount: &Path) -> Result<NativeKey, CoreError> {
+    Err(CoreError::Disc(
+        "native AACS key recovery is macOS-only; add a KEYDB entry or use libaacs".into(),
+    ))
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn derive_and_store(_mount: &Path) -> Result<(NativeKey, bool), CoreError> {
+    Err(CoreError::Disc(
+        "native AACS key recovery is macOS-only; add a KEYDB entry or use libaacs".into(),
+    ))
 }

@@ -54,9 +54,7 @@ fn main() {
 
             for path in &link_paths {
                 println!("cargo:rustc-link-search=native={path}");
-                if target_os == "macos" {
-                    println!("cargo:rustc-link-arg=-Wl,-rpath,{path}");
-                } else {
+                if target_os == "macos" || target_os == "linux" {
                     println!("cargo:rustc-link-arg=-Wl,-rpath,{path}");
                 }
             }

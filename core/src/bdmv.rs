@@ -413,7 +413,8 @@ mod tests {
 
     #[test]
     fn installing_a_menu_makes_it_first_play() {
-        let dir = std::env::temp_dir().join(format!("keepsake-bdmv-menu-test-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("keepsake-bdmv-menu-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("BDMV/PLAYLIST")).unwrap();
         std::fs::write(dir.join("BDMV/PLAYLIST/00000.mpls"), b"MPLS").unwrap();

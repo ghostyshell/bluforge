@@ -209,36 +209,90 @@ pub struct Disc {
 
 unsafe impl Send for Disc {}
 
-/// Path to Homebrew's libaacs, when installed.
-pub fn libaacs_path() -> Option<&'static str> {
-    Disc::libaacs_path()
+#[cfg(target_os = "macos")]
+const LIBAACS_STEMS: &[&str] = &["/opt/homebrew/lib/libaacs", "/usr/local/lib/libaacs"];
+#[cfg(target_os = "linux")]
+const LIBAACS_STEMS: &[&str] = &[
+    "/usr/lib/aarch64-linux-gnu/libaacs",
+    "/usr/lib/x86_64-linux-gnu/libaacs",
+    "/usr/lib/libaacs",
+    "/usr/lib64/libaacs",
+    "/usr/local/lib/libaacs",
+];
+#[cfg(target_os = "windows")]
+const LIBAACS_STEMS: &[&str] = &[];
+#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+const LIBAACS_STEMS: &[&str] = &[];
+
+#[cfg(target_os = "macos")]
+const LIBBDPLUS_STEMS: &[&str] = &["/opt/homebrew/lib/libbdplus", "/usr/local/lib/libbdplus"];
+#[cfg(target_os = "linux")]
+const LIBBDPLUS_STEMS: &[&str] = &[
+    "/usr/lib/aarch64-linux-gnu/libbdplus",
+    "/usr/lib/x86_64-linux-gnu/libbdplus",
+    "/usr/lib/libbdplus",
+    "/usr/lib64/libbdplus",
+    "/usr/local/lib/libbdplus",
+];
+#[cfg(target_os = "windows")]
+const LIBBDPLUS_STEMS: &[&str] = &[];
+#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+const LIBBDPLUS_STEMS: &[&str] = &[];
+
+#[cfg(target_os = "macos")]
+const LIBMMBD_STEMS: &[&str] = &[
+    "/Applications/MakeMKV.app/Contents/lib/libmmbd_new",
+    "/Applications/MakeMKV.app/Contents/lib/libmmbd_old",
+    "/usr/local/lib/libmmbd",
+    "/opt/homebrew/lib/libmmbd",
+];
+#[cfg(target_os = "linux")]
+const LIBMMBD_STEMS: &[&str] = &[
+    "/usr/lib/libmmbd",
+    "/usr/lib64/libmmbd",
+    "/usr/local/lib/libmmbd",
+];
+#[cfg(target_os = "windows")]
+const LIBMMBD_STEMS: &[&str] = &[];
+#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+const LIBMMBD_STEMS: &[&str] = &[];
+
+fn lib_file_exists(stem: &str) -> bool {
+    #[cfg(target_os = "macos")]
+    let exts = [".dylib"];
+    #[cfg(target_os = "linux")]
+    let exts = [".so", ".so.0", ".so.1", ".so.2"];
+    #[cfg(target_os = "windows")]
+    let exts = [".dll"];
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+    let exts = [".so"];
+    exts.iter()
+        .any(|ext| Path::new(&format!("{stem}{ext}")).is_file())
 }
 
-/// Path to Homebrew's libbdplus, when installed.
+fn find_lib(stems: &'static [&'static str]) -> Option<&'static str> {
+    stems.iter().copied().find(|s| lib_file_exists(s))
+}
+
+/// Path to libaacs, when installed.
+pub fn libaacs_path() -> Option<&'static str> {
+    find_lib(LIBAACS_STEMS)
+}
+
+/// Path to libbdplus, when installed.
 pub fn libbdplus_path() -> Option<&'static str> {
-    ["/opt/homebrew/lib/libbdplus", "/usr/local/lib/libbdplus"]
-        .into_iter()
-        .find(|c| Path::new(&format!("{c}.dylib")).is_file())
+    find_lib(LIBBDPLUS_STEMS)
 }
 
 impl Disc {
-    /// Path to Homebrew's libaacs, when installed.
+    /// Path to libaacs, when installed.
     fn libaacs_path() -> Option<&'static str> {
-        ["/opt/homebrew/lib/libaacs", "/usr/local/lib/libaacs"]
-            .into_iter()
-            .find(|c| Path::new(&format!("{c}.dylib")).is_file())
+        find_lib(LIBAACS_STEMS)
     }
 
     /// Path to MakeMKV's libmmbd, when installed.
     fn libmmbd_path() -> Option<&'static str> {
-        [
-            "/Applications/MakeMKV.app/Contents/lib/libmmbd_new",
-            "/Applications/MakeMKV.app/Contents/lib/libmmbd_old",
-            "/usr/local/lib/libmmbd",
-            "/opt/homebrew/lib/libmmbd",
-        ]
-        .into_iter()
-        .find(|c| Path::new(&format!("{c}.dylib")).is_file())
+        find_lib(LIBMMBD_STEMS)
     }
 
     /// Disc id of `source`, read from its `AACS/Unit_Key_RO.inf` (following a
@@ -331,17 +385,10 @@ impl Disc {
     /// True when `v` is a library path we resolve ourselves, as opposed to one
     /// the user exported by hand.
     fn is_our_lib(v: &str) -> bool {
-        const AACS: [&str; 2] = ["/opt/homebrew/lib/libaacs", "/usr/local/lib/libaacs"];
-        const MMBD: [&str; 4] = [
-            "/Applications/MakeMKV.app/Contents/lib/libmmbd_new",
-            "/Applications/MakeMKV.app/Contents/lib/libmmbd_old",
-            "/usr/local/lib/libmmbd",
-            "/opt/homebrew/lib/libmmbd",
-        ];
-        const BDPLUS: [&str; 2] = ["/opt/homebrew/lib/libbdplus", "/usr/local/lib/libbdplus"];
-        AACS.iter()
-            .chain(MMBD.iter())
-            .chain(BDPLUS.iter())
+        LIBAACS_STEMS
+            .iter()
+            .chain(LIBMMBD_STEMS.iter())
+            .chain(LIBBDPLUS_STEMS.iter())
             .any(|c| *c == v)
     }
 
@@ -938,7 +985,7 @@ pub fn bsd_name_for(source: &Path) -> Option<String> {
     let s = source.to_string_lossy();
     if let Some(rest) = s.strip_prefix("/dev/") {
         let rest = rest.strip_prefix('r').unwrap_or(rest);
-        return if rest.starts_with("disk") {
+        return if rest.starts_with("disk") || rest.starts_with("sr") {
             Some(rest.to_string())
         } else {
             None
@@ -958,7 +1005,13 @@ pub fn raw_device_for(source: &Path) -> Option<PathBuf> {
     if s.starts_with("/dev/rdisk") {
         return Some(source.to_path_buf());
     }
-    bsd_name_for(source).map(|b| PathBuf::from(format!("/dev/r{b}")))
+    bsd_name_for(source).map(|b| {
+        if cfg!(target_os = "macos") {
+            PathBuf::from(format!("/dev/r{b}"))
+        } else {
+            PathBuf::from(format!("/dev/{b}"))
+        }
+    })
 }
 
 /// Prepare a `source` for reading: prefer the raw device. `unmount` is best

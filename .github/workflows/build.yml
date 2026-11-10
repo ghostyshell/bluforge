@@ -1,0 +1,144 @@
+name: build
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  macos-arm64:
+    name: macOS arm64 (DMG + CLI)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: Build ffmpeg
+        run: |
+          brew install nasm meson
+          scripts/build-ffmpeg.sh
+      - name: Build app
+        working-directory: app
+        run: npm ci && npx tauri build --bundles dmg --target aarch64-apple-darwin --config '{"bundle":{"createUpdaterArtifacts":false}}'
+      - name: Build CLI
+        run: cargo build --release --target aarch64-apple-darwin -p keepsake-atelier
+      - name: Package artifacts
+        run: |
+          V=$(python3 -c 'import json; print(json.load(open("app/src-tauri/tauri.conf.json"))["version"])')
+          mkdir -p dist
+          DMG=$(ls target/aarch64-apple-darwin/release/bundle/dmg/*.dmg | head -1)
+          cp "$DMG" "dist/Keepsake-Atelier-${V}-arm64.dmg"
+          tar -czf "dist/keepsake-atelier-${V}-macos-arm64.tar.gz" -C target/aarch64-apple-darwin/release keepsake-atelier
+          ls -lh dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-arm64
+          path: dist/*
+
+  macos-x64:
+    name: macOS x64 (DMG + CLI)
+    runs-on: macos-15-intel
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: Build ffmpeg
+        run: |
+          brew install nasm meson
+          scripts/build-ffmpeg.sh
+      - name: Build app
+        working-directory: app
+        run: npm ci && npx tauri build --bundles dmg --target x86_64-apple-darwin --config '{"bundle":{"createUpdaterArtifacts":false}}'
+      - name: Build CLI
+        run: cargo build --release --target x86_64-apple-darwin -p keepsake-atelier
+      - name: Package artifacts
+        run: |
+          V=$(python3 -c 'import json; print(json.load(open("app/src-tauri/tauri.conf.json"))["version"])')
+          mkdir -p dist
+          DMG=$(ls target/x86_64-apple-darwin/release/bundle/dmg/*.dmg | head -1)
+          cp "$DMG" "dist/Keepsake-Atelier-${V}-x64.dmg"
+          tar -czf "dist/keepsake-atelier-${V}-macos-x64.tar.gz" -C target/x86_64-apple-darwin/release keepsake-atelier
+          ls -lh dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-x64
+          path: dist/*
+
+  linux-x64:
+    name: Linux x64 (CLI)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libbluray-dev libaacs-dev libbdplus-dev
+      - name: Build CLI
+        run: cargo build --release -p keepsake-atelier
+      - name: Package
+        run: |
+          V=$(python3 -c 'import json; print(json.load(open("app/src-tauri/tauri.conf.json"))["version"])')
+          mkdir -p dist
+          tar -czf "dist/keepsake-atelier-${V}-linux-x64.tar.gz" -C target/release keepsake-atelier
+          ls -lh dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-x64
+          path: dist/*
+
+  windows-x64:
+    name: Windows x64 (CLI)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-libbluray
+            mingw-w64-x86_64-libaacs
+            mingw-w64-x86_64-libbdplus
+            mingw-w64-x86_64-pkg-config
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-gnu
+      - name: Build CLI
+        shell: msys2 {0}
+        env:
+          PKG_CONFIG_PATH: C:/msys64/mingw64/lib/pkgconfig
+        run: |
+          cargo build --release --target x86_64-pc-windows-gnu -p keepsake-atelier
+      - name: Package
+        shell: msys2 {0}
+        run: |
+          V=$(python3 -c 'import json; print(json.load(open("app/src-tauri/tauri.conf.json"))["version"])')
+          mkdir -p dist
+          cp target/x86_64-pc-windows-gnu/release/keepsake-atelier.exe dist/
+          ldd target/x86_64-pc-windows-gnu/release/keepsake-atelier.exe \
+            | grep -E '/mingw64/bin/' | awk '{print $3}' | xargs -r -I{} cp {} dist/ || true
+          cd dist && zip -9 "keepsake-atelier-${V}-windows-x64.zip" *
+          ls -lh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64
+          path: dist/*

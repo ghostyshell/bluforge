@@ -383,6 +383,105 @@ mod mac {
 #[cfg(target_os = "macos")]
 pub use mac::list;
 
+#[cfg(target_os = "linux")]
+mod linux {
+    use super::BlockDevice;
+    use std::fs;
+    use std::path::PathBuf;
+
+    /// `sr*` block devices from sysfs. Optical drives are SCSI type 5; the
+    /// mounted volume is matched from /proc/self/mounts.
+    pub fn list() -> Vec<BlockDevice> {
+        let mut out = Vec::new();
+        let mounts = fs::read_to_string("/proc/self/mounts").unwrap_or_default();
+        let Ok(rd) = fs::read_dir("/sys/block") else {
+            return out;
+        };
+        for entry in rd.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if !name.starts_with("sr") {
+                continue;
+            }
+            let base = entry.path();
+            let read = |rel: &str| {
+                fs::read_to_string(base.join(rel))
+                    .ok()
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+            };
+            let size = read("size")
+                .and_then(|s| s.parse::<u64>().ok())
+                .map(|blocks| blocks * 512)
+                .unwrap_or(0);
+            let vendor = read("device/vendor");
+            let product = read("device/model");
+            let revision = read("device/rev");
+            let removable = read("removable").map(|s| s == "1").unwrap_or(false);
+            let dev = format!("/dev/{name}");
+            let sys = fs::canonicalize(&base)
+                .map(|p| p.display().to_string())
+                .unwrap_or_default();
+            let interconnect = if sys.contains("/usb") {
+                Some("USB".to_string())
+            } else if sys.contains("/ata") || sys.contains("/sata") {
+                Some("SATA".to_string())
+            } else {
+                None
+            };
+            let mount_point = mounts.lines().find_map(|line| {
+                let mut parts = line.split_whitespace();
+                let source = parts.next()?;
+                let mount = parts.next()?;
+                let matches = source == dev
+                    || source == format!("{dev}p1")
+                    || source.starts_with(&format!("{dev}p"));
+                matches.then(|| mount.replace("\040", " "))
+            });
+            let media_name = product.clone().or_else(|| {
+                mount_point.as_ref().and_then(|m| {
+                    PathBuf::from(m)
+                        .file_name()
+                        .map(|f| f.to_string_lossy().into_owned())
+                })
+            });
+            out.push(BlockDevice {
+                bsd_name: name,
+                media_name,
+                is_whole: true,
+                removable,
+                size_bytes: size,
+                vendor,
+                product,
+                revision,
+                scsi_pdt: Some(5),
+                optical: true,
+                interconnect,
+                mount_point,
+                device_path: Some(dev),
+                registry_path: sys,
+            });
+        }
+        out
+    }
+}
+
+#[cfg(target_os = "linux")]
+pub use linux::list;
+
+#[cfg(target_os = "windows")]
+mod windows {
+    use super::BlockDevice;
+
+    /// Windows drive discovery is not implemented yet. The CLI still reads
+    /// ISOs, folders and BDMV trees; only the physical drive picker is empty.
+    pub fn list() -> Vec<BlockDevice> {
+        Vec::new()
+    }
+}
+
+#[cfg(target_os = "windows")]
+pub use windows::list;
+
 /// Ensure the optical volume for `source` is mounted and return its mount point
 /// (the disc's MKB has to be read from the filesystem, not the raw device).
 pub fn ensure_mounted(source: &Path) -> PathBuf {
@@ -471,12 +570,42 @@ pub fn human_bytes(n: u64) -> String {
 /// A failed eject is almost always another process holding the raw device
 /// (MakeMKV's `makemkvcon` is the usual one), so report the holder instead of
 /// a bare "Resource busy".
+#[allow(unreachable_code)]
 pub fn eject() -> Result<String, crate::CoreError> {
     let snap = crate::snapshot();
     let dev = snap
         .optical
         .first()
         .ok_or_else(|| crate::CoreError::Disc("no optical drive detected".into()))?;
+    #[cfg(target_os = "windows")]
+    {
+        let _ = dev;
+        return Err(crate::CoreError::Disc(
+            "eject is not implemented on Windows yet".into(),
+        ));
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::unix::io::AsRawFd;
+        let node = dev
+            .device_path
+            .clone()
+            .unwrap_or_else(|| format!("/dev/{}", dev.bsd_name));
+        let file = std::fs::File::open(&node)
+            .map_err(|e| crate::CoreError::Disc(format!("eject: cannot open {node}: {e}")))?;
+        const CDROMEJECT: libc::c_ulong = 0x5309;
+        let rc = unsafe { libc::ioctl(file.as_raw_fd(), CDROMEJECT) };
+        return if rc == 0 {
+            Ok(format!("ejected {}", dev.bsd_name))
+        } else {
+            Err(crate::CoreError::Disc(format!(
+                "eject failed: {}",
+                std::io::Error::last_os_error()
+            )))
+        };
+    }
+
     let node = format!("/dev/{}", dev.bsd_name);
 
     let attempts: [(&str, Vec<String>); 2] = [
