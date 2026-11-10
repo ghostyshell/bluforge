@@ -40,11 +40,17 @@ The same pattern is used by the other ghostyshell tools. The pieces are:
    npx -y @file-kiwi/node /tmp/test.bin --title test
    ```
 
-3. Make the scripts executable:
+3. Install the app bundler used by the DMG step:
+
+   ```sh
+   brew install dylibbundler
+   ```
+
+4. Make the scripts executable:
 
    ```sh
    chmod +x scripts/publish-release.sh scripts/refresh-release-links.sh \
-            scripts/install-refresh-job.sh
+            scripts/install-refresh-job.sh scripts/bundle-app.sh
    ```
 
 ## Build and upload
