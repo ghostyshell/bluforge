@@ -23,6 +23,7 @@ import {
   type Title,
   type VerifyReport,
 } from "./api";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { Menus } from "./Menus";
 import logo from "./assets/logo.png";
 
@@ -938,7 +939,7 @@ export default function App() {
 
             <div className="field" style={{ marginTop: 12 }}>
               <span className="sub">Output file</span>
-              <div className="mono truncate" title={preview}>{preview || "—"}</div>
+              <div className="mono truncate" title={preview}>{preview || "-"}</div>
             </div>
           </section>
 
@@ -1155,8 +1156,8 @@ export default function App() {
 
         {/* Side panel: keys, action, progress */}
         <aside className="side">
-          <h1>Rip</h1>
-          <p className="sub" style={{ marginTop: 0 }}>First iteration — ripping first.</p>
+          <h1>Workshop</h1>
+          <p className="sub" style={{ marginTop: 0 }}>Inspect, rip, author and burn, in one place.</p>
 
           <section className="card" style={{ marginTop: 16 }}>
             <div className="row between">
@@ -1537,6 +1538,21 @@ export default function App() {
                 </div>
               </div>
             )}
+          </section>
+
+          <section className="card" style={{ marginTop: 16 }}>
+            <div className="row between">
+              <h2>Support</h2>
+              <span className="sub">MIT, no paid tier</span>
+            </div>
+            <p className="sub" style={{ marginTop: 6 }}>
+              Questions and logs are welcome in Discord. Ko-fi and ETH keep the mirrors and the workshop running.
+            </p>
+            <div className="row wrap" style={{ gap: 6, marginTop: 10 }}>
+              <button className="ghost sm" onClick={() => void openUrl("https://discord.gg/SUaUrVGj5f").catch(() => {})}>Discord</button>
+              <button className="ghost sm" onClick={() => void openUrl("https://ko-fi.com/ghosty99").catch(() => {})}>Ko-fi</button>
+              <button className="ghost sm" onClick={() => void openUrl("https://etherscan.io/address/0xbBef115aD853236a350EaF04777a2AdB2e7c0317").catch(() => {})}>ETH</button>
+            </div>
           </section>
 
           <p className="hint" style={{ marginTop: 18 }}>

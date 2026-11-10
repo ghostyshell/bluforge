@@ -38,6 +38,21 @@ All notable changes to Keepsake Atelier. Newest first.
 
 ### Added
 
+- **Project site and release mirrors:** a GitHub Pages landing page under `docs/`
+  (single-file HTML, icon, social preview, sitemap, manifest), a logo and
+  download table in the README, and Support links for Discord, Ko-fi and ETH.
+  Builds are published to GoFile (primary) and file.kiwi (backup), with the
+  current links in `docs/downloads.json`.
+- **Release publishing pipeline:** `scripts/publish-release.sh` builds the DMG
+  and CLI tarball, uploads both mirrors, regenerates the README table and the
+  site manifest, commits, pushes and removes the local artifacts when both
+  mirrors succeeded. `scripts/refresh-release-links.sh` is the weekly entry
+  point; `scripts/install-refresh-job.sh` installs it as a launchd user agent
+  (Sunday 03:47 under `caffeinate -i`), so expiring free-tier links are renewed
+  without a manual edit.
+- **Documentation set:** `docs/features.md` plus task-shaped guides for install,
+  ripping, authoring, menus, keys, DVD, TV, burning, MCP and troubleshooting, and
+  `docs/publishing.md` for the release and mirror workflow.
 - **Authored BD-J title menus (opt-in):** `author --menu` adds a real 1920x1080
   menu as first play and top menu. `bdjo.rs` writes `BDMV/BDJO/00000.bdjo`;
   `bdmv::install_menu` rewrites `index.bdmv` (BD-J first play/top menu, one HDMV

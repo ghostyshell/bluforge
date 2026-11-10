@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://ghostyshell.github.io/keepsake-atelier/sitemap.xml

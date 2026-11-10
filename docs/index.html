@@ -1,0 +1,558 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Keepsake Atelier - Blu-ray ripping and authoring for macOS</title>
+<meta name="description" content="Rip, author, verify and burn Blu-ray discs on macOS with native tools. AACS key recovery, UDF 2.50 images, authored BD-J menus, DVD-Video, 1:1 clones and an MCP server.">
+<meta name="theme-color" content="#070b13">
+<link rel="canonical" href="https://ghostyshell.github.io/keepsake-atelier/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Keepsake Atelier">
+<meta property="og:title" content="Keepsake Atelier - Blu-ray ripping and authoring for macOS">
+<meta property="og:description" content="Rip, author, verify and burn Blu-ray discs on macOS with native tooling. No MakeMKV, no subscription.">
+<meta property="og:url" content="https://ghostyshell.github.io/keepsake-atelier/">
+<meta property="og:image" content="https://ghostyshell.github.io/keepsake-atelier/site/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Keepsake Atelier">
+<meta name="twitter:description" content="Blu-ray ripping and authoring for macOS, built on native tools.">
+<meta name="twitter:image" content="https://ghostyshell.github.io/keepsake-atelier/site/og.png">
+<link rel="icon" href="site/icon.png">
+<link rel="apple-touch-icon" href="site/icon.png">
+<link rel="manifest" href="site/site.webmanifest">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #070b13;
+    --ink-2: #0a101d;
+    --panel: #0d1524;
+    --panel-2: #111c2f;
+    --line: rgba(232, 195, 106, .16);
+    --line-soft: rgba(232, 195, 106, .08);
+    --gold: #e8c36a;
+    --gold-deep: #b8893f;
+    --text: #e9eff9;
+    --muted: #95a3ba;
+    --muted-2: #6f7f98;
+    --disc: linear-gradient(135deg, #9ad8ff 0%, #c9a6ff 32%, #ffd7a1 62%, #8ff0d0 100%);
+    --serif: "Fraunces", Georgia, "Times New Roman", serif;
+    --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, monospace;
+    --wrap: 1140px;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background:
+      radial-gradient(1100px 600px at 82% -10%, rgba(232, 195, 106, .10), transparent 60%),
+      radial-gradient(900px 500px at 8% 8%, rgba(120, 160, 255, .06), transparent 55%),
+      var(--ink);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  a { color: inherit; }
+  img { max-width: 100%; display: block; }
+  .wrap { width: min(var(--wrap), calc(100% - 40px)); margin: 0 auto; }
+  .skip {
+    position: absolute; left: -999px; top: 0; z-index: 100;
+    background: var(--gold); color: #151006; padding: 10px 16px; border-radius: 8px;
+  }
+  .skip:focus { left: 12px; top: 12px; }
+
+  /* header */
+  header {
+    position: sticky; top: 0; z-index: 50;
+    background: rgba(7, 11, 19, .82);
+    backdrop-filter: blur(14px);
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .nav { display: flex; align-items: center; gap: 18px; height: 68px; }
+  .brand { display: flex; align-items: center; gap: 12px; text-decoration: none; }
+  .brand img { width: 34px; height: 34px; border-radius: 9px; box-shadow: 0 0 0 1px var(--line), 0 8px 24px rgba(0,0,0,.45); }
+  .brand span { font-family: var(--serif); font-size: 20px; letter-spacing: .01em; }
+  .nav nav { margin-left: auto; display: flex; gap: 26px; }
+  .nav nav a { color: var(--muted); text-decoration: none; font-size: 14px; }
+  .nav nav a:hover, .nav nav a:focus-visible { color: var(--gold); }
+  .nav .gh {
+    border: 1px solid var(--line); border-radius: 999px; padding: 7px 14px;
+    color: var(--text); text-decoration: none; font-size: 13px; white-space: nowrap;
+  }
+  .nav .gh:hover { border-color: var(--gold-deep); color: var(--gold); }
+
+  /* hero */
+  .hero { padding: 86px 0 54px; }
+  .hero-grid { display: grid; grid-template-columns: 1.15fr .85fr; gap: 54px; align-items: center; }
+  .eyebrow {
+    display: inline-flex; align-items: center; gap: 10px;
+    font-family: var(--mono); font-size: 11px; letter-spacing: .18em; text-transform: uppercase;
+    color: var(--gold); margin-bottom: 22px;
+  }
+  .eyebrow::before { content: ""; width: 26px; height: 1px; background: var(--gold-deep); }
+  h1 {
+    font-family: var(--serif); font-weight: 400; font-size: clamp(42px, 6vw, 76px);
+    line-height: 1.02; letter-spacing: -.02em; margin: 0 0 22px;
+  }
+  h1 em { font-style: italic; color: var(--gold); }
+  .lede { font-size: 18px; color: var(--muted); max-width: 560px; margin: 0 0 30px; }
+  .actions { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 22px; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 9px;
+    border-radius: 999px; padding: 12px 20px; font-size: 14px; font-weight: 600;
+    text-decoration: none; border: 1px solid transparent; transition: transform .15s ease, border-color .15s ease, background .15s ease;
+  }
+  .btn:hover { transform: translateY(-1px); }
+  .btn.primary { background: var(--gold); color: #161006; box-shadow: 0 10px 30px rgba(232,195,106,.16); }
+  .btn.primary:hover { background: #f0cf7e; }
+  .btn.ghost { border-color: var(--line); color: var(--text); }
+  .btn.ghost:hover { border-color: var(--gold-deep); color: var(--gold); }
+  .btn svg { width: 16px; height: 16px; }
+  .meta { font-family: var(--mono); font-size: 11.5px; color: var(--muted-2); letter-spacing: .04em; }
+  .meta b { color: var(--gold); font-weight: 500; }
+  .hero-art { position: relative; display: grid; place-items: center; }
+  .hero-art img {
+    width: min(420px, 100%); border-radius: 26px;
+    box-shadow: 0 40px 120px rgba(0,0,0,.6), 0 0 0 1px var(--line);
+  }
+  .hero-art::before {
+    content: ""; position: absolute; inset: 12% 8%; border-radius: 50%;
+    background: radial-gradient(circle, rgba(232,195,106,.22), transparent 62%);
+    filter: blur(34px); z-index: -1;
+  }
+  .disc-ring {
+    position: absolute; bottom: -10px; left: 50%; transform: translateX(-50%);
+    width: 78%; height: 10px; border-radius: 50%;
+    background: radial-gradient(ellipse, rgba(232,195,106,.28), transparent 70%);
+    filter: blur(6px);
+  }
+
+  /* quick strip */
+  .strip { border-top: 1px solid var(--line-soft); border-bottom: 1px solid var(--line-soft); background: rgba(255,255,255,.012); }
+  .strip ul {
+    list-style: none; margin: 0; padding: 18px 0;
+    display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px;
+  }
+  .strip li { font-family: var(--mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted-2); }
+  .strip li b { display: block; color: var(--text); font-family: var(--sans); font-weight: 500; font-size: 13px; letter-spacing: 0; text-transform: none; margin-top: 3px; }
+
+  /* sections */
+  section { padding: 74px 0; }
+  .section-head { display: flex; align-items: end; justify-content: space-between; gap: 30px; margin-bottom: 34px; }
+  .kicker { font-family: var(--mono); font-size: 11px; letter-spacing: .18em; text-transform: uppercase; color: var(--gold); }
+  h2 { font-family: var(--serif); font-weight: 400; font-size: clamp(28px, 3.4vw, 42px); line-height: 1.12; margin: 10px 0 0; letter-spacing: -.01em; }
+  .sub { color: var(--muted); max-width: 420px; font-size: 15px; margin: 0; }
+
+  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  .card {
+    background: linear-gradient(180deg, var(--panel), var(--ink-2));
+    border: 1px solid var(--line-soft); border-radius: 16px; padding: 22px;
+  }
+  .card h3 { margin: 0 0 8px; font-size: 15.5px; font-weight: 600; letter-spacing: .01em; }
+  .card p { margin: 0; color: var(--muted); font-size: 14px; }
+  .card .num { font-family: var(--mono); font-size: 11px; color: var(--gold-deep); letter-spacing: .14em; }
+  .feature-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  .feature {
+    border: 1px solid var(--line-soft); border-radius: 14px; padding: 18px;
+    background: rgba(255,255,255,.014);
+  }
+  .feature h3 { font-size: 14px; margin: 0 0 6px; }
+  .feature p { margin: 0; color: var(--muted); font-size: 13.2px; line-height: 1.55; }
+  .feature .tag { font-family: var(--mono); font-size: 10px; color: var(--gold-deep); letter-spacing: .1em; text-transform: uppercase; display: block; margin-bottom: 10px; }
+
+  /* steps */
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; counter-reset: step; }
+  .step { position: relative; padding: 26px 22px 22px; border: 1px solid var(--line-soft); border-radius: 16px; background: var(--panel); }
+  .step::before {
+    counter-increment: step; content: "0" counter(step);
+    font-family: var(--serif); font-size: 34px; color: var(--gold); opacity: .55;
+  }
+  .step h3 { margin: 8px 0 6px; font-size: 16px; }
+  .step p { margin: 0; color: var(--muted); font-size: 14px; }
+
+  /* figure */
+  .figure { margin: 0 auto; max-width: 760px; border: 1px solid var(--line-soft); border-radius: 18px; overflow: hidden; background: #05080f; }
+  .figure img { width: 100%; }
+  .figure figcaption { padding: 13px 18px; font-size: 12.5px; color: var(--muted-2); border-top: 1px solid var(--line-soft); font-family: var(--mono); }
+
+  /* downloads */
+  .downloads { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+  .artifact {
+    min-width: 0;
+    border: 1px solid var(--line); border-radius: 16px; padding: 20px;
+    background: linear-gradient(180deg, rgba(232,195,106,.05), rgba(255,255,255,.01));
+  }
+  .artifact h3 { margin: 0 0 2px; font-size: 15px; }
+  .artifact .file { font-family: var(--mono); font-size: 11.5px; color: var(--muted-2); word-break: break-all; }
+  .artifact .row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .artifact a {
+    text-decoration: none; font-size: 12.5px; font-weight: 600; padding: 8px 12px;
+    border-radius: 8px; border: 1px solid var(--line); color: var(--text);
+  }
+  .artifact a.primary { background: var(--gold); color: #161006; border-color: transparent; }
+  .artifact a:hover { border-color: var(--gold-deep); color: var(--gold); }
+  .artifact a.primary:hover { background: #f0cf7e; color: #161006; }
+  .artifact .hash { margin-top: 10px; font-family: var(--mono); font-size: 10.5px; color: var(--muted-2); word-break: break-all; }
+  .download-note { margin-top: 14px; font-size: 12.5px; color: var(--muted-2); }
+  .download-note code { font-family: var(--mono); color: var(--muted); }
+
+  /* support */
+  .support { display: grid; grid-template-columns: 1.2fr .9fr .9fr; gap: 16px; }
+  .support .card { padding: 22px; min-width: 0; }
+  .support h3 { font-family: var(--serif); font-weight: 400; font-size: 20px; margin: 0 0 6px; }
+  .support p { font-size: 13.5px; }
+  .support .btn { margin-top: 14px; }
+  .addr {
+    margin-top: 14px; display: flex; gap: 8px; align-items: center;
+    background: #070b13; border: 1px solid var(--line-soft); border-radius: 8px; padding: 9px 10px;
+  }
+  .addr code { flex: 1 1 auto; min-width: 0; font-family: var(--mono); font-size: 10.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .addr button { margin-left: auto; background: none; border: 0; color: var(--gold); cursor: pointer; font-size: 11px; font-family: var(--mono); }
+
+  /* faq */
+  details { border-bottom: 1px solid var(--line-soft); padding: 16px 0; }
+  details summary { cursor: pointer; font-weight: 500; font-size: 15px; list-style: none; display: flex; justify-content: space-between; gap: 20px; }
+  details summary::-webkit-details-marker { display: none; }
+  details summary::after { content: "+"; color: var(--gold); font-family: var(--mono); }
+  details[open] summary::after { content: "-"; }
+  details p { color: var(--muted); font-size: 14px; margin: 12px 0 0; max-width: 760px; }
+
+  footer { border-top: 1px solid var(--line-soft); padding: 40px 0 54px; }
+  .foot { display: flex; flex-wrap: wrap; gap: 24px; justify-content: space-between; align-items: start; }
+  .foot .brand img { width: 28px; height: 28px; }
+  .foot .brand span { font-size: 17px; }
+  .foot p { margin: 8px 0 0; color: var(--muted-2); font-size: 12.5px; max-width: 420px; }
+  .foot nav { display: flex; flex-wrap: wrap; gap: 18px; }
+  .foot nav a { color: var(--muted); text-decoration: none; font-size: 13px; }
+  .foot nav a:hover { color: var(--gold); }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+  @media (max-width: 960px) {
+    .hero-grid { grid-template-columns: 1fr; }
+    .hero-art { order: -1; }
+    .hero-art img { width: min(300px, 70%); }
+    .feature-grid { grid-template-columns: repeat(2, 1fr); }
+    .strip ul { grid-template-columns: repeat(3, 1fr); }
+    .grid-3, .steps, .downloads, .support { grid-template-columns: 1fr; }
+    .nav nav { display: none; }
+  }
+  @media (max-width: 540px) {
+    .feature-grid { grid-template-columns: 1fr; }
+    .strip ul { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    * { transition: none !important; }
+  }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header>
+  <div class="wrap nav">
+    <a class="brand" href="./">
+      <img src="site/icon.png" alt="">
+      <span>Keepsake Atelier</span>
+    </a>
+    <nav aria-label="Primary">
+      <a href="#features">Features</a>
+      <a href="#workflow">Workflow</a>
+      <a href="#downloads">Downloads</a>
+      <a href="#guides">Guides</a>
+      <a href="#support">Support</a>
+    </nav>
+    <a class="gh" href="https://github.com/ghostyshell/keepsake-atelier">GitHub</a>
+  </div>
+</header>
+
+<main id="main">
+  <section class="hero">
+    <div class="wrap hero-grid">
+      <div>
+        <p class="eyebrow">Blu-ray ripping and authoring for macOS</p>
+        <h1>Your discs, kept like they <em>matter</em>.</h1>
+        <p class="lede">
+          Rip, author, verify and burn Blu-ray discs with macOS's own tooling.
+          Native AACS key recovery, UDF 2.50 images, authored BD-J menus, DVD-Video
+          and 1:1 clones. No MakeMKV, no subscription.
+        </p>
+        <div class="actions" id="hero-actions">
+          <a class="btn primary" href="#downloads">Download for macOS</a>
+          <a class="btn ghost" href="#guides">Read the guides</a>
+          <a class="btn ghost" href="https://discord.gg/SUaUrVGj5f">Discord</a>
+        </div>
+        <p class="meta" id="hero-meta">Apple Silicon &middot; macOS 12+ &middot; <b>MIT</b> &middot; builds on GoFile and file.kiwi</p>
+      </div>
+      <div class="hero-art">
+        <img src="site/icon.png" alt="Keepsake Atelier app icon: a small blue keepsake box holding a Blu-ray disc">
+        <span class="disc-ring" aria-hidden="true"></span>
+      </div>
+    </div>
+  </section>
+
+  <div class="strip">
+    <div class="wrap">
+      <ul>
+        <li>Keys<b>Native AACS1 + AACS2</b></li>
+        <li>Author<b>UDF 2.50, native</b></li>
+        <li>Menus<b>Authored BD-J</b></li>
+        <li>Verify<b>Navigation + clips</b></li>
+        <li>Burn<b>hdiutil, guarded</b></li>
+        <li>Automate<b>MCP + CLI</b></li>
+      </ul>
+    </div>
+  </div>
+
+  <section id="features">
+    <div class="wrap">
+      <div class="section-head">
+        <div>
+          <p class="kicker">What it does</p>
+          <h2>One workshop for the whole disc.</h2>
+        </div>
+        <p class="sub">Inspect first, rip losslessly, author something new, then check it before it touches a burner.</p>
+      </div>
+      <div class="feature-grid">
+        <article class="feature"><span class="tag">Inspect</span><h3>See the whole disc</h3><p>Every title, playlist, clip, duration, chapter mark, stream and AACS state, read through libbluray.</p></article>
+        <article class="feature"><span class="tag">Keys</span><h3>No MakeMKV required</h3><p>Recover AACS1 volume and disc keys, and derive AACS2 unit keys, from the disc and the drive.</p></article>
+        <article class="feature"><span class="tag">Rip</span><h3>Lossless remux</h3><p>H.264, HEVC, VC-1, MPEG-2 with AC-3, E-AC-3, DTS, TrueHD, FLAC and PGS subtitles into MKV or MP4.</p></article>
+        <article class="feature"><span class="tag">Encode</span><h3>x264, x265, VideoToolbox</h3><p>Software or hardware encoding, 8-bit or 10-bit, with sensible default track selection.</p></article>
+        <article class="feature"><span class="tag">Author</span><h3>BDMV and ISOs</h3><p>One title or many, a BDMV folder or a native UDF 2.50 image made with newfs_udf and hdiutil.</p></article>
+        <article class="feature"><span class="tag">Menus</span><h3>A real BD-J menu</h3><p>An authored 1080p title menu, one row per title, with a background, arrow keys, digits and mouse.</p></article>
+        <article class="feature"><span class="tag">DVD</span><h3>VIDEO_TS too</h3><p>List and rip DVD titles through ffmpeg's dvdvideo demuxer, keeping MPEG-2 and AC-3 or DTS.</p></article>
+        <article class="feature"><span class="tag">TV</span><h3>Episode splitting</h3><p>Split a disc into per-episode files with SxxExx names, OP/ED detection and TMDB metadata.</p></article>
+        <article class="feature"><span class="tag">Copy</span><h3>1:1 clone</h3><p>Clone the encrypted structure bit for bit, or export a decrypted ISO or folder when you want plain files.</p></article>
+        <article class="feature"><span class="tag">Check</span><h3>Verify before you burn</h3><p>Walk the navigation, every PlayPL, every playlist and every clip, plus the BDJO, JAR and menu rows.</p></article>
+        <article class="feature"><span class="tag">Burn</span><h3>Native and guarded</h3><p>hdiutil burn by default, growisofs when you name a device. Dry run first, confirmation required.</p></article>
+        <article class="feature"><span class="tag">Automate</span><h3>MCP and a real CLI</h3><p>Every capability is a command and an MCP tool, so an assistant can drive the whole workflow.</p></article>
+      </div>
+    </div>
+  </section>
+
+  <section id="workflow">
+    <div class="wrap">
+      <div class="section-head">
+        <div>
+          <p class="kicker">The loop</p>
+          <h2>Disc in, keepsake out.</h2>
+        </div>
+        <p class="sub">Nothing is written until you say so. Every destructive step has a dry run, a confirmation or both.</p>
+      </div>
+      <div class="steps">
+        <article class="step"><h3>Know what is on it</h3><p>Insert the disc, read the title map, pick the main feature and look at the streams before a single byte moves.</p></article>
+        <article class="step"><h3>Rip or build</h3><p>Remux losslessly, encode for size, or take finished files and author a new disc with a menu and chapter marks.</p></article>
+        <article class="step"><h3>Verify, then burn</h3><p>Run the tree check, mount the ISO to read it back, and only then hand it to the writer after confirmation.</p></article>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <div class="section-head">
+        <div>
+          <p class="kicker">Authored menu</p>
+          <h2>A menu that is actually there.</h2>
+        </div>
+        <p class="sub">One generic Xlet reads the disc's own title list at runtime. No per-disc Java compilation.</p>
+      </div>
+      <figure class="figure">
+        <img src="site/assets/menu.png" alt="The authored BD-J menu showing First Episode, Second Episode and Third Episode with the first row highlighted">
+        <figcaption>authored BD-J menu, rendered by the Xlet and captured from a real JVM run</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section id="downloads">
+    <div class="wrap">
+      <div class="section-head">
+        <div>
+          <p class="kicker">Downloads</p>
+          <h2>Take a build.</h2>
+        </div>
+        <p class="sub" id="downloads-updated">Builds are mirrored to GoFile and file.kiwi. Links are refreshed weekly, because free tiers expire.</p>
+      </div>
+      <div class="downloads" id="downloads-grid" aria-live="polite">
+        <div class="artifact">
+          <h3>macOS (Apple Silicon)</h3>
+          <p class="file">Keepsake-Atelier-0.1.0-arm64.dmg</p>
+          <p class="file">Universal builds are not published yet.</p>
+        </div>
+        <div class="artifact">
+          <h3>Source</h3>
+          <p class="file">cargo build --release</p>
+          <div class="row"><a class="primary" href="https://github.com/ghostyshell/keepsake-atelier">Build from source</a></div>
+        </div>
+      </div>
+      <p class="download-note">
+        The DMG is not notarized. Open it once with right-click then Open, or run
+        <code>xattr -dr com.apple.quarantine "/Applications/Keepsake Atelier.app"</code>.
+        Read <a href="https://github.com/ghostyshell/keepsake-atelier/blob/main/docs/guides/install.md">the install guide</a>.
+      </p>
+    </div>
+  </section>
+
+  <section id="guides">
+    <div class="wrap">
+      <div class="section-head">
+        <div>
+          <p class="kicker">Guides</p>
+          <h2>Start where you are.</h2>
+        </div>
+        <p class="sub">Short, task-shaped pages. Every one ends with the exact commands and the checks to run.</p>
+      </div>
+      <div class="grid-3">
+        <article class="card"><span class="num">01</span><h3><a href="https://github.com/ghostyshell/keepsake-atelier/blob/main/docs/guides/install.md">Install and connect a drive</a></h3><p>Gatekeeper, the first launch, and what doctor should say.</p></article>
+        <article class="card"><span class="num">02</span><h3><a href="https://github.com/ghostyshell/keepsake-atelier/blob/main/docs/guides/rip.md">Rip a movie</a></h3><p>Pick the main title, choose tracks, remux or encode, and find the file.</p></article>
+        <article class="card"><span class="num">03</span><h3><a href="https://github.com/ghostyshell/keepsake-atelier/blob/main/docs/guides/author.md">Author a disc</a></h3><p>One title or a season, a folder or an ISO, with chapters kept.</p></article>
+        <article class="card"><span class="num">04</span><h3><a href="https://github.com/ghostyshell/keepsake-atelier/blob/main/docs/guides/menus.md">Give it a menu</a></h3><p>Turn on the BD-J menu, choose a background, and verify the rows.</p></article>
+        <article class="card"><span class="num">05</span><h3><a href="https://github.com/ghostyshell/keepsake-atelier/blob/main/docs/guides/keys.md">Keys and AACS</a></h3><p>KEYDB, native recovery, LibreDrive limits and what to do when it fails.</p></article>
+        <article class="card"><span class="num">06</span><h3><a href="https://github.com/ghostyshell/keepsake-atelier/blob/main/docs/guides/burn.md">Burn and verify</a></h3><p>Size query, dry run, the real write, and the read-back check.</p></article>
+        <article class="card"><span class="num">07</span><h3><a href="https://github.com/ghostyshell/keepsake-atelier/blob/main/docs/guides/dvd.md">DVD-Video</a></h3><p>List the titles and copy MPEG-2 with AC-3 or DTS.</p></article>
+        <article class="card"><span class="num">08</span><h3><a href="https://github.com/ghostyshell/keepsake-atelier/blob/main/docs/guides/tv.md">TV and anime</a></h3><p>Episode split, naming, openings and endings, and TMDB.</p></article>
+        <article class="card"><span class="num">09</span><h3><a href="https://github.com/ghostyshell/keepsake-atelier/blob/main/docs/guides/mcp.md">Drive it with an assistant</a></h3><p>Turn on the MCP server and hand the workflow to Claude or Cursor.</p></article>
+      </div>
+    </div>
+  </section>
+
+  <section id="support">
+    <div class="wrap">
+      <div class="section-head">
+        <div>
+          <p class="kicker">Support</p>
+          <h2>Keep the workshop open.</h2>
+        </div>
+        <p class="sub">The app is MIT and stays free. If it saved you a weekend, there are three ways to help.</p>
+      </div>
+      <div class="support">
+        <div class="card">
+          <h3>Join the Discord</h3>
+          <p>Disc rips that will not start, a drive that will not unlock, a menu that needs a second pair of eyes. Bring the log.</p>
+          <a class="btn ghost" href="https://discord.gg/SUaUrVGj5f">discord.gg/SUaUrVGj5f</a>
+        </div>
+        <div class="card">
+          <h3>Buy a coffee</h3>
+          <p>One-off support through Ko-fi. No subscription, no tiers, no locked features.</p>
+          <a class="btn ghost" href="https://ko-fi.com/ghosty99">ko-fi.com/ghosty99</a>
+        </div>
+        <div class="card">
+          <h3>Send ETH</h3>
+          <p>Ethereum mainnet. Copy the address or scan it in any wallet.</p>
+          <div class="addr">
+            <code id="eth">0xbBef115aD853236a350EaF04777a2AdB2e7c0317</code>
+            <button type="button" id="copy-eth" aria-label="Copy the Ethereum address">Copy</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="faq">
+    <div class="wrap">
+      <div class="section-head">
+        <div>
+          <p class="kicker">Questions</p>
+          <h2>The short answers.</h2>
+        </div>
+      </div>
+      <details><summary>Does it need MakeMKV?</summary><p>No. Native AACS key recovery reads the volume ID from the drive and derives the key from the disc's MKB. MakeMKV dumps are supported as a fallback but are not required.</p></details>
+      <details><summary>Why does native key recovery fail on my drive?</summary><p>The volume ID needs a LibreDrive vendor read. Stock firmware on many drives does not provide it. libaacs with a KEYDB entry still decrypts, and the app says which path it used.</p></details>
+      <details><summary>Are the authored menus verified?</summary><p>The BDJO, the JAR and the menu rows are checked, and the Xlet is run in a real JVM harness. Hardware playback is still untested, so menus are opt-in with <code>author --menu</code>.</p></details>
+      <details><summary>Can it burn?</summary><p>Yes, with macOS's own <code>hdiutil burn</code>, or growisofs when you pass a device. Dry run is the default and a write needs an explicit confirmation. A blank BD-RE or BD-R is required.</p></details>
+      <details><summary>Where are keys and settings stored?</summary><p>Under <code>~/Library/Application Support/keepsake-atelier</code>. The KEYDB file stays local and is never uploaded.</p></details>
+      <details><summary>Is there a Windows or Linux build?</summary><p>Not yet. The device and drive layer is macOS-specific; everything above it is portable Rust.</p></details>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap foot">
+    <div>
+      <a class="brand" href="./">
+        <img src="site/icon.png" alt="">
+        <span>Keepsake Atelier</span>
+      </a>
+      <p>Blu-ray ripping and authoring for macOS. MIT licensed. Not affiliated with any disc, studio or drive vendor.</p>
+    </div>
+    <nav aria-label="Footer">
+      <a href="https://github.com/ghostyshell/keepsake-atelier">GitHub</a>
+      <a href="https://github.com/ghostyshell/keepsake-atelier/blob/main/docs/features.md">Features</a>
+      <a href="https://github.com/ghostyshell/keepsake-atelier/blob/main/docs/guides/index.md">Guides</a>
+      <a href="https://github.com/ghostyshell/keepsake-atelier/blob/main/docs/roadmap.md">Roadmap</a>
+      <a href="https://github.com/ghostyshell/keepsake-atelier/blob/main/CONTRIBUTING.md">Contributing</a>
+      <a href="https://discord.gg/SUaUrVGj5f">Discord</a>
+      <a href="https://ko-fi.com/ghosty99">Ko-fi</a>
+      <a href="https://etherscan.io/address/0xbBef115aD853236a350EaF04777a2AdB2e7c0317">ETH</a>
+    </nav>
+  </div>
+</footer>
+
+<script>
+  (function () {
+    var yearEl = document.getElementById("year");
+    if (yearEl) yearEl.textContent = new Date().getFullYear();
+
+    var copy = document.getElementById("copy-eth");
+    if (copy) {
+      copy.addEventListener("click", function () {
+        var text = document.getElementById("eth").textContent.trim();
+        navigator.clipboard.writeText(text).then(function () {
+          copy.textContent = "Copied";
+          setTimeout(function () { copy.textContent = "Copy"; }, 1600);
+        });
+      });
+    }
+
+    function el(tag, cls, text) {
+      var n = document.createElement(tag);
+      if (cls) n.className = cls;
+      if (text) n.textContent = text;
+      return n;
+    }
+
+    fetch("downloads.json?v=" + Date.now(), { cache: "no-store" })
+      .then(function (r) { if (!r.ok) throw new Error("no manifest"); return r.json(); })
+      .then(function (data) {
+        if (!data || !data.artifacts || !data.artifacts.length) return;
+        var grid = document.getElementById("downloads-grid");
+        grid.innerHTML = "";
+        data.artifacts.forEach(function (a) {
+          var card = el("div", "artifact");
+          card.appendChild(el("h3", null, a.label || a.name));
+          card.appendChild(el("p", "file", a.name));
+          var row = el("div", "row");
+          if (a.gofile) {
+            var g = el("a", "primary", "GoFile");
+            g.href = a.gofile; g.rel = "noopener"; g.target = "_blank";
+            row.appendChild(g);
+          }
+          if (a.kiwi) {
+            var k = el("a", null, "file.kiwi backup");
+            k.href = a.kiwi; k.rel = "noopener"; k.target = "_blank";
+            row.appendChild(k);
+          }
+          card.appendChild(row);
+          if (a.sha256) {
+            var h = el("p", "hash", "sha256 " + a.sha256);
+            card.appendChild(h);
+          }
+          if (a.size) {
+            card.appendChild(el("p", "hash", a.size + (a.version ? "  /  v" + a.version : "")));
+          }
+          grid.appendChild(card);
+        });
+        var note = document.getElementById("downloads-updated");
+        if (note && data.updated) {
+          note.textContent = "Last refreshed " + data.updated + ". GoFile primary, file.kiwi backup. Links are checked weekly.";
+        }
+      })
+      .catch(function () { /* keep the static fallback */ });
+  })();
+</script>
+</body>
+</html>

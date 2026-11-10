@@ -9,3 +9,10 @@ dist
 vendor/
 app/src-tauri/resources/ffmpeg
 app/src-tauri/resources/ffprobe
+
+# release publishing (scripts/publish-release.sh)
+.release-*
+.release-publish.lock
+.release-refresh.log
+.gofile-io-token
+dist/
