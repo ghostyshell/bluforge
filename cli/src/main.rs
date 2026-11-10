@@ -1330,10 +1330,7 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
                 let dir = bluforge_core::menu::store_dir();
                 let tpl = bluforge_core::menu::load(&dir, template)?;
                 let target_doc = bluforge_core::menu::parse(target, Some(&keys::keydb_path()))?;
-                let name = save
-                    .clone()
-                    .unwrap_or_else(|| format!("{template} on target"));
-                let doc = bluforge_core::menu::apply(&tpl, &target_doc, &name);
+                let doc = bluforge_core::menu::apply(&tpl, &target_doc, template);
                 if let Some(save) = save {
                     let path = bluforge_core::menu::save(&dir, save, &doc)?;
                     eprintln!("saved template {}", path.display());

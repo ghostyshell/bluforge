@@ -381,7 +381,7 @@ fn run_tool(name: &str, args: Value) -> Result<Value, String> {
                 bluforge_core::menu::parse(Path::new(&target), Some(&keys::keydb_path()))
                     .map_err(|e| e.to_string())?;
             let save = args.get("save").and_then(|v| v.as_str());
-            let doc = bluforge_core::menu::apply(&tpl, &target_doc, save.unwrap_or(&name));
+            let doc = bluforge_core::menu::apply(&tpl, &target_doc, &name);
             if let Some(save) = save {
                 bluforge_core::menu::save(&dir, save, &doc).map_err(|e| e.to_string())?;
             }
