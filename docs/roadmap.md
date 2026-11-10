@@ -126,13 +126,27 @@ What the app covers today, against the ripping-suite feature set:
 | Disc menu parse, edit, save, apply | done |
 | Native AACS key derivation, BD+ VM | done |
 | Cover art | done |
-| DVD (`VIDEO_TS`) ripping | not started |
+| DVD (`VIDEO_TS`) ripping | blocked: the ffmpeg build has no `dvdvideo` demuxer |
 | 1:1 encrypted disc clone | done |
 | BD-25 / BD-50 splitting | not started |
 | Burning to disc | not started |
 | Cinavia detection/removal | not implemented |
 | UHD/AACS2 unit-key workflow | partial (core stores unit keys, no UI) |
 | Batch queue (one job at a time) | done |
+
+### What is blocked, and on what
+
+- **DVD ripping.** Homebrew's ffmpeg 9.0.2 has no `dvdvideo` demuxer and no
+  libdvdread/libdvdnav, so `ffmpeg -f dvdvideo` cannot read a `VIDEO_TS` tree.
+  Options: require a custom ffmpeg build with libdvdread/libdvdnav, or read
+  IFOs/VOBs through a libdvdread shim. Both are a separate project.
+- **Authored menus.** Needs an HDMV IG stream encoder or a BD-J application;
+  neither toolchain is present and there is no player to verify against.
+- **Multi-title authoring and BD-25/50 splitting.** tsMuxeR writes one playlist
+  per disc. Multiple titles need our own index.bdmv/MovieObject.bdmv writer (we
+  parse them for menu documents already, but do not write them).
+- **Burning.** macOS has no open Blu-ray burning stack installed; that path also
+  needs a writer drive.
 
 ## Deliberately out of scope
 
