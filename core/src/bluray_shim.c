@@ -10,6 +10,12 @@
 #include <strings.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#ifdef _WIN32
+#  include <direct.h>
+#  define bf_mkdir(path) _mkdir(path)
+#else
+#  define bf_mkdir(path) mkdir(path, 0755)
+#endif
 
 /* libbluray 1.5 added dynamic range, chapter names and Dolby Vision streams.
    Distro packages still ship 1.3.x, so degrade cleanly instead of requiring a
@@ -301,7 +307,7 @@ static int bf_export_dir(bf_disc_t *d, const char *rel, const char *dest,
         BD_DIR_H *sub = bd_open_dir(d->bd, child);
         if (sub) {
             sub->close(sub);
-            mkdir(dchild, 0755);
+            bf_mkdir(dchild);
             rc |= bf_export_dir(d, child, dchild, depth + 1, files);
         } else {
             if (bf_copy_file_dec(d, child, dchild) != 0) rc = -1;
@@ -315,7 +321,7 @@ static int bf_export_dir(bf_disc_t *d, const char *rel, const char *dest,
 /* Export the whole decrypted disc tree to dest_dir. 0 on success. */
 int bf_export_decrypted(bf_disc_t *d, const char *dest_dir, long *out_files) {
     struct stat st;
-    if (stat(dest_dir, &st) != 0) mkdir(dest_dir, 0755);
+    if (stat(dest_dir, &st) != 0) bf_mkdir(dest_dir);
 
     /* The directory opener is source-dependent: the stdio reader for a mounted
      * volume wants ".", while libbluray's UDF reader (used for ISO images and
