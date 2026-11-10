@@ -73,6 +73,42 @@ Environment switches:
 - `SKIP_PUSH=1` - commit locally and stop before `git push`.
 - `KEEP_DIST=1` - do not delete `dist/` after a successful upload.
 
+## Cross-platform artifacts
+
+The macOS arm64 DMG and CLI are built locally. Intel macOS, Linux and Windows are
+built by the GitHub Actions matrix:
+
+```sh
+gh workflow run build.yml -f platforms=all       # or macos, linux, windows
+gh run watch
+gh run download <run-id> -D /tmp/ci-all
+```
+
+The workflow stores one artifact directory per platform:
+
+- `macos-arm64` / `macos-x64`: `Keepsake-Atelier-<v>-arm64.dmg`,
+  `Keepsake-Atelier-<v>-x64.dmg`, and a `macos-<arch>` CLI tarball.
+- `linux-x64`: `keepsake-atelier-<v>-linux-x64.tar.gz`.
+- `windows-x64`: `keepsake-atelier-<v>-windows-x64.zip` (exe plus the MSYS2
+  runtime DLLs).
+
+Publish a downloaded set without rebuilding the macOS arm64 side:
+
+```sh
+mkdir -p /tmp/ci-flat
+find /tmp/ci-all -type f \( -name '*.dmg' -o -name '*.tar.gz' -o -name '*.zip' \) \
+  -exec cp {} /tmp/ci-flat/ \;
+scripts/publish-release.sh --artifacts /tmp/ci-flat
+```
+
+`--artifacts` skips the build, uploads each file, rewrites the manifest and the
+README, commits and pushes. The patcher merges by **artifact identity** (kind,
+OS, arch), so a same-version row it did not rebuild survives; the weekly macOS
+job cannot drop the Linux or Windows links. Older-version rows are discarded.
+
+The local weekly job still rebuilds the macOS arm64 DMG and CLI. Run the
+workflow again when you bump the version so every platform is regenerated.
+
 ## The weekly refresh
 
 ```sh
