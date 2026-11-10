@@ -136,33 +136,22 @@ MakeMKV does four things; three are now ours:
 - **Media key** — ours (device keys + MKB, offline). MakeMKV not involved.
 - **VUK** — ours (`AES-G(MK, VID)`). MakeMKV not involved.
 - **RDK / bus encryption** — ours (read from `discatt.dat`, cached where libaacs
-  looks; `SDF_STOP` keeps MakeMKV from hiding it by enabling LibreDrive).
-- **VID** — still needs a non-revoked host certificate to authenticate. MakeMKV
-  rides on *its own* certificate here, and that certificate is not extractable
-  from the binaries as raw bytes: MakeMKV obfuscates its key tables (neither the
-  public device keys nor the host cert appear verbatim, and no single-byte-XOR
-  variant does either). So `makemkvcon` is kept purely as a VID oracle.
+  looks; `SDF_STOP` keeps MakeMKV from hiding it).
+- **VID** — still needs something to authenticate or bypass AACS.
 
-If/when a host cert newer than this drive's revocation list is available, put it
-in the KEYDB header and `bluforge keys native` derives everything itself and even
-`makemkvcon` goes away.
+Correction to an earlier assumption: MakeMKV does **not** ship a host
+certificate. Its own log says `Using LibreDrive mode (v06.3 ...)`: it drives the
+disc through its own IO layer (`libdriveio`) in vendor/LibreDrive mode and reads
+what it needs directly, which is why revoked certificates do not affect it. That
+is also why scanning its process for a 92-byte AACS host cert finds nothing that
+verifies, and why its `sdf.bin` (raw-deflate + preset dictionary) holds only
+drive-tool scripts.
 
-### What we established about extracting MakeMKV's certificate
-
-- MakeMKV's `sdf.bin` (fetched from `makemkv.com/svq/sdf.bin`) is a container
-  whose members are **raw-deflate streams with a ~19 KB preset dictionary**
-  (`inflateSetDictionary`). Hooking `inflate` recovers the plaintext, but it is
-  drive-tool scripts, not key material.
-- `makemkvcon` is ad-hoc signed (no hardened runtime), so DYLD injection works.
-  Scanning the live process for a 92-byte AACS host cert finds nothing that
-  verifies, i.e. the certificate is not resident in plaintext.
-- `sdftool dump user` reads the drive's user NVRAM, but the host revocation list
-  is not in it (it lives elsewhere in flash), so it cannot be reset in software.
-
-A host certificate is a licensed AACS credential. Extracting MakeMKV's was
-previously declined for licence/anti-circumvention reasons; set
-`BLUFORGE_HOST_CERT` / `BLUFORGE_HOST_PRIV` (hex) to use a certificate you are
-licensed to use, and the native path needs nothing else.
+So a complete replacement of the VID step means reimplementing libdriveio's
+vendor-mode reads (enable LibreDrive, read raw metadata incl. the VID), not
+extracting a key. Until then `makemkvcon` is kept purely as a VID oracle, and
+`BLUFORGE_HOST_CERT` / `BLUFORGE_HOST_PRIV` let a licensed certificate take its
+place on drives/certs where that still works.
 
 ## Traps seen in practice
 
