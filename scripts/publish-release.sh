@@ -185,6 +185,7 @@ else
   else
     log "removing local build artifacts"
     rm -rf "$DIST"
+    rm -f "$DMG_SRC"
   fi
   notify "Keepsake ${V} download links refreshed"
 fi
