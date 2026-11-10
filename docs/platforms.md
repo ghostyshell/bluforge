@@ -27,7 +27,8 @@ LibreDrive vendor read.
 
 - **Apple Silicon:** the normal download.
 - **Intel:** built in CI on an Intel runner (`x86_64-apple-darwin`). The same
-  source, a separate DMG.
+  source, a separate DMG. The published DMG was checked: x86_64 executable,
+  bundled ffmpeg/ffprobe, the menu JAR and the app resources are present.
 
 ## Linux
 
@@ -39,7 +40,8 @@ cargo build --release -p keepsake-atelier
 ./target/release/keepsake-atelier doctor
 ```
 
-What works today, verified on Debian 12 (arm64) against an authored test disc:
+What works today, verified on Debian 12 (arm64) against an authored test disc
+and with the x86_64 CI artifact under an Ubuntu 22.04 container:
 
 - `disc`, `verify`, `menu parse` and `rip` from a mounted volume, BDMV folder
   or ISO.
@@ -68,8 +70,9 @@ rustup target add x86_64-pc-windows-gnu
 cargo build --release --target x86_64-pc-windows-gnu -p keepsake-atelier
 ```
 
-The release zip bundles the MSYS2 runtime DLLs the binary needs. Unpack it and
-run `keepsake-atelier.exe doctor`.
+The release zip bundles the MSYS2 runtime DLLs the binary needs, including
+libbluray and its dependencies. Unpack it and run
+`keepsake-atelier.exe doctor`.
 
 What works: reading an ISO, BDMV folder or authored disc image; `disc`,
 `verify`, `menu`, `rip` and `author` to a folder, provided ffmpeg and tsMuxeR
