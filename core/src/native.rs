@@ -108,6 +108,7 @@ pub fn from_makemkv(
         makemkvcon().ok_or_else(|| CoreError::Keys("MakeMKV (makemkvcon) not found".into()))?;
     let header = read_header(&keys::keydb_path())?;
     let mkb = read_mkb(mount)?;
+    let (ukf, aacs2) = read_unit_key_file(mount);
     let id = keys::disc_id_for_path(mount).ok_or_else(|| {
         CoreError::Disc(format!("no AACS/Unit_Key_RO.inf under {}", mount.display()))
     })?;
@@ -136,6 +137,7 @@ pub fn from_makemkv(
     }
     let mut vuk = [0u8; 16];
     unsafe { bf_aesg(mk.as_ptr(), vid.as_ptr(), vuk.as_mut_ptr()) };
+    let unit_keys = unit_keys_from(ukf.as_deref(), aacs2, &vuk);
 
     let name = mount
         .file_name()
@@ -148,6 +150,7 @@ pub fn from_makemkv(
             vid: hexstr(vid),
             media_key: hexstr(&mk),
             vuk: hexstr(&vuk),
+            unit_keys,
         },
         dc,
         rdk,
@@ -172,7 +175,7 @@ pub fn from_makemkv_and_store(mount: &Path) -> Result<(NativeKey, bool), CoreErr
             media_key: Some(key.media_key.clone()),
             volume_id: Some(key.vid.clone()),
             vuk: Some(key.vuk.clone()),
-            unit_keys: Vec::new(),
+            unit_keys: key.unit_keys.clone(),
             note: Some("from-makemkv".into()),
         };
         keys::upsert_at(&path, &entry)?;
@@ -220,6 +223,9 @@ pub struct NativeKey {
     pub vid: String,
     pub media_key: String,
     pub vuk: String,
+    /// AACS2/UHD CPS unit keys, derived from the disc's Unit_Key_RO.inf.
+    #[serde(default)]
+    pub unit_keys: Vec<String>,
 }
 
 fn hexbytes(s: &str) -> Option<Vec<u8>> {
@@ -239,6 +245,54 @@ fn hexbytes(s: &str) -> Option<Vec<u8>> {
 
 fn hexstr(b: &[u8]) -> String {
     b.iter().map(|x| format!("{x:02x}")).collect()
+}
+
+/// The disc's `Unit_Key_RO.inf` and whether `Content000.cer` marks AACS2.
+fn read_unit_key_file(mount: &Path) -> (Option<Vec<u8>>, bool) {
+    let ukf = std::fs::read(mount.join("AACS").join("Unit_Key_RO.inf")).ok();
+    let aacs2 = std::fs::read(mount.join("AACS").join("Content000.cer"))
+        .ok()
+        .and_then(|d| d.first().copied())
+        .map(|b| b == 0x10)
+        .unwrap_or(false);
+    (ukf, aacs2)
+}
+
+/// Decrypt the CPS unit keys from `Unit_Key_RO.inf` with the VUK.
+///
+/// The file stores encrypted unit keys; each one is AES-128 ECB decrypted with
+/// the VUK. AACS1 records are 48 bytes apart, AACS2 64 (16 extra metadata bytes).
+fn unit_keys_from(ukf: Option<&[u8]>, aacs2: bool, vuk: &[u8; 16]) -> Vec<String> {
+    use aes::cipher::{BlockDecrypt, KeyInit};
+
+    let Some(d) = ukf else {
+        return Vec::new();
+    };
+    if d.len() < 20 {
+        return Vec::new();
+    }
+    let count_pos = u32::from_be_bytes([d[0], d[1], d[2], d[3]]) as usize;
+    if count_pos + 2 > d.len() {
+        return Vec::new();
+    }
+    let num = u16::from_be_bytes([d[count_pos], d[count_pos + 1]]) as usize;
+    if num == 0 {
+        return Vec::new();
+    }
+    let stride = if aacs2 { 64 } else { 48 };
+    let first = count_pos + 48;
+    if first + (num - 1) * stride + 16 > d.len() {
+        return Vec::new();
+    }
+    let cipher = aes::Aes128::new(vuk.into());
+    let mut keys = Vec::with_capacity(num);
+    for i in 0..num {
+        let off = first + i * stride;
+        let mut block = aes::Block::clone_from_slice(&d[off..off + 16]);
+        cipher.decrypt_block(&mut block);
+        keys.push(hexstr(&block));
+    }
+    keys
 }
 
 /// Value of `KEY` in a `| TAG | KEY 0x.. | ...` KEYDB header line.
@@ -353,6 +407,7 @@ pub fn derive(mount: &Path) -> Result<NativeKey, CoreError> {
     let keydb = keys::keydb_path();
     let header = read_header(&keydb)?;
     let mkb = read_mkb(mount)?;
+    let (ukf, aacs2) = read_unit_key_file(mount);
 
     let id = keys::disc_id_for_path(mount).ok_or_else(|| {
         CoreError::Disc(format!("no AACS/Unit_Key_RO.inf under {}", mount.display()))
@@ -418,6 +473,7 @@ pub fn derive(mount: &Path) -> Result<NativeKey, CoreError> {
         )));
     }
 
+    let unit_keys = unit_keys_from(ukf.as_deref(), aacs2, &vuk);
     let name = mount
         .file_name()
         .map(|s| s.to_string_lossy().into_owned())
@@ -429,6 +485,7 @@ pub fn derive(mount: &Path) -> Result<NativeKey, CoreError> {
         vid: hexstr(&vid),
         media_key: hexstr(&mk),
         vuk: hexstr(&vuk),
+        unit_keys,
     })
 }
 
@@ -446,9 +503,54 @@ pub fn derive_and_store(mount: &Path) -> Result<(NativeKey, bool), CoreError> {
         media_key: Some(key.media_key.clone()),
         volume_id: Some(key.vid.clone()),
         vuk: Some(key.vuk.clone()),
-        unit_keys: Vec::new(),
+        unit_keys: key.unit_keys.clone(),
         note: Some("native".into()),
     };
     keys::upsert_at(&path, &entry)?;
     Ok((key, true))
+}
+
+#[cfg(test)]
+mod unit_key_tests {
+    use super::*;
+    use aes::cipher::{BlockEncrypt, KeyInit};
+
+    const VUK: [u8; 16] = [0x42; 16];
+
+    fn build_ukf(aacs2: bool, plains: &[[u8; 16]]) -> Vec<u8> {
+        let count_pos = 0x20usize;
+        let stride = if aacs2 { 64 } else { 48 };
+        let mut d = vec![0u8; count_pos + 48 + (plains.len() - 1) * stride + 16];
+        d[0..4].copy_from_slice(&(count_pos as u32).to_be_bytes());
+        d[count_pos..count_pos + 2].copy_from_slice(&(plains.len() as u16).to_be_bytes());
+        let cipher = aes::Aes128::new((&VUK).into());
+        for (i, p) in plains.iter().enumerate() {
+            let mut block = aes::Block::clone_from_slice(p);
+            cipher.encrypt_block(&mut block);
+            let off = count_pos + 48 + i * stride;
+            d[off..off + 16].copy_from_slice(&block);
+        }
+        d
+    }
+
+    #[test]
+    fn decrypts_aacs1_and_aacs2_unit_keys() {
+        let plains = [[0x01u8; 16], [0x02u8; 16], [0x03u8; 16]];
+        for aacs2 in [false, true] {
+            let d = build_ukf(aacs2, &plains);
+            let keys = unit_keys_from(Some(&d), aacs2, &VUK);
+            assert_eq!(keys.len(), 3, "aacs2={aacs2}");
+            for (i, p) in plains.iter().enumerate() {
+                assert_eq!(keys[i], hexstr(p), "key {i} aacs2={aacs2}");
+            }
+        }
+    }
+
+    #[test]
+    fn returns_nothing_without_keys() {
+        let mut d = vec![0u8; 0x40];
+        d[0..4].copy_from_slice(&0x20u32.to_be_bytes());
+        assert!(unit_keys_from(Some(&d), false, &VUK).is_empty());
+        assert!(unit_keys_from(None, true, &VUK).is_empty());
+    }
 }

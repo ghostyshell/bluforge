@@ -253,7 +253,7 @@ pub fn run() -> DoctorReport {
     r.capabilities.push(cap(
         "Native key recovery",
         true,
-        "LibreDrive drive + KEYDB device keys (no certificate, no MakeMKV)",
+        "LibreDrive drive + KEYDB device keys; VUK and AACS2 unit keys from the disc (no certificate, no MakeMKV)",
     ));
     r.capabilities.push(cap(
         "Encode H.264 / HEVC",

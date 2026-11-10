@@ -600,6 +600,14 @@ fn run(cli: &Cli) -> Result<(), keepsake_core::CoreError> {
                     println!("volume id : 0x{}", k.vid);
                     println!("media key : 0x{}", k.media_key);
                     println!("vuk       : 0x{}", k.vuk);
+                    if k.unit_keys.is_empty() {
+                        println!("unit keys : none");
+                    } else {
+                        println!("unit keys : {}", k.unit_keys.len());
+                        for (i, uk) in k.unit_keys.iter().enumerate() {
+                            println!("  {:<3} 0x{uk}", i + 1);
+                        }
+                    }
                 } else {
                     let (k, added) = keepsake_core::native::derive_and_store(&mount)?;
                     eprintln!(
@@ -629,6 +637,14 @@ fn run(cli: &Cli) -> Result<(), keepsake_core::CoreError> {
                     println!("volume id : 0x{}", k.vid);
                     println!("media key : 0x{}", k.media_key);
                     println!("vuk       : 0x{}", k.vuk);
+                    if k.unit_keys.is_empty() {
+                        println!("unit keys : none");
+                    } else {
+                        println!("unit keys : {}", k.unit_keys.len());
+                        for (i, uk) in k.unit_keys.iter().enumerate() {
+                            println!("  {:<3} 0x{uk}", i + 1);
+                        }
+                    }
                 } else {
                     let (k, added) = keepsake_core::native::from_makemkv_and_store(&mount)?;
                     eprintln!(

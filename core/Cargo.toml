@@ -16,6 +16,7 @@ ureq = { version = "2", features = ["tls"] }
 zip = { version = "2", default-features = false, features = ["deflate"] }
 directories = "5"
 sha1 = "0.10"
+aes = "0.8"
 
 [build-dependencies]
 cc = "1"

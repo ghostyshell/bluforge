@@ -90,15 +90,16 @@ The parts that are ready for it: saved menu documents (Phase 6), the menu UI
 (Phase 7) and authoring (Phase 4). When an IG or BD-J generator is added, it can
 consume a saved document directly.
 
-## Phase 10 - AACS2 / UHD unit keys - partial
+## Phase 10 - AACS2 / UHD unit keys - done
 
-- Done: the key entry is inspectable (`keepsake-atelier keys show`, `--json`) with
-  the media key, volume id, VUK and every unit key, and the app's keys panel has
-  a unit-key editor that writes the `U` table into KEYDB. libaacs uses it for
-  AACS2 sectors when present.
-- Not done: deriving unit keys from the drive (the native path recovers the
-  AACS1 media key and VUK), and labelling the disc's AACS generation in the UI.
-  Unit keys are currently imported from a tool that produced them.
+- The key entry is inspectable (`keepsake-atelier keys show`, `--json`) with the
+  media key, volume id, VUK and every unit key, and the app's keys panel has a
+  unit-key editor that writes the `U` table into KEYDB.
+- Unit keys are **derived natively**: `AACS/Unit_Key_RO.inf` holds them encrypted,
+  and each is AES-128-ECB decrypted with the VUK. AACS2 unit-key records are 64
+  bytes apart (AACS1 48); `AACS/Content000.cer[0] == 0x10` marks AACS2.
+  `keys native` and `keys from-makemkv` store the table automatically.
+- Unit tests cover both record layouts with a synthetic unit-key file.
 
 ## Phase 11 - 1:1 disc clone - done
 
@@ -170,7 +171,7 @@ What the app covers today, against the ripping-suite feature set:
 | BD-25 / BD-50 splitting | done (whole titles per disc) |
 | Burning to disc | not started |
 | Cinavia detection/removal | not implemented |
-| UHD/AACS2 unit-key workflow | done for import/editing (derivation still AACS1) |
+| UHD/AACS2 unit-key workflow | done (derived from Unit_Key_RO.inf with the VUK) |
 | Batch queue (one job at a time) | done |
 
 ## Phase 14 - System check - done

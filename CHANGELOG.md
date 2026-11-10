@@ -65,6 +65,12 @@ All notable changes to Keepsake Atelier. Newest first.
   source, the selected title's name becomes `{title}` (a trailing `(1967)` is
   split off as `{year}`), and its chapter labels replace the ChapterDB names
   when the counts match. Editing a template now changes the next rip.
+- **Native AACS2 unit-key derivation:** `AACS/Unit_Key_RO.inf` is parsed (AACS1
+  48-byte records, AACS2 64-byte; `Content000.cer[0] == 0x10` marks AACS2) and
+  each encrypted unit key is AES-128-ECB decrypted with the VUK. `keys native`
+  and `keys from-makemkv` now write the `U` table into KEYDB automatically, and
+  the count is printed/displayed. Unit tested with a synthetic UKF for both
+  layouts.
 - **AACS2/UHD unit-key workflow:** `keepsake-atelier keys show [--disc|--from]
   [--json]` prints a disc's KEYDB entry including unit keys, and the app's keys
   panel shows the VUK/unit-key state with an editor that saves the `U` table.

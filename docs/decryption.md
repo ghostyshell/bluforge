@@ -95,10 +95,13 @@ keepsake-atelier keys add --from /Volumes/UHD_DISC --unit-key 0x<UK> ...
 
 `keys show` prints the disc id, media key, volume id, VUK and every unit key
 (`--json` for the raw entry). The app's keys panel shows the same and has a
-unit-key editor (one hex key per line, saved in index order). Unit keys come
-from a tool or provider that produced them; they are not derived here. The KEYDB
-entry has to exist first, so derive or add the disc key and then attach the unit
-keys.
+unit-key editor (one hex key per line, saved in index order).
+
+Unit keys are **derived**, not imported: the disc's `AACS/Unit_Key_RO.inf`
+stores them encrypted, and each one is AES-128-ECB decrypted with the VUK
+(AACS2 records are 64 bytes apart, AACS1 48; `AACS/Content000.cer[0] == 0x10`
+marks AACS2). `keys native` and `keys from-makemkv` therefore write the `U`
+table into KEYDB as part of the normal key recovery, with no extra tool.
 
 ## BD+ discs
 
