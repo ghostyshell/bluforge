@@ -6,6 +6,10 @@ All notable changes to Keepsake Atelier. Newest first.
 
 ### Changed
 
+- The GitHub repository and the local folder are now `keepsake-atelier`
+  (`github.com/ghostyshell/keepsake-atelier`). The Cargo `repository` field and
+  the app's updater endpoint point at it. Crate and binary names remain
+  `bluforge`.
 - **The desktop app is now Keepsake Atelier**, with a new app icon and in-app
   logo. Product name, window title, bundle identifier
   (`click.keepsakeatelier.app`) and the docs were updated. The engine and CLI
