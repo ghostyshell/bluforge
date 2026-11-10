@@ -14,6 +14,17 @@
       "sha256": "58beb5e3487ab3a0d3773fe492ba437a49a39cded464628e2c52b577f907b077"
     },
     {
+      "label": "macOS (Intel)",
+      "name": "Keepsake-Atelier-0.1.0-x64.dmg",
+      "version": "0.1.0",
+      "os": "macOS",
+      "arch": "x64",
+      "gofile": "https://gofile.io/d/5sHbDgph",
+      "kiwi": "https://file.kiwi/96e13bec#x4prHPo7D23urilugOO7KQ",
+      "size": "34.4 MiB",
+      "sha256": "115989c65cc9b460578c1559e62738c5a6c069ea4a0c88768ad924176f987888"
+    },
+    {
       "label": "macOS (Apple Silicon, CLI)",
       "name": "keepsake-atelier-0.1.0-arm64.tar.gz",
       "version": "0.1.0",
@@ -23,6 +34,17 @@
       "kiwi": "https://file.kiwi/05d72adf#C3z0zZH3aXkfwb4QBQWQxg",
       "size": "2.1 MiB",
       "sha256": "f36aa2aa680c7a0e65064626ff96ca01926318785c9440fe9593c37412924f13"
+    },
+    {
+      "label": "macOS (Intel, CLI)",
+      "name": "keepsake-atelier-0.1.0-macos-x64.tar.gz",
+      "version": "0.1.0",
+      "os": "macOS",
+      "arch": "x64",
+      "gofile": "https://gofile.io/d/2kBlpQ7u",
+      "kiwi": "https://file.kiwi/4d146f5e#do9_-f49rsbno2-K_g3ZEA",
+      "size": "2.2 MiB",
+      "sha256": "d20d4b349653f7fa59c5dd148bd57631a61c9efe52feaa31cc2ce4d40eb1e06a"
     },
     {
       "label": "Linux (x86_64, CLI)",
