@@ -26,6 +26,10 @@ All notable changes to Keepsake Atelier. Newest first.
 
 ### Added
 
+- **AACS2/UHD unit-key workflow:** `keepsake-atelier keys show [--disc|--from]
+  [--json]` prints a disc's KEYDB entry including unit keys, and the app's keys
+  panel shows the VUK/unit-key state with an editor that saves the `U` table.
+  Unit keys are imported, not derived; the entry must already exist.
 - **1:1 disc clone** (`keepsake-atelier clone`, and "Clone 1:1" in the app): a raw
   sector copy that keeps AACS/BD+ intact, for an archival image or a burner.
   Uncached reads, byte-based progress, cancel removes the partial file. Unit

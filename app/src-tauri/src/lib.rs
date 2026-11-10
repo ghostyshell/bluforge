@@ -690,6 +690,30 @@ fn keys_native(source: Option<String>) -> Result<serde_json::Value, String> {
 }
 
 /// Install the public BD+ VM data so BD+ discs decrypt without MakeMKV.
+/// The KEYDB entry for the inserted disc, if one exists.
+#[tauri::command]
+fn key_entry(source: String) -> Result<Option<keepsake_core::keys::KeyEntry>, String> {
+    let mount = menu_source(&source);
+    let Some(id) = keepsake_core::keys::disc_id_for_path(&mount) else {
+        return Ok(None);
+    };
+    keepsake_core::keys::lookup_at(&keepsake_core::keys::keydb_path(), &id)
+        .map_err(|e| e.to_string())
+}
+
+/// Replace the unit-key table of the inserted disc's entry.
+#[tauri::command]
+fn keys_set_units(
+    source: String,
+    keys: Vec<String>,
+) -> Result<keepsake_core::keys::KeyEntry, String> {
+    let mount = menu_source(&source);
+    let id = keepsake_core::keys::disc_id_for_path(&mount)
+        .ok_or("no AACS/Unit_Key_RO.inf on this disc")?;
+    keepsake_core::keys::set_unit_keys_at(&keepsake_core::keys::keydb_path(), &id, keys)
+        .map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 fn bdplus_install() -> Result<String, String> {
     keepsake_core::bdplus::install()
@@ -908,6 +932,8 @@ pub fn run() {
             menu_apply,
             menu_remove,
             keys_native,
+            key_entry,
+            keys_set_units,
             bdplus_install,
             disc_streams,
             queue_add,

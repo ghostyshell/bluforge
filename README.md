@@ -306,9 +306,15 @@ Key a disc so it never needs MakeMKV again:
 
 ```sh
 keepsake-atelier keys add --from /Volumes/MY_DISC --vuk 0x<VUK> [--unit-key 0x<UK>] --name "My Disc"
+keepsake-atelier keys show --from /Volumes/MY_DISC  # VUK + AACS2 unit keys
 keepsake-atelier keys list --keyed
 keepsake-atelier keys import /path/to/KEYDB.cfg     # merge a community database
 ```
+
+AACS2 (UHD) discs need a unit-key table instead of a VUK alone. `keys show`
+prints the entry and its unit keys; the app's keys panel has the same view with
+a unit-key editor. Unit keys are imported, not derived, and the KEYDB entry must
+already exist (key the disc first).
 
 The VUK (and, for AHD/AACS2 discs, the unit key) come from the disc's `KEYDB.cfg`
 entry, from `keepsake-atelier keys native` (VID read from the drive, media key from the

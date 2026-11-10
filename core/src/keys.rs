@@ -330,6 +330,25 @@ pub fn parse_file(path: &Path) -> Result<Vec<KeyEntry>, CoreError> {
     Ok(text.lines().filter_map(parse_line).collect())
 }
 
+/// Replace the unit keys of an existing entry and return it.
+///
+/// Unit keys are the AACS2/UHD half of a key: AACS1 decrypts with the VUK alone,
+/// while an AACS2 disc needs the unit-key table for its unit (usually 6144-byte)
+/// sectors. They are imported, not derived, from a tool that produced them.
+pub fn set_unit_keys_at(
+    path: &Path,
+    disc_id: &str,
+    keys: Vec<String>,
+) -> Result<KeyEntry, CoreError> {
+    let id = normalize_id(disc_id)
+        .ok_or_else(|| CoreError::Keys(format!("invalid disc id {disc_id:?}")))?;
+    let mut entry = lookup_at(path, &id)?
+        .ok_or_else(|| CoreError::Keys(format!("no KEYDB entry for {id}; key the disc first")))?;
+    entry.unit_keys = keys.iter().filter_map(|k| hexnorm(k)).collect();
+    upsert_at(path, &entry)?;
+    Ok(entry)
+}
+
 /// True when the database holds an entry for `disc_id`.
 pub fn has_at(path: &Path, disc_id: &str) -> Result<bool, CoreError> {
     let Some(id) = normalize_id(disc_id) else {
@@ -560,6 +579,31 @@ mod tests {
         assert_eq!(back.vuk.as_deref(), Some("bb"));
         assert_eq!(back.unit_keys.len(), 2);
         assert_eq!(back.name.as_deref(), Some("Test Disc"));
+    }
+
+    #[test]
+    fn set_unit_keys_at_updates_an_existing_entry() {
+        let dir = std::env::temp_dir().join(format!("keepsake-keys-units-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("KEYDB.cfg");
+        let id = "ab".repeat(20);
+        let entry = KeyEntry {
+            id: id.clone(),
+            name: Some("Test".into()),
+            vuk: Some("11".repeat(16)),
+            ..Default::default()
+        };
+        upsert_at(&path, &entry).unwrap();
+
+        let saved = set_unit_keys_at(&path, &id, vec!["0xAA".into(), "bb".into()]).unwrap();
+        assert_eq!(saved.unit_keys, vec!["aa".to_string(), "bb".to_string()]);
+        let back = lookup_at(&path, &id).unwrap().unwrap();
+        assert_eq!(back.unit_keys, vec!["aa".to_string(), "bb".to_string()]);
+
+        // unknown disc: refuse rather than create a half entry
+        assert!(set_unit_keys_at(&path, &"cc".repeat(20), vec![]).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

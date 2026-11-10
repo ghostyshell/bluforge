@@ -8,6 +8,7 @@ import {
   type CloneProgress,
   type CoverHit,
   type IsoProgress,
+  type KeyEntry,
   type MovieHit,
   type QueueJob,
   type RipMode,
@@ -85,6 +86,10 @@ export default function App() {
   const [title, setTitle] = useState<number | null>(null);
   const [streams, setStreams] = useState<StreamInfo[]>([]);
   const [queue, setQueue] = useState<QueueJob[]>([]);
+  const [entry, setEntry] = useState<KeyEntry | null>(null);
+  const [unitsText, setUnitsText] = useState("");
+  const [unitsBusy, setUnitsBusy] = useState(false);
+  const [keyEpoch, setKeyEpoch] = useState(0);
   const [container, setContainer] = useState<"mkv" | "mp4">("mkv");
   const [lossless, setLossless] = useState(true);
   const [enc, setEnc] = useState<EncodeSettings>({
@@ -164,6 +169,24 @@ export default function App() {
     ];
     return () => { us.forEach((u) => u.then((f) => f())); };
   }, [refreshQueue]);
+
+  // KEYDB entry for the selected disc (VUK and AACS2 unit keys).
+  useEffect(() => {
+    let live = true;
+    if (!discPath) {
+      setEntry(null);
+      setUnitsText("");
+      return;
+    }
+    api.keyEntry(discPath)
+      .then((e) => {
+        if (!live) return;
+        setEntry(e);
+        setUnitsText(e?.unit_keys.join("\n") ?? "");
+      })
+      .catch(() => { if (live) { setEntry(null); setUnitsText(""); } });
+    return () => { live = false; };
+  }, [discPath, keyEpoch]);
 
   const refresh = useCallback(async () => {
     try {
@@ -891,7 +914,7 @@ export default function App() {
             <div className="row between">
               <h2>Decryption keys</h2>
               <button className="ghost sm" disabled={busy === "keys"}
-                onClick={async () => { setBusy("keys"); try { await api.keysUpdate(); await refresh(); setToast("Keys updated"); } catch (e) { setError(String(e)); } finally { setBusy(null); } }}>
+                onClick={async () => { setBusy("keys"); try { await api.keysUpdate(); await refresh(); setKeyEpoch((n) => n + 1); setToast("Keys updated"); } catch (e) { setError(String(e)); } finally { setBusy(null); } }}>
                 Update
               </button>
             </div>
@@ -905,6 +928,7 @@ export default function App() {
                   try {
                     const r = await api.keysNative(discPath || null);
                     await refresh();
+                    setKeyEpoch((n) => n + 1);
                     setToast(`${r.added ? "Derived" : "Already keyed"}: ${r.key.name}`);
                   } catch (e) { setError(String(e)); } finally { setBusy(null); }
                 }}>
@@ -923,6 +947,53 @@ export default function App() {
               Native: the VID comes from the drive's LibreDrive firmware and the media key from the
               disc's own MKB. No MakeMKV, no host certificate.
             </p>
+
+            <div className="sub" style={{ marginTop: 10 }}>
+              {entry
+                ? `disc key: VUK ${entry.vuk ? "present" : "missing"} · unit keys ${entry.unit_keys.length}`
+                : discPath
+                  ? "no KEYDB entry for this disc yet"
+                  : "select a disc to see its key"}
+            </div>
+            {entry && (
+              <details className="group" style={{ marginTop: 8 }}>
+                <summary>UHD / AACS2 unit keys</summary>
+                <p className="hint" style={{ marginTop: 8 }}>
+                  AACS2 (UHD) discs decrypt with a unit-key table instead of a VUK alone. Paste one
+                  key per line, hex, in index order, then save.
+                </p>
+                <textarea
+                  className="mono"
+                  rows={3}
+                  value={unitsText}
+                  onChange={(e) => setUnitsText(e.target.value)}
+                  placeholder={"0x…\n0x…"}
+                  style={{ width: "100%", marginTop: 6 }}
+                  aria-label="Unit keys, one per line"
+                />
+                <button
+                  className="ghost sm"
+                  style={{ marginTop: 6 }}
+                  disabled={unitsBusy}
+                  onClick={async () => {
+                    if (!discPath) return;
+                    setUnitsBusy(true);
+                    try {
+                      const keys = unitsText
+                        .split(/\s+/)
+                        .map((k) => k.trim())
+                        .filter((k) => k.length > 0);
+                      const e = await api.keysSetUnits(discPath, keys);
+                      setEntry(e);
+                      setUnitsText(e.unit_keys.join("\n"));
+                      setToast(`saved ${e.unit_keys.length} unit key(s)`);
+                    } catch (err) { setError(String(err)); } finally { setUnitsBusy(false); }
+                  }}
+                >
+                  {unitsBusy ? "Saving…" : "Save unit keys"}
+                </button>
+              </details>
+            )}
           </section>
 
           <section className="card" style={{ marginTop: 16 }}>

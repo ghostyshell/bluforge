@@ -88,11 +88,15 @@ The parts that are ready for it: saved menu documents (Phase 6), the menu UI
 (Phase 7) and authoring (Phase 4). When an IG or BD-J generator is added, it can
 consume a saved document directly.
 
-## Phase 10 - AACS2 / UHD unit keys - future
+## Phase 10 - AACS2 / UHD unit keys - partial
 
-- Current native recovery derives the AACS1 media key and VUK. AACS2 discs need
-  the unit-key table; `keepsake-atelier keys` already stores and uses one when present.
-- Next: derive/import unit keys and show the disc's AACS generation in the app.
+- Done: the key entry is inspectable (`keepsake-atelier keys show`, `--json`) with
+  the media key, volume id, VUK and every unit key, and the app's keys panel has
+  a unit-key editor that writes the `U` table into KEYDB. libaacs uses it for
+  AACS2 sectors when present.
+- Not done: deriving unit keys from the drive (the native path recovers the
+  AACS1 media key and VUK), and labelling the disc's AACS generation in the UI.
+  Unit keys are currently imported from a tool that produced them.
 
 ## Phase 11 - 1:1 disc clone - done
 

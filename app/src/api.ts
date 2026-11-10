@@ -244,6 +244,16 @@ export type StreamInfo = {
   pid: number;
 };
 
+export type KeyEntry = {
+  id: string;
+  name: string | null;
+  media_key: string | null;
+  volume_id: string | null;
+  vuk: string | null;
+  unit_keys: string[];
+  note: string | null;
+};
+
 export type CloneProgress = {
   percent: number;
   bytes: number;
@@ -340,6 +350,9 @@ export const api = {
   menuApply: (template: string, target: string, save: string | null) =>
     invoke<DiscMenu>("menu_apply", { template, target, save }),
   menuRemove: (template: string) => invoke<string>("menu_remove", { template }),
+  keyEntry: (source: string) => invoke<KeyEntry | null>("key_entry", { source }),
+  keysSetUnits: (source: string, keys: string[]) =>
+    invoke<KeyEntry>("keys_set_units", { source, keys }),
   keysNative: (source: string | null) =>
     invoke<NativeKeyResult>("keys_native", { source }),
   bdplusInstall: () => invoke<string>("bdplus_install"),

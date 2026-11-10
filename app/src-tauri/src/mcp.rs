@@ -312,6 +312,33 @@ fn run_tool(name: &str, args: Value) -> Result<Value, String> {
             serde_json::to_value(plan).map_err(|e| e.to_string())
         }
         "rip_start" => start_rip(args),
+        "key_entry" => {
+            let source = resolve_source(&str_arg(&args, "source")?);
+            let mount = mount_for(&source);
+            let Some(id) = keepsake_core::keys::disc_id_for_path(&mount) else {
+                return Ok(json!({ "entry": null }));
+            };
+            let entry = keys::lookup_at(&keys::keydb_path(), &id).map_err(|e| e.to_string())?;
+            Ok(json!({ "entry": entry }))
+        }
+        "keys_set_units" => {
+            let source = resolve_source(&str_arg(&args, "source")?);
+            let mount = mount_for(&source);
+            let id = keepsake_core::keys::disc_id_for_path(&mount)
+                .ok_or("no AACS/Unit_Key_RO.inf on this disc")?;
+            let keys_in: Vec<String> = args
+                .get("keys")
+                .and_then(|v| v.as_array())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|v| v.as_str().map(str::to_string))
+                        .collect()
+                })
+                .unwrap_or_default();
+            let entry = keys::set_unit_keys_at(&keys::keydb_path(), &id, keys_in)
+                .map_err(|e| e.to_string())?;
+            serde_json::to_value(entry).map_err(|e| e.to_string())
+        }
         "menu_parse" => {
             let source = resolve_source(&str_arg(&args, "source")?);
             let doc = keepsake_core::menu::parse(Path::new(&source), Some(&keys::keydb_path()))
@@ -584,6 +611,20 @@ fn keys_arg_disc(args: &Value) -> Result<String, String> {
             .ok_or_else(|| format!("no AACS/Unit_Key_RO.inf under {}", p.display()));
     }
     Err("give `disc` or `source`".into())
+}
+
+/// A disc root whose AACS/Unit_Key_RO.inf can be read, resolving a raw device
+/// node to the mounted optical volume.
+fn mount_for(source: &str) -> PathBuf {
+    let p = Path::new(source);
+    if keepsake_core::keys::disc_id_for_path(p).is_some() {
+        return p.to_path_buf();
+    }
+    keepsake_core::device::list_optical()
+        .into_iter()
+        .find_map(|d| d.mount_point)
+        .map(PathBuf::from)
+        .unwrap_or_else(|| p.to_path_buf())
 }
 
 fn resolve_source(p: &str) -> String {
@@ -981,6 +1022,19 @@ fn tools() -> Vec<Value> {
                 "series": { "type": "string", "description": "Series name override for the TMDB lookup." },
                 "start": { "type": "integer", "description": "First episode number on this disc (overrides the remembered mapping)." }
             }, "required": ["source"] }
+        }),
+        json!({
+            "name": "key_entry",
+            "description": "The KEYDB entry for a disc: media key, volume id, VUK and AACS2 unit keys.",
+            "inputSchema": { "type": "object", "properties": { "source": src("Disc to look up.") }, "required": ["source"] }
+        }),
+        json!({
+            "name": "keys_set_units",
+            "description": "Replace the AACS2/UHD unit-key table of a disc's existing KEYDB entry.",
+            "inputSchema": { "type": "object", "properties": {
+                "source": src("Disc whose entry to update."),
+                "keys": { "type": "array", "items": { "type": "string" }, "description": "Unit keys, hex, in index order." }
+            }, "required": ["source", "keys"] }
         }),
         json!({
             "name": "menu_parse",

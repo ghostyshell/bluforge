@@ -83,6 +83,23 @@ to an external oracle and store the key by hand:
 keepsake-atelier keys add --from /Volumes/MY_DISC --vuk 0x<VUK> [--unit-key 0x<UK>]
 ```
 
+## AACS2 / UHD unit keys
+
+An AACS1 disc decrypts from the VUK. An AACS2 (UHD) disc is organised in units
+(usually 6144-byte sectors) and needs the unit-key table in addition:
+
+```
+keepsake-atelier keys show --from /Volumes/UHD_DISC
+keepsake-atelier keys add --from /Volumes/UHD_DISC --unit-key 0x<UK> ...
+```
+
+`keys show` prints the disc id, media key, volume id, VUK and every unit key
+(`--json` for the raw entry). The app's keys panel shows the same and has a
+unit-key editor (one hex key per line, saved in index order). Unit keys come
+from a tool or provider that produced them; they are not derived here. The KEYDB
+entry has to exist first, so derive or add the disc key and then attach the unit
+keys.
+
 ## BD+ discs
 
 BD+ is separate from AACS. libbdplus runs the BD+ VM but ships no VM data:

@@ -597,6 +597,63 @@ fn run(cli: &Cli) -> Result<(), keepsake_core::CoreError> {
                     );
                 }
             }
+            KeysAction::Show { disc, from } => {
+                let id = match (disc, from) {
+                    (Some(d), _) => d
+                        .trim()
+                        .trim_start_matches("0x")
+                        .trim_start_matches("0X")
+                        .to_ascii_lowercase(),
+                    (None, Some(mount)) => keys::disc_id_for_path(mount).ok_or_else(|| {
+                        keepsake_core::CoreError::Disc(format!(
+                            "no AACS/Unit_Key_RO.inf under {}",
+                            mount.display()
+                        ))
+                    })?,
+                    _ => {
+                        return Err(keepsake_core::CoreError::Keys(
+                            "pass --disc <id> or --from <mount>".into(),
+                        ))
+                    }
+                };
+                let entry = keys::lookup(&id)?
+                    .ok_or_else(|| keepsake_core::CoreError::Keys(format!("no entry for {id}")))?;
+                if cli.json {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&entry)
+                            .map_err(|e| keepsake_core::CoreError::Config(e.to_string()))?
+                    );
+                } else {
+                    println!("disc id   : 0x{}", entry.id);
+                    println!("name      : {}", entry.name.clone().unwrap_or_default());
+                    if let Some(v) = &entry.media_key {
+                        println!("media key : 0x{v}");
+                    }
+                    if let Some(v) = &entry.volume_id {
+                        println!("volume id : 0x{v}");
+                    }
+                    println!(
+                        "vuk       : {}",
+                        entry
+                            .vuk
+                            .as_deref()
+                            .map(|v| format!("0x{v}"))
+                            .unwrap_or_else(|| "none".into())
+                    );
+                    if entry.unit_keys.is_empty() {
+                        println!("unit keys : none (AACS1)");
+                    } else {
+                        println!("unit keys : {}", entry.unit_keys.len());
+                        for (i, k) in entry.unit_keys.iter().enumerate() {
+                            println!("  {:<2} 0x{}", i + 1, k);
+                        }
+                    }
+                    if let Some(n) = &entry.note {
+                        println!("note      : {n}");
+                    }
+                }
+            }
             KeysAction::List { limit, keyed } => {
                 let all = keys::list_at(&keys::keydb_path(), None)?;
                 let mut shown = 0usize;
@@ -622,20 +679,6 @@ fn run(cli: &Cli) -> Result<(), keepsake_core::CoreError> {
                 let id = resolve_disc_id(disc, from)?;
                 let gone = keys::remove_at(&keys::keydb_path(), &id)?;
                 eprintln!("{} {id}", if gone { "removed" } else { "not found:" });
-            }
-            KeysAction::Show { disc, from } => {
-                let id = resolve_disc_id(disc, from)?;
-                match keys::lookup_at(&keys::keydb_path(), &id)? {
-                    Some(e) => {
-                        println!("disc id   : {}", e.id);
-                        println!("name      : {}", e.name.unwrap_or_default());
-                        println!("has vuk   : {}", e.vuk.is_some());
-                        println!("unit keys : {}", e.unit_keys.len());
-                        println!("media key : {}", e.media_key.is_some());
-                        println!("volume id : {}", e.volume_id.is_some());
-                    }
-                    None => eprintln!("no entry for {id}"),
-                }
             }
             KeysAction::Import { file } => {
                 let (added, skipped) = keys::import_at(&keys::keydb_path(), file)?;
