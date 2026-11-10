@@ -17,6 +17,14 @@ SELF=$(cd "$(dirname "$0")" && pwd)
 REPO=${KEEPSAKE_REPO:-$(cd "$SELF/.." && pwd)}
 cd "$REPO"
 
+ARTIFACTS=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --artifacts) ARTIFACTS=$2; shift 2 ;;
+    *) echo "unknown option: $1" >&2; exit 2 ;;
+  esac
+done
+
 log()  { printf '[%s] %s\n' "$(date '+%F %T')" "$*"; }
 die()  { log "FAILED: $*"; exit 1; }
 notify() { osascript -e "display notification \"$1\" with title \"Keepsake release\"" >/dev/null 2>&1 || true; }
@@ -62,27 +70,39 @@ TOKEN=${GOFILE_TOKEN:-$(cat "$REPO/.gofile-io-token" 2>/dev/null || true)}
 
 log "publishing Keepsake Atelier $V"
 
-# --- 1. Build -------------------------------------------------------------------
-log "building the DMG"
-rm -f "$DIST"/*.dmg "$DIST"/*.tar.gz
-( cd app && npx tauri build --bundles dmg \
-    --config '{"bundle":{"createUpdaterArtifacts":false}}' ) \
-  >> "$RUN/build.log" 2>&1 || die "tauri build failed - see $RUN/build.log"
+# --- 1. Build (or take a directory from CI) -------------------------------------
+if [ -n "$ARTIFACTS" ]; then
+  [ -d "$ARTIFACTS" ] || die "no artifact directory at $ARTIFACTS"
+  DIST=$(cd "$ARTIFACTS" && pwd)
+  FILES=()
+  while IFS= read -r f; do
+    FILES+=("$f")
+  done < <(cd "$DIST" && ls -1 *.dmg *.tar.gz *.zip 2>/dev/null)
+  [ ${#FILES[@]} -gt 0 ] || die "no dmg/tar.gz/zip files in $DIST"
+  DMG_SRC=""
+  log "using existing artifacts: ${FILES[*]}"
+else
+  log "building the DMG"
+  rm -f "$DIST"/*.dmg "$DIST"/*.tar.gz
+  ( cd app && npx tauri build --bundles dmg \
+      --config '{"bundle":{"createUpdaterArtifacts":false}}' ) \
+    >> "$RUN/build.log" 2>&1 || die "tauri build failed - see $RUN/build.log"
 
-log "building the CLI"
-cargo build --release -p keepsake-atelier >> "$RUN/build.log" 2>&1 \
-  || die "cargo build failed - see $RUN/build.log"
+  log "building the CLI"
+  cargo build --release -p keepsake-atelier >> "$RUN/build.log" 2>&1 \
+    || die "cargo build failed - see $RUN/build.log"
 
-DMG_SRC=$(ls "$REPO"/target/release/bundle/dmg/*.dmg 2>/dev/null | head -1)
-[ -n "$DMG_SRC" ] || die "the build did not produce a DMG"
-DMG_NAME="Keepsake-Atelier-${V}-arm64.dmg"
-CLI_NAME="keepsake-atelier-${V}-arm64.tar.gz"
+  DMG_SRC=$(ls "$REPO"/target/release/bundle/dmg/*.dmg 2>/dev/null | head -1)
+  [ -n "$DMG_SRC" ] || die "the build did not produce a DMG"
+  DMG_NAME="Keepsake-Atelier-${V}-arm64.dmg"
+  CLI_NAME="keepsake-atelier-${V}-macos-arm64.tar.gz"
 
-cp "$DMG_SRC" "$DIST/$DMG_NAME"
-tar -czf "$DIST/$CLI_NAME" -C "$REPO/target/release" keepsake-atelier
+  cp "$DMG_SRC" "$DIST/$DMG_NAME"
+  tar -czf "$DIST/$CLI_NAME" -C "$REPO/target/release" keepsake-atelier
 
-FILES=("$DMG_NAME" "$CLI_NAME")
-log "built: ${FILES[*]}"
+  FILES=("$DMG_NAME" "$CLI_NAME")
+  log "built: ${FILES[*]}"
+fi
 
 # --- 2. Upload ------------------------------------------------------------------
 field() { grep -F "$1 |" "$LINKS" 2>/dev/null | tail -1 | cut -d'|' -f"$2" | sed 's/^ *//;s/ *$//' || true; }
@@ -183,9 +203,13 @@ else
   if [ "${KEEP_DIST:-0}" = "1" ]; then
     log "KEEP_DIST=1: dist/ kept"
   else
-    log "removing local build artifacts"
-    rm -rf "$DIST"
-    rm -f "$DMG_SRC"
+    if [ -n "$ARTIFACTS" ]; then
+      log "artifact directory kept at $DIST"
+    else
+      log "removing local build artifacts"
+      rm -rf "$DIST"
+      [ -n "$DMG_SRC" ] && rm -f "$DMG_SRC"
+    fi
   fi
   notify "Keepsake ${V} download links refreshed"
 fi

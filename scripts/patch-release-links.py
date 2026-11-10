@@ -29,21 +29,49 @@ VERSION_RE = re.compile(r"\d+\.\d+\.\d+")
 
 
 def label_for(name):
-    if name.endswith(".dmg"):
-        return "macOS (Apple Silicon)"
-    if name.endswith(".tar.gz"):
-        return "Command line (Apple Silicon)"
-    if name.endswith(".zip"):
+    low = name.lower()
+    if low.endswith(".dmg"):
+        return "macOS (Intel)" if "x64" in low else "macOS (Apple Silicon)"
+    if low.endswith(".tar.gz"):
+        if "linux" in low:
+            return "Linux (x86_64, CLI)"
+        if "windows" in low:
+            return "Windows (x86_64, CLI)"
+        return "macOS (Intel, CLI)" if "x64" in low else "macOS (Apple Silicon, CLI)"
+    if low.endswith(".zip"):
+        if "windows" in low:
+            return "Windows (x86_64, CLI)"
         return "macOS app (zip)"
     return name
 
 
+def identity(name):
+    """Version-independent artifact slot, so a renamed build replaces the old row."""
+    low = name.lower()
+    if low.endswith(".dmg"):
+        kind, osname = "dmg", "macos"
+    elif low.endswith(".tar.gz"):
+        kind = "cli"
+        osname = "linux" if "linux" in low else "windows" if "windows" in low else "macos"
+    elif low.endswith(".zip"):
+        kind, osname = "bundle", "windows"
+    else:
+        return name
+    arch = "arm64" if ("arm64" in low or "aarch64" in low) else "x64"
+    return f"{kind}:{osname}:{arch}"
+
+
 def order(name):
-    if name.endswith(".dmg"):
-        return (0, name)
-    if name.endswith(".tar.gz"):
-        return (1, name)
-    return (2, name)
+    low = name.lower()
+    if low.endswith(".dmg"):
+        return (0 if "x64" not in low else 1, name)
+    if low.endswith(".tar.gz"):
+        if "linux" in low:
+            return (4, name)
+        return (2 if "x64" not in low else 3, name)
+    if low.endswith(".zip"):
+        return (5, name)
+    return (9, name)
 
 
 def load(path):
@@ -75,21 +103,40 @@ def detect_version(rows, fallback):
     return fallback
 
 
-def build_manifest(rows, version):
+def os_arch(name):
+    low = name.lower()
+    if low.endswith(".dmg"):
+        return "macOS", "x64" if "x64" in low else "arm64"
+    if low.endswith(".tar.gz"):
+        if "linux" in low:
+            return "Linux", "x86_64"
+        if "windows" in low:
+            return "Windows", "x86_64"
+        return "macOS", "x64" if "x64" in low else "arm64"
+    if low.endswith(".zip"):
+        return "Windows", "x86_64"
+    return "macOS", "arm64"
+
+
+def build_manifest(rows, version, preserved=None):
+    merged = dict(preserved or {})
+    for name, row in rows.items():
+        merged[name] = row
     artifacts = []
-    for name in sorted(rows, key=order):
-        row = rows[name]
+    for name in sorted(merged, key=order):
+        row = merged[name]
+        osname, arch = os_arch(name)
         artifacts.append(
             {
                 "label": label_for(name),
                 "name": name,
                 "version": version,
-                "os": "macOS",
-                "arch": "arm64",
-                "gofile": row["gofile"],
-                "kiwi": row["kiwi"],
-                "size": row["size"],
-                "sha256": row["sha256"],
+                "os": osname,
+                "arch": arch,
+                "gofile": row.get("gofile", ""),
+                "kiwi": row.get("kiwi", ""),
+                "size": row.get("size", ""),
+                "sha256": row.get("sha256", ""),
             }
         )
     today = datetime.date.today().isoformat()
@@ -148,7 +195,27 @@ def main(argv):
         except Exception:
             previous = {}
     version = detect_version(rows, previous.get("version", "0.0.0"))
-    manifest = build_manifest(rows, version)
+    # Keep current-version artifacts this run did not rebuild (for example the
+    # Linux and Windows CLI builds from CI) unless a row now occupies the same
+    # slot. Older-version rows are dropped.
+    new_ids = {identity(name) for name in rows}
+    preserved = {}
+    for art in previous.get("artifacts", []):
+        name = art.get("name", "")
+        if not name or art.get("version") != version:
+            continue
+        if identity(name) in new_ids:
+            continue
+        if not (art.get("gofile") or art.get("kiwi")):
+            continue
+        preserved[name] = {
+            "name": name,
+            "gofile": art.get("gofile", ""),
+            "kiwi": art.get("kiwi", ""),
+            "size": art.get("size", ""),
+            "sha256": art.get("sha256", ""),
+        }
+    manifest = build_manifest(rows, version, preserved)
 
     MANIFEST.parent.mkdir(parents=True, exist_ok=True)
     MANIFEST.write_text(json.dumps(manifest, indent=2) + "\n")
@@ -184,7 +251,7 @@ def demo():
     m = build_manifest(rows, "2.0.0")
     assert m["version"] == "2.0.0"
     assert m["artifacts"][0]["label"] == "macOS (Apple Silicon)"
-    assert m["artifacts"][1]["label"] == "Command line (Apple Silicon)"
+    assert m["artifacts"][1]["label"] == "macOS (Apple Silicon, CLI)"
     t = table(m)
     assert "| `Keepsake-Atelier-2.0.0-arm64.dmg` | [Download](https://gofile.io/d/NEW) | pending | 32.1 MiB |" in t
     assert "[Mirror](https://file.kiwi/x)" in t
