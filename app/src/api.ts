@@ -304,6 +304,7 @@ export const api = {
     label: string | null;
     chapters: boolean;
     auto_chapter_minutes: number | null;
+    split_gb: number | null;
   }) => invoke<void>("author_start", { request }),
   onAuthorProgress: (cb: (p: AuthorProgress) => void): Promise<UnlistenFn> =>
     listen<AuthorProgress>("author://progress", (e) => cb(e.payload)),

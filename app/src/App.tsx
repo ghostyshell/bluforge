@@ -108,8 +108,9 @@ export default function App() {
   const [tvError, setTvError] = useState<string | null>(null);
   const [mcp, setMcp] = useState<{ enabled: boolean; port: number | null } | null>(null);
   const [startEp, setStartEp] = useState<number | "">("");
-  const [authorFile, setAuthorFile] = useState<string | null>(null);
+  const [authorFiles, setAuthorFiles] = useState<string[]>([]);
   const [authorOut, setAuthorOut] = useState("");
+  const [authorSplit, setAuthorSplit] = useState("");
   const [authorBusy, setAuthorBusy] = useState(false);
   const [authorProg, setAuthorProg] = useState<{ percent: number; message: string } | null>(null);
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
@@ -431,27 +432,31 @@ export default function App() {
     try {
       const { open } = await import("@tauri-apps/plugin-dialog");
       const picked = await open({
-        multiple: false,
+        multiple: true,
         filters: [{ name: "Video", extensions: ["mkv", "mp4", "m2ts"] }],
       });
-      if (typeof picked === "string") {
-        setAuthorFile(picked);
-        const stem = picked.split("/").pop()?.replace(/\.[^.]+$/, "") ?? "disc";
-        setAuthorOut(`${(cfg?.output_dir ?? "").replace(/\/$/, "")}/${stem}/${stem}.iso`);
-      }
+      const files =
+        typeof picked === "string" ? [picked] : Array.isArray(picked) ? picked : [];
+      if (files.length === 0) return;
+      setAuthorFiles(files);
+      const stem = files[0].split("/").pop()?.replace(/\.[^.]+$/, "") ?? "disc";
+      const base = `${(cfg?.output_dir ?? "").replace(/\/$/, "")}/${stem}/${stem}`;
+      // Several inputs become one title each in a BDMV folder; one input can be an ISO.
+      setAuthorOut(files.length > 1 ? base : `${base}.iso`);
     } catch (e) { setError(String(e)); }
   };
 
   const startAuthor = async () => {
-    if (!authorFile || !authorOut) return;
+    if (authorFiles.length === 0 || !authorOut) return;
     setError(null); setAuthorBusy(true); setAuthorProg({ percent: 0, message: "starting" });
     try {
       await api.authorStart({
-        inputs: [authorFile],
+        inputs: authorFiles,
         dest: authorOut,
         label: null,
         chapters: true,
         auto_chapter_minutes: null,
+        split_gb: authorSplit.trim() === "" ? null : Number(authorSplit) || null,
       });
     } catch (e) { setError(String(e)); setAuthorBusy(false); }
   };
@@ -796,18 +801,30 @@ export default function App() {
               <span className="sub">BDMV / ISO from a finished file</span>
             </div>
             <div className="row" style={{ marginTop: 10, gap: 8 }}>
-              <button onClick={chooseAuthorFile} disabled={authorBusy}>Choose file</button>
-              <span className="grow mono truncate">{authorFile ?? "no file selected"}</span>
+              <button onClick={chooseAuthorFile} disabled={authorBusy}>Choose files</button>
+              <span className="grow mono truncate" title={authorFiles.join(", ")}>
+                {authorFiles.length === 0
+                  ? "no files selected"
+                  : authorFiles.map((f) => f.split("/").pop()).join(", ")}
+              </span>
             </div>
-            <label className="field" style={{ marginTop: 10 }}>Output ISO
-              <input className="mono" value={authorOut} onChange={(e) => setAuthorOut(e.target.value)}
-                placeholder="…/disc.iso" />
-            </label>
+            <div className="row wrap" style={{ marginTop: 10, gap: 10, alignItems: "flex-end" }}>
+              <label className="field" style={{ flex: 1, minWidth: 260 }}>Output
+                <input className="mono" value={authorOut} onChange={(e) => setAuthorOut(e.target.value)}
+                  placeholder="…/disc.iso or …/disc" />
+              </label>
+              <label className="field" style={{ width: 170 }}>Split each disc at (GB)
+                <input className="mono" inputMode="decimal" value={authorSplit}
+                  onChange={(e) => setAuthorSplit(e.target.value)} placeholder="off (25 / 50)" />
+              </label>
+            </div>
             <div className="row between" style={{ marginTop: 12, alignItems: "flex-end" }}>
-              <p className="hint" style={{ margin: 0, maxWidth: 380 }}>
-                Keeps the file's chapter marks and writes a UDF 2.50 image. One file per disc for now.
+              <p className="hint" style={{ margin: 0, maxWidth: 420 }}>
+                One input writes a UDF 2.50 ISO. Several inputs become one title each in a BDMV
+                folder (choose a destination without .iso), with generated index and navigation.
+                Chapter marks are kept.
               </p>
-              <button className="primary" disabled={!authorFile || !authorOut || authorBusy} onClick={startAuthor}>
+              <button className="primary" disabled={authorFiles.length === 0 || !authorOut || authorBusy} onClick={startAuthor}>
                 {authorBusy ? "Authoring…" : "Author disc"}
               </button>
             </div>

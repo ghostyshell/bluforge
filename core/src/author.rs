@@ -27,6 +27,11 @@ pub struct AuthorRequest {
     /// Force a chapter every N minutes instead of using the inputs' marks.
     #[serde(default)]
     pub auto_chapter_minutes: Option<u32>,
+    /// Split the inputs across discs of at most this many GB (BD-25 = 25,
+    /// BD-50 = 50). Whole inputs stay together, so the result is a set of disc
+    /// folders rather than a re-encoded movie cut in half.
+    #[serde(default)]
+    pub split_gb: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -230,7 +235,7 @@ fn meta(req: &AuthorRequest) -> Result<(String, f64), CoreError> {
     let label = req
         .label
         .clone()
-        .unwrap_or_else(|| "BLUFORGE".to_string())
+        .unwrap_or_else(|| "KEEPSAKE".to_string())
         .to_uppercase()
         .chars()
         .filter(|c| c.is_ascii_alphanumeric() || *c == '_')
@@ -270,15 +275,6 @@ where
     if req.inputs.is_empty() {
         return Err(CoreError::Disc("no input files".into()));
     }
-    if req.inputs.len() > 1 {
-        // tsMuxeR's CLI writes one title and concatenates inputs into a single
-        // clip, which resets timestamps and leaves the playlist stopping after
-        // the first file. Per-episode playlists need their own mpls/clpi, which
-        // is the next step; one file per disc is what works today.
-        return Err(CoreError::Disc(
-            "authoring one file per disc for now: multi-episode discs need per-episode playlists (next iteration)".into(),
-        ));
-    }
     for i in &req.inputs {
         if !i.is_file() {
             return Err(CoreError::Disc(format!("missing input: {}", i.display())));
@@ -291,23 +287,197 @@ where
         )
     })?;
 
+    if let Some(limit) = req.split_gb.filter(|g| *g > 0.0) {
+        if req.inputs.len() > 1 {
+            return author_split(req, &bin, limit, &mut on_progress);
+        }
+    }
+
+    author_group(req, &bin, &req.dest, &mut on_progress)?;
+    on_progress(AuthorProgress {
+        percent: 100.0,
+        message: format!("authored {}", req.dest.display()),
+        done: true,
+    });
+    Ok(req.dest.clone())
+}
+
+/// Author `req.inputs` into one disc at `dest`: a single title, or one title per
+/// input (merged by `bdmv::merge`).
+fn author_group<F>(
+    req: &AuthorRequest,
+    bin: &Path,
+    dest: &Path,
+    on_progress: &mut F,
+) -> Result<(), CoreError>
+where
+    F: FnMut(AuthorProgress),
+{
+    if req.inputs.len() == 1 {
+        return author_one(req, bin, dest, on_progress);
+    }
+    if dest
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("iso"))
+    {
+        return Err(CoreError::Disc(
+            "multi-title authoring writes a BDMV folder; pass a directory without .iso".into(),
+        ));
+    }
+
+    let n = req.inputs.len();
+    let mut parts = Vec::with_capacity(n);
+    for (i, input) in req.inputs.iter().enumerate() {
+        let temp =
+            std::env::temp_dir().join(format!("keepsake-author-{}-{}", std::process::id(), i));
+        let _ = std::fs::remove_dir_all(&temp);
+        let sub = AuthorRequest {
+            inputs: vec![input.clone()],
+            dest: temp.clone(),
+            label: req.label.clone(),
+            chapters: req.chapters,
+            auto_chapter_minutes: req.auto_chapter_minutes,
+            split_gb: None,
+        };
+        let base = 80.0 * i as f64 / n as f64;
+        let span = 80.0 / n as f64;
+        let mut progress = |p: AuthorProgress| {
+            on_progress(AuthorProgress {
+                percent: base + p.percent * span / 100.0,
+                message: format!("title {} of {n}: {}", i + 1, p.message),
+                done: false,
+            });
+        };
+        author_one(&sub, bin, &temp, &mut progress)?;
+        parts.push(temp);
+    }
+
+    crate::bdmv::merge(&parts, dest, |pct| {
+        on_progress(AuthorProgress {
+            percent: 80.0 + pct * 0.2,
+            message: "merging titles".into(),
+            done: false,
+        });
+    })?;
+    for p in &parts {
+        let _ = std::fs::remove_dir_all(p);
+    }
+    Ok(())
+}
+
+/// Greedy grouping of whole inputs into discs of at most `limit` bytes.
+fn group_sizes(sizes: &[u64], limit: u64) -> Vec<Vec<usize>> {
+    let mut groups: Vec<Vec<usize>> = Vec::new();
+    let mut cur: Vec<usize> = Vec::new();
+    let mut total: u64 = 0;
+    for (i, size) in sizes.iter().enumerate() {
+        if !cur.is_empty() && total + size > limit {
+            groups.push(std::mem::take(&mut cur));
+            total = 0;
+        }
+        cur.push(i);
+        total += size;
+    }
+    if !cur.is_empty() {
+        groups.push(cur);
+    }
+    groups
+}
+
+/// Split the inputs across `limit_gb` discs, one folder per disc.
+fn author_split<F>(
+    req: &AuthorRequest,
+    bin: &Path,
+    limit_gb: f64,
+    on_progress: &mut F,
+) -> Result<PathBuf, CoreError>
+where
+    F: FnMut(AuthorProgress),
+{
+    if req
+        .dest
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("iso"))
+    {
+        return Err(CoreError::Disc(
+            "splitting writes one folder per disc; pass a directory without .iso".into(),
+        ));
+    }
+    // Whole inputs stay together: an episode cannot span two discs without
+    // re-encoding, so measure the files and pack them greedily.
+    let sizes: Vec<u64> = req
+        .inputs
+        .iter()
+        .map(|i| std::fs::metadata(i).map(|m| m.len()).unwrap_or(0))
+        .collect();
+    let limit = (limit_gb * 1_000_000_000.0) as u64;
+    let groups = group_sizes(&sizes, limit);
+    let n = groups.len().max(1);
+    std::fs::create_dir_all(&req.dest)?;
+
+    for (gi, group) in groups.iter().enumerate() {
+        let inputs: Vec<PathBuf> = group.iter().map(|i| req.inputs[*i].clone()).collect();
+        let dest = req.dest.join(format!("Disc{}", gi + 1));
+        let sub = AuthorRequest {
+            inputs,
+            dest: dest.clone(),
+            label: req.label.clone(),
+            chapters: req.chapters,
+            auto_chapter_minutes: req.auto_chapter_minutes,
+            split_gb: None,
+        };
+        let base = 100.0 * gi as f64 / n as f64;
+        let span = 100.0 / n as f64;
+        let mut progress = |p: AuthorProgress| {
+            on_progress(AuthorProgress {
+                percent: base + p.percent * span / 100.0,
+                message: format!("disc {} of {n}: {}", gi + 1, p.message),
+                done: false,
+            });
+        };
+        author_group(&sub, bin, &dest, &mut progress)?;
+    }
+    on_progress(AuthorProgress {
+        percent: 100.0,
+        message: format!("authored {n} discs under {}", req.dest.display()),
+        done: true,
+    });
+    Ok(req.dest.clone())
+}
+
+/// Run tsMuxeR for one title into `dest`.
+fn author_one<F>(
+    req: &AuthorRequest,
+    bin: &Path,
+    dest: &Path,
+    on_progress: &mut F,
+) -> Result<(), CoreError>
+where
+    F: FnMut(AuthorProgress),
+{
     let (meta_text, total) = meta(req)?;
-    if let Some(dir) = req.dest.parent() {
+    if let Some(dir) = dest.parent() {
         std::fs::create_dir_all(dir)?;
     }
-    let meta_path =
-        std::env::temp_dir().join(format!("keepsake-author-{}.meta", std::process::id()));
+    let stamp_ns = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let meta_path = std::env::temp_dir().join(format!(
+        "keepsake-author-{}-{stamp_ns}.meta",
+        std::process::id()
+    ));
     std::fs::write(&meta_path, &meta_text)?;
 
     on_progress(AuthorProgress {
         percent: 0.0,
-        message: format!("authoring {} ({})", req.dest.display(), stamp(total)),
+        message: format!("authoring {} ({})", dest.display(), stamp(total)),
         done: false,
     });
 
-    let mut child = Command::new(&bin)
+    let mut child = Command::new(bin)
         .arg(&meta_path)
-        .arg(&req.dest)
+        .arg(dest)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -356,11 +526,21 @@ where
             err_text.lines().last().unwrap_or("see log")
         )));
     }
+    Ok(())
+}
 
-    on_progress(AuthorProgress {
-        percent: 100.0,
-        message: format!("authored {}", req.dest.display()),
-        done: true,
-    });
-    Ok(req.dest.clone())
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn groups_whole_inputs_by_size() {
+        assert_eq!(
+            group_sizes(&[10, 10, 10, 5], 25),
+            vec![vec![0, 1], vec![2, 3]]
+        );
+        // a single over-size input still gets its own disc
+        assert_eq!(group_sizes(&[30, 5], 25), vec![vec![0], vec![1]]);
+        assert!(group_sizes(&[], 25).is_empty());
+    }
 }

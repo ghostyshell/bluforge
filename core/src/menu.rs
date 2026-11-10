@@ -217,11 +217,16 @@ fn parse_nav(entry: &[u8]) -> NavTarget {
             return out;
         }
     }
-    if let Some(id) = be16(entry, 6).filter(|id| *id != 0) {
-        out.object = Some(id);
-    } else if let Some(id) = be16(entry, 1).filter(|id| *id != 0) {
-        out.object = Some(id);
-    }
+    // An HDMV title may legitimately reference movie object 0, so keep a zero
+    // id for HDMV entries; other object types keep the nonzero-only fallback.
+    let at6 = be16(entry, 6);
+    let at1 = be16(entry, 1);
+    out.object = if kind == NavType::Hdmv {
+        at6.or(at1)
+    } else {
+        at6.filter(|id| *id != 0)
+            .or_else(|| at1.filter(|id| *id != 0))
+    };
     out
 }
 

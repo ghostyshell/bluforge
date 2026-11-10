@@ -140,6 +140,10 @@ enum Cmd {
         /// Force a chapter every N minutes instead.
         #[arg(long)]
         auto_chapters: Option<u32>,
+        /// Split the inputs across discs of at most this many GB (25 or 50).
+        /// Whole inputs stay together, so the output is one folder per disc.
+        #[arg(long)]
+        split: Option<f64>,
     },
     /// AACS helper: read the volume ID from the drive and cache it for libaacs.
     Aacs {
@@ -866,6 +870,7 @@ fn run(cli: &Cli) -> Result<(), keepsake_core::CoreError> {
             label,
             no_chapters,
             auto_chapters,
+            split,
         } => {
             let req = keepsake_core::author::AuthorRequest {
                 inputs: inputs.clone(),
@@ -873,6 +878,7 @@ fn run(cli: &Cli) -> Result<(), keepsake_core::CoreError> {
                 label: label.clone(),
                 chapters: !*no_chapters,
                 auto_chapter_minutes: *auto_chapters,
+                split_gb: *split,
             };
             let mut last = -1i64;
             let written = keepsake_core::author::run(&req, |p| {

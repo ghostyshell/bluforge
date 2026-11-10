@@ -812,7 +812,12 @@ fn start_rip(args: Value) -> Result<Value, String> {
 
 #[derive(Deserialize)]
 struct AuthorArgs {
-    input: String,
+    /// Single input, kept for compatibility.
+    #[serde(default)]
+    input: Option<String>,
+    /// One title per input.
+    #[serde(default)]
+    inputs: Option<Vec<String>>,
     dest: String,
     #[serde(default)]
     label: Option<String>,
@@ -820,6 +825,8 @@ struct AuthorArgs {
     chapters: Option<bool>,
     #[serde(default)]
     auto_chapter_minutes: Option<u32>,
+    #[serde(default)]
+    split_gb: Option<f64>,
 }
 
 fn start_author(args: Value) -> Result<Value, String> {
@@ -827,12 +834,27 @@ fn start_author(args: Value) -> Result<Value, String> {
         serde_json::from_value(args).map_err(|e| format!("bad author arguments: {e}"))?;
     require_free_slot()?;
 
+    let mut inputs: Vec<PathBuf> = a
+        .inputs
+        .unwrap_or_default()
+        .iter()
+        .map(PathBuf::from)
+        .collect();
+    if inputs.is_empty() {
+        if let Some(one) = &a.input {
+            inputs.push(PathBuf::from(one));
+        }
+    }
+    if inputs.is_empty() {
+        return Err("pass `input` or `inputs`".into());
+    }
     let req = keepsake_core::author::AuthorRequest {
-        inputs: vec![PathBuf::from(&a.input)],
+        inputs,
         dest: PathBuf::from(&a.dest),
         label: a.label,
         chapters: a.chapters.unwrap_or(true),
         auto_chapter_minutes: a.auto_chapter_minutes,
+        split_gb: a.split_gb,
     };
 
     let id = NEXT_JOB.fetch_add(1, Ordering::SeqCst);
@@ -1121,14 +1143,16 @@ fn tools() -> Vec<Value> {
         }),
         json!({
             "name": "author_start",
-            "description": "Author a Blu-ray (BDMV/ISO) from one finished file. Chapters come from the input's marks; needs tsMuxeR. Returns a job id.",
+            "description": "Author a Blu-ray (BDMV/ISO) from finished files. One input can be an ISO; several become one title each in a BDMV folder. Chapters come from the input's marks; needs tsMuxeR. Returns a job id.",
             "inputSchema": { "type": "object", "properties": {
-                "input": { "type": "string", "description": "MKV/MP4/M2TS to author." },
-                "dest": { "type": "string", "description": "Output .iso file or BDMV folder." },
+                "input": { "type": "string", "description": "Single MKV/MP4/M2TS (kept for compatibility)." },
+                "inputs": { "type": "array", "items": { "type": "string" }, "description": "One title per file, merged into one BDMV folder." },
+                "dest": { "type": "string", "description": "Output .iso file (single input) or BDMV folder." },
                 "label": { "type": "string" },
                 "chapters": { "type": "boolean" },
-                "auto_chapter_minutes": { "type": "integer", "description": "Force a chapter every N minutes instead." }
-            }, "required": ["input", "dest"] }
+                "auto_chapter_minutes": { "type": "integer", "description": "Force a chapter every N minutes instead." },
+                "split_gb": { "type": "number", "description": "Split whole inputs across discs of at most this many GB (25/50); writes one folder per disc." }
+            }, "required": ["dest"] }
         }),
         json!({
             "name": "job_status",

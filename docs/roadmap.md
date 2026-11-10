@@ -110,6 +110,21 @@ consume a saved document directly.
 - Covered by unit tests using a file as the source, so the copy loop and cancel
   path are exercised without hardware.
 
+## Phase 12 - Multi-title authoring and splitting - done
+
+- `author` accepts several inputs: each becomes its own playlist and movie
+  object in one BDMV folder. `bdmv::merge` renumbers tsMuxeR's clips, patches
+  the playlist references, and writes `index.bdmv` / `MovieObject.bdmv` from the
+  layouts libbluray parses (12-byte index entries, 12-byte `PlayPL` commands,
+  `JumpTitle` for first play and top menu).
+- `--split <GB>` groups whole inputs onto discs of at most that size under
+  `<out>/Disc1`, `Disc2`, ... (BD-25/BD-50 style). A title is never cut.
+- The app's author card takes multiple files and an optional split size; MCP
+  takes `inputs` and `split_gb`.
+- Verified by authoring two test clips and opening the merged tree with
+  libbluray (two titles, patched clip names, navigation parses). Unit tests
+  cover the index/movie-object bytes, clip renaming and the size grouping.
+
 ## Parity with DVDFab-class apps
 
 What the app covers today, against the ripping-suite feature set:
@@ -122,13 +137,13 @@ What the app covers today, against the ripping-suite feature set:
 | Rip: x264/x265/VideoToolbox encode | done |
 | TV/anime episode split with TMDB naming | done |
 | Decrypted ISO / folder export (`Copy`) | done |
-| Authoring: BDMV/ISO from finished files | done (single title) |
+| Authoring: BDMV/ISO from finished files | done (single or multi-title) |
 | Disc menu parse, edit, save, apply | done |
 | Native AACS key derivation, BD+ VM | done |
 | Cover art | done |
 | DVD (`VIDEO_TS`) ripping | blocked: the ffmpeg build has no `dvdvideo` demuxer |
 | 1:1 encrypted disc clone | done |
-| BD-25 / BD-50 splitting | not started |
+| BD-25 / BD-50 splitting | done (whole titles per disc) |
 | Burning to disc | not started |
 | Cinavia detection/removal | not implemented |
 | UHD/AACS2 unit-key workflow | partial (core stores unit keys, no UI) |
@@ -142,9 +157,6 @@ What the app covers today, against the ripping-suite feature set:
   IFOs/VOBs through a libdvdread shim. Both are a separate project.
 - **Authored menus.** Needs an HDMV IG stream encoder or a BD-J application;
   neither toolchain is present and there is no player to verify against.
-- **Multi-title authoring and BD-25/50 splitting.** tsMuxeR writes one playlist
-  per disc. Multiple titles need our own index.bdmv/MovieObject.bdmv writer (we
-  parse them for menu documents already, but do not write them).
 - **Burning.** macOS has no open Blu-ray burning stack installed; that path also
   needs a writer drive.
 

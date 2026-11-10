@@ -232,23 +232,33 @@ valid cookie the public previews are used and labelled as such.
 
 ## Authoring
 
-Turn a finished MKV/MP4 back into a Blu-ray:
+Turn finished MKV/MP4 files back into a Blu-ray:
 
 ```bash
 keepsake-atelier author "/path/Episode.mkv" --out "/path/Disc.iso" --label MY_DISC
+keepsake-atelier author ep1.mkv ep2.mkv ep3.mkv --out "/path/Set" --label MY_SHOW
+keepsake-atelier author ep*.mkv --out "/path/Set" --split 25      # BD-25 per disc
 ```
 
 * Uses `tsMuxeR`; the app looks for it at
   `~/Library/Application Support/keepsake-atelier/bin/tsMuxeR` (override with
   `KEEPSAKE_TSMUXER`).
-* Writes a UDF 2.50 image with a complete BDMV tree (index.bdmv,
-  MovieObject.bdmv, PLAYLIST, CLIPINF, STREAM) - playable in a hardware player.
+* One input writes a UDF 2.50 ISO with a complete BDMV tree. Several inputs
+  are authored one title each into a BDMV folder (`--out` a directory): each
+  input gets its own playlist, tsMuxeR's clips are renumbered, and
+  `index.bdmv` / `MovieObject.bdmv` are written with one `PlayPL` object per
+  title plus first-play and top-menu entries.
+* `--split <GB>` packs whole inputs onto discs of at most that size (25 or 50)
+  under `<out>/Disc1`, `Disc2`, ... A title is never cut across discs; an input
+  larger than the limit still gets a disc of its own.
 * Chapter marks are carried over from the input; `--auto-chapters N` forces one
   every N minutes and `--no-chapters` drops them.
-* One file per disc for now: multi-episode discs need per-episode playlists
-  (the next authoring step).
+* Single and multi-title authoring are validated with libbluray opening the
+  authored tree. The generated navigation follows the libbluray parser layouts;
+  a hardware-player pass is still worth doing.
 
-In the app: the **Author a disc** card. Over MCP: `author_start`.
+In the app: the **Author a disc** card (choose several files, optional split
+size). Over MCP: `author_start` with `inputs` and `split_gb`.
 
 ## MCP server
 

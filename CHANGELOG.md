@@ -26,6 +26,12 @@ All notable changes to Keepsake Atelier. Newest first.
 
 ### Added
 
+- **Multi-title authoring and BD-25/50 splitting:** `author` takes several
+  inputs and writes one title each into a BDMV folder, renumbering clips and
+  generating `index.bdmv`/`MovieObject.bdmv` (one `PlayPL` object per title,
+  `JumpTitle` first play/top menu). `--split <GB>` (and a split field in the app)
+  packs whole inputs onto discs of at most that size under `<out>/DiscN`, never
+  cutting a title. MCP: `author_start` with `inputs` and `split_gb`.
 - **Menu templates feed the rip:** when a saved template's disc id matches the
   source, the selected title's name becomes `{title}` (a trailing `(1967)` is
   split off as `{year}`), and its chapter labels replace the ChapterDB names

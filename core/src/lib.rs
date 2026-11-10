@@ -5,6 +5,7 @@
 use std::path::PathBuf;
 
 pub mod author;
+pub mod bdmv;
 pub mod bdplus;
 pub mod clone;
 pub mod config;
