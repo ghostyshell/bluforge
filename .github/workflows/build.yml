@@ -115,6 +115,7 @@ jobs:
           msystem: MINGW64
           update: true
           install: >-
+            mingw-w64-x86_64-gcc
             mingw-w64-x86_64-libbluray
             mingw-w64-x86_64-libaacs
             mingw-w64-x86_64-libbdplus
@@ -125,8 +126,10 @@ jobs:
       - name: Build CLI
         shell: msys2 {0}
         env:
-          PKG_CONFIG_PATH: C:/msys64/mingw64/lib/pkgconfig
+          PKG_CONFIG_PATH: /mingw64/lib/pkgconfig
+          CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER: x86_64-w64-mingw32-gcc
         run: |
+          export PATH="$(cygpath "$USERPROFILE")/.cargo/bin:$PATH"
           cargo build --release --target x86_64-pc-windows-gnu -p keepsake-atelier
       - name: Package
         shell: msys2 {0}
