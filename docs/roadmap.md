@@ -184,10 +184,27 @@ What the app covers today, against the ripping-suite feature set:
 
 ### What is blocked, and on what
 
-- **Authored menus.** Needs an HDMV IG stream encoder or a BD-J application;
-  neither toolchain is present and there is no player to verify against.
-- **Burning.** macOS has no open Blu-ray burning stack installed; that path also
-  needs a writer drive.
+Everything in the parity matrix above is implemented. These four are the
+remaining gaps, and each is blocked on something outside the codebase:
+
+- **Authored graphical menus.** A Blu-ray menu is an HDMV Interactive Graphics
+  stream (PDS/ODS/ICS segments inside the M2TS) or a BD-J application. tsMuxeR
+  does not write IG streams, ffmpeg cannot mux them, and a BD-J app needs the
+  BD-J API stubs plus a player to verify. There is no player here that renders
+  HDMV IG, so this would ship unverified. The menu *documents* (parse/edit/save/
+  apply) and multi-title authoring are the parts that are ready for it.
+- **Burning.** Two blockers: macOS tools cannot produce a Blu-ray-spec UDF 2.50
+  image (`hdiutil makehybrid -udf` caps at 1.50; `mkisofs` writes UDF 2.01), and
+  there is no writer drive attached (`cdrecord` is present). Writing an
+  unverified, non-spec image risks coasters.
+- **Cinavia.** A proprietary audio watermark. There is no open detector or
+  remover; "removal" would need the secret pattern and is legally fraught.
+- **Multi-title ISO.** The folder output is complete and verified; packaging it
+  as an ISO is blocked on the same UDF 2.50 limitation as burning.
+
+What would unblock each: an IG encoder (and a player to test), a UDF 2.50 image
+writer plus a BD writer drive, and a Cinavia implementation from licensed
+material, respectively.
 
 ## Deliberately out of scope
 

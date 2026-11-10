@@ -31,8 +31,8 @@ The engine, CLI binary and crate names are still `keepsake-atelier`.
 | Blu-ray authoring (BDMV / ISO) | ✅ |
 | Disc menu documents (parse, edit, save, apply to another disc) | ✅ |
 | Batch rip queue (single titles, or **Queue all**) | ✅ |
-| Authored menus (generate a menu for a disc you author) | 🚧 |
-| Burning to disc | 🚧 |
+| Authored menus (generate a menu for a disc you author) | 🚧 blocked on an IG/BD-J toolchain |
+| Burning to disc | 🚧 blocked on a UDF 2.50 writer and a writer drive |
 | Self-update wiring (Tauri updater) | ✅ (needs a signed release) |
 | Windows / Linux | 🚧 (macOS first; non-macOS device layer stubbed) |
 
