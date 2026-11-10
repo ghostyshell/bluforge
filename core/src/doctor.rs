@@ -126,18 +126,35 @@ pub fn run() -> DoctorReport {
             .ok(),
     )
     .unwrap_or_else(|| "not found".into());
-    let dvdvideo = ffmpeg_demuxers(&ff)
+    let demuxers = ffmpeg_demuxers(&ff);
+    let dvdvideo = demuxers
         .lines()
         .any(|l| l.split_whitespace().any(|w| w == "dvdvideo"));
+    let encoders = std::process::Command::new(&ff)
+        .args(["-hide_banner", "-encoders"])
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+        .unwrap_or_default();
+    let has = |name: &str| {
+        encoders
+            .lines()
+            .any(|l| l.split_whitespace().any(|w| w == name))
+    };
+    let x264 = has("libx264");
+    let x265 = has("libx265");
+    let vt = has("hevc_videotoolbox") || has("h264_videotoolbox");
     r.checks.push(check(
         "ffmpeg",
         ff_version != "not found",
         format!(
-            "{} (dvdvideo: {})",
-            ff_version,
-            if dvdvideo { "yes" } else { "no" }
+            "{} (dvdvideo: {}, libx264: {}, libx265: {}, videotoolbox: {})",
+            ff.display(),
+            if dvdvideo { "yes" } else { "no" },
+            if x264 { "yes" } else { "no" },
+            if x265 { "yes" } else { "no" },
+            if vt { "yes" } else { "no" }
         ),
-        Some("brew install ffmpeg"),
+        Some("run scripts/build-ffmpeg.sh, or brew install ffmpeg"),
     ));
     if !dvdvideo {
         r.checks.push(check(
@@ -239,6 +256,15 @@ pub fn run() -> DoctorReport {
         "LibreDrive drive + KEYDB device keys (no certificate, no MakeMKV)",
     ));
     r.capabilities.push(cap(
+        "Encode H.264 / HEVC",
+        x264 && x265,
+        if x264 && x265 {
+            "libx264 + libx265"
+        } else {
+            "the bundled ffmpeg is missing libx264/libx265"
+        },
+    ));
+    r.capabilities.push(cap(
         "Authoring (single or multi-title)",
         ts.is_some(),
         if ts.is_some() {
@@ -249,9 +275,9 @@ pub fn run() -> DoctorReport {
     ));
     r.capabilities.push(cap(
         "DVD (VIDEO_TS) rip",
-        dvdvideo,
+        false,
         if dvdvideo {
-            "ffmpeg dvdvideo demuxer"
+            "toolchain ready (ffmpeg has dvdvideo); the DVD title/rip path is not implemented yet"
         } else {
             "needs an ffmpeg with libdvdread/libdvdnav"
         },

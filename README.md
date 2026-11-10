@@ -66,6 +66,11 @@ and remounts it afterwards. `keepsake-atelier libs` and
 `LIBAACS_PATH` / `LIBBDPLUS_PATH`. ffmpeg is used only for muxing/encoding,
 never decryption.
 
+ffmpeg is bundled: `scripts/build-ffmpeg.sh` builds x264, x265, libdvdread and
+libdvdnav into a static `ffmpeg`/`ffprobe`, and Tauri copies both into the app.
+`KEEPSAKE_FFMPEG` overrides the bundled one. `doctor` reports which features the
+resolved build has.
+
 A keyless disc can be keyed from the drive itself with
 `keepsake-atelier keys native` (read the volume id from the drive, derive from
 the disc's own MKB, no MakeMKV); BD+ VM data for libbdplus installs with
@@ -74,7 +79,10 @@ the disc's own MKB, no MakeMKV); BD+ VM data for libbdplus installs with
 
 ## Build & run
 
-Prerequisites (macOS, Homebrew): `ffmpeg libbluray libaacs libbdplus`, Rust, Node.
+Prerequisites (macOS): Rust, Node, and the Homebrew libraries `libbluray
+libaacs libbdplus`. The app ships its **own ffmpeg/ffprobe** (x264, x265,
+libdvdread/libdvdnav, VideoToolbox); see [`docs/ffmpeg.md`](docs/ffmpeg.md) and
+build it once with `scripts/build-ffmpeg.sh`.
 
 ```sh
 # engine + CLI
@@ -191,6 +199,11 @@ ones when the counts agree. See [`docs/menu-templates.md`](docs/menu-templates.m
 ./target/release/keepsake-atelier covers get hirescovers 200648 --out ~/Downloads
 ./target/release/keepsake-atelier covers login     # store a HiResCovers member cookie
 ```
+
+* **Bundled ffmpeg** - built by `scripts/build-ffmpeg.sh`; see
+  [`docs/ffmpeg.md`](docs/ffmpeg.md) for the versions, flags, resolution order
+  and GPL obligations. `doctor` shows whether the build has `dvdvideo`,
+  `libx264`, `libx265` and VideoToolbox.
 
 * **hirescovers** - case covers and disc labels. Its 204k-item manifest is read
   from `$HIRESCOVERS_DIR/state/gallery_items.jsonl`, so *searching* needs no

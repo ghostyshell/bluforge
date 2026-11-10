@@ -26,6 +26,14 @@ All notable changes to Keepsake Atelier. Newest first.
 
 ### Added
 
+- **Bundled ffmpeg/ffprobe:** `scripts/build-ffmpeg.sh` builds x264 (master),
+  x265 4.2, libdvdread 7.1.1, libdvdnav 7.0.0 and ffmpeg n9.0.2 into a static
+  binary, then copies it into the app bundle. Adds the `dvdvideo` demuxer (DVD
+  is no longer toolchain-blocked), GPL x264/x265 encoders, VideoToolbox and the
+  native TrueHD/DTS/Atmos/AC-3/E-AC-3 codecs. `core::binaries` prefers the
+  bundled helper (env override, executable dir, `.app/Contents/Resources`, dev
+  tree, managed dir, PATH), and `doctor` reports the resolved build's features.
+  See `docs/ffmpeg.md` (including the GPLv2+ distribution obligations).
 - **System check:** `keepsake-atelier doctor` (and an app **System check**
   panel, plus an MCP `doctor` tool) lists the installed stack, the ffmpeg
   `dvdvideo` demuxer, tsMuxeR, KEYDB, drive and burning tools, then a capability

@@ -154,7 +154,7 @@ What the app covers today, against the ripping-suite feature set:
 | Disc menu parse, edit, save, apply | done |
 | Native AACS key derivation, BD+ VM | done |
 | Cover art | done |
-| DVD (`VIDEO_TS`) ripping | blocked: the ffmpeg build has no `dvdvideo` demuxer |
+| DVD (`VIDEO_TS`) ripping | toolchain ready (bundled ffmpeg has `dvdvideo`); path not implemented |
 | 1:1 encrypted disc clone | done |
 | BD-25 / BD-50 splitting | done (whole titles per disc) |
 | Burning to disc | not started |
@@ -172,10 +172,10 @@ What the app covers today, against the ripping-suite feature set:
 
 ### What is blocked, and on what
 
-- **DVD ripping.** Homebrew's ffmpeg 9.0.2 has no `dvdvideo` demuxer and no
-  libdvdread/libdvdnav, so `ffmpeg -f dvdvideo` cannot read a `VIDEO_TS` tree.
-  Options: require a custom ffmpeg build with libdvdread/libdvdnav, or read
-  IFOs/VOBs through a libdvdread shim. Both are a separate project.
+- **DVD ripping.** The ffmpeg blocker is gone: the bundled build has the
+  `dvdvideo` demuxer (`doctor` shows it). What remains is the DVD path itself -
+  enumerating titles/chapters from `VIDEO_TS.IFO` and wiring the rip - which is
+  the next stage, not a toolchain problem.
 - **Authored menus.** Needs an HDMV IG stream encoder or a BD-J application;
   neither toolchain is present and there is no player to verify against.
 - **Burning.** macOS has no open Blu-ray burning stack installed; that path also

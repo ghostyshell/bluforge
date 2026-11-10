@@ -21,11 +21,16 @@
         "hiddenTitle": true
       }
     ],
-    "security": { "csp": null }
+    "security": {
+      "csp": null
+    }
   },
   "bundle": {
     "active": true,
-    "targets": ["app", "dmg"],
+    "targets": [
+      "app",
+      "dmg"
+    ],
     "category": "Utility",
     "shortDescription": "Blu-ray ripping & authoring",
     "icon": [
@@ -36,7 +41,14 @@
       "icons/icon.ico"
     ],
     "createUpdaterArtifacts": true,
-    "macOS": { "minimumSystemVersion": "12.0" }
+    "macOS": {
+      "minimumSystemVersion": "12.0"
+    },
+    "resources": {
+      "resources/ffmpeg": "ffmpeg",
+      "resources/ffprobe": "ffprobe",
+      "resources/ffmpeg-LICENSES.txt": "ffmpeg-LICENSES.txt"
+    }
   },
   "plugins": {
     "updater": {

@@ -162,10 +162,10 @@ pub struct RipProgress {
 }
 
 pub fn ffmpeg_path() -> PathBuf {
-    crate::env_compat("FFMPEG")
-        .map(std::ffi::OsString::from)
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("ffmpeg"))
+    if let Some(p) = crate::env_compat("FFMPEG") {
+        return PathBuf::from(p);
+    }
+    crate::binaries::helper("ffmpeg").unwrap_or_else(|| PathBuf::from("ffmpeg"))
 }
 
 fn codec_args(s: &EncodeSettings) -> Vec<String> {

@@ -61,12 +61,10 @@ pub fn tsmuxer_path() -> Option<PathBuf> {
 }
 
 fn ffprobe() -> String {
-    for c in ["/opt/homebrew/bin/ffprobe", "/usr/local/bin/ffprobe"] {
-        if Path::new(c).is_file() {
-            return c.to_string();
-        }
+    if let Some(p) = crate::env_compat("FFPROBE") {
+        return p;
     }
-    "ffprobe".to_string()
+    crate::binaries::helper_str("ffprobe").unwrap_or_else(|| "ffprobe".to_string())
 }
 
 struct Probe {

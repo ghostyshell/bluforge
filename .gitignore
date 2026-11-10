@@ -4,3 +4,8 @@ node_modules
 dist
 .DS_Store
 *.log
+
+# bundled ffmpeg build outputs (scripts/build-ffmpeg.sh)
+vendor/
+app/src-tauri/resources/ffmpeg
+app/src-tauri/resources/ffprobe

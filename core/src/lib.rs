@@ -7,6 +7,7 @@ use std::path::PathBuf;
 pub mod author;
 pub mod bdmv;
 pub mod bdplus;
+pub mod binaries;
 pub mod clone;
 pub mod config;
 pub mod covers;
