@@ -46,7 +46,7 @@ pub fn install() -> Result<PathBuf, CoreError> {
         ));
     }
 
-    let tmp = std::env::temp_dir().join("bluforge-bdplus-vm0.bz2");
+    let tmp = std::env::temp_dir().join("keepsake-bdplus-vm0.bz2");
     std::fs::write(&tmp, &body)?;
     let status = std::process::Command::new("tar")
         .arg("-xjf")

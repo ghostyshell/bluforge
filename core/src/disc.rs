@@ -292,10 +292,10 @@ impl Disc {
 
     /// Which decrypt backend to use. Native libaacs is preferred; MakeMKV's
     /// libmmbd is only the fallback for a disc we cannot key yet (its id absent
-    /// from KEYDB) or when libaacs is not installed. `BLUFORGE_DECRYPT=aacs`
+    /// from KEYDB) or when libaacs is not installed. `KEEPSAKE_DECRYPT=aacs`
     /// forces libaacs, `=mmbd` forces libmmbd.
     pub fn resolve_backend_for(source: Option<&Path>) -> DecryptBackend {
-        match std::env::var("BLUFORGE_DECRYPT")
+        match crate::env_compat("DECRYPT")
             .unwrap_or_default()
             .to_ascii_lowercase()
             .as_str()

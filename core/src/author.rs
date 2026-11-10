@@ -38,7 +38,7 @@ pub struct AuthorProgress {
 
 /// Locate tsMuxeR: explicit override, the copy the app manages, then PATH.
 pub fn tsmuxer_path() -> Option<PathBuf> {
-    if let Ok(p) = std::env::var("BLUFORGE_TSMUXER") {
+    if let Some(p) = crate::env_compat("TSMUXER") {
         if Path::new(&p).is_file() {
             return Some(PathBuf::from(p));
         }
@@ -286,7 +286,7 @@ where
     }
     let bin = tsmuxer_path().ok_or_else(|| {
         CoreError::Disc(
-            "tsMuxeR is not installed (expected at ~/Library/Application Support/bluforge/bin/tsMuxeR)"
+            "tsMuxeR is not installed (expected at ~/Library/Application Support/keepsake-atelier/bin/tsMuxeR)"
                 .into(),
         )
     })?;
@@ -296,7 +296,7 @@ where
         std::fs::create_dir_all(dir)?;
     }
     let meta_path =
-        std::env::temp_dir().join(format!("bluforge-author-{}.meta", std::process::id()));
+        std::env::temp_dir().join(format!("keepsake-author-{}.meta", std::process::id()));
     std::fs::write(&meta_path, &meta_text)?;
 
     on_progress(AuthorProgress {

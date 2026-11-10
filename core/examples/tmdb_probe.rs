@@ -1,5 +1,5 @@
 //! Probe TMDB/ChapterDB access with different request shapes.
-//! `cargo run -p bluforge-core --example tmdb_probe`
+//! `cargo run -p keepsake-core --example tmdb_probe`
 
 const TMDB: &str = "https://www.themoviedb.org/search?query=Gladiator+II";
 
@@ -19,7 +19,9 @@ fn main() {
     try_req("no UA at all", |r| r);
     try_req("UA=ureq/2.10.1", |r| r.set("User-Agent", "ureq/2.10.1"));
     try_req("UA=curl/8.7.1", |r| r.set("User-Agent", "curl/8.7.1"));
-    try_req("UA=BluForge/0.1", |r| r.set("User-Agent", "BluForge/0.1"));
+    try_req("UA=KeepsakeAtelier/0.1", |r| {
+        r.set("User-Agent", "KeepsakeAtelier/0.1")
+    });
     try_req("UA=browser only", |r| {
         r.set(
             "User-Agent",

@@ -13,7 +13,7 @@ use crate::CoreError;
 
 // Note: TMDB's edge returns 403 for *browser* User-Agents coming from a
 // non-browser client; a plain product UA works.
-const UA: &str = "BluForge/0.1";
+const UA: &str = "KeepsakeAtelier/0.1";
 const MAX_BODY: u64 = 8 * 1024 * 1024;
 
 fn get(url: &str) -> Result<String, CoreError> {

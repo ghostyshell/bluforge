@@ -15,15 +15,15 @@ use std::time::Duration;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use bluforge_core::config::AppConfig;
-use bluforge_core::iso;
-use bluforge_core::keys;
-use bluforge_core::rip::{
+use keepsake_core::config::AppConfig;
+use keepsake_core::iso;
+use keepsake_core::keys;
+use keepsake_core::rip::{
     AudioSel, Container, EncodeSettings, RipMode, RipProgress, RipRequest, SubSel, VideoCodec,
 };
 
 const PROTOCOL: &str = "2025-06-18";
-const SERVER_NAME: &str = "bluforge";
+const SERVER_NAME: &str = "keepsake-atelier";
 const SERVER_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 // ---------------------------------------------------------------------------
@@ -281,7 +281,7 @@ fn run_tool(name: &str, args: Value) -> Result<Value, String> {
         "status" => {
             let cfg = AppConfig::load();
             let snap =
-                serde_json::to_value(bluforge_core::snapshot()).map_err(|e| e.to_string())?;
+                serde_json::to_value(keepsake_core::snapshot()).map_err(|e| e.to_string())?;
             Ok(json!({
                 "app": snap,
                 "mcp": {
@@ -293,41 +293,41 @@ fn run_tool(name: &str, args: Value) -> Result<Value, String> {
         }
         "disc_info" => {
             let source = resolve_source(&str_arg(&args, "source")?);
-            let disc = bluforge_core::Disc::open(Path::new(&source), Some(&keys::keydb_path()))
+            let disc = keepsake_core::Disc::open(Path::new(&source), Some(&keys::keydb_path()))
                 .map_err(|e| e.to_string())?;
             let mut info = disc.info().map_err(|e| e.to_string())?;
             info.path = source.clone();
-            info.name = bluforge_core::device::source_name(&source, &info.name);
+            info.name = keepsake_core::device::source_name(&source, &info.name);
             serde_json::to_value(info).map_err(|e| e.to_string())
         }
         "tv_plan" => {
             let source = resolve_source(&str_arg(&args, "source")?);
             let series = args.get("series").and_then(|v| v.as_str());
-            let disc = bluforge_core::Disc::open(Path::new(&source), Some(&keys::keydb_path()))
+            let disc = keepsake_core::Disc::open(Path::new(&source), Some(&keys::keydb_path()))
                 .map_err(|e| e.to_string())?;
             let info = disc.info().map_err(|e| e.to_string())?;
             let start = args.get("start").and_then(|v| v.as_u64()).map(|v| v as u32);
             let plan =
-                bluforge_core::tv::plan(&disc, &info, series, start).map_err(|e| e.to_string())?;
+                keepsake_core::tv::plan(&disc, &info, series, start).map_err(|e| e.to_string())?;
             serde_json::to_value(plan).map_err(|e| e.to_string())
         }
         "rip_start" => start_rip(args),
         "menu_parse" => {
             let source = resolve_source(&str_arg(&args, "source")?);
-            let doc = bluforge_core::menu::parse(Path::new(&source), Some(&keys::keydb_path()))
+            let doc = keepsake_core::menu::parse(Path::new(&source), Some(&keys::keydb_path()))
                 .map_err(|e| e.to_string())?;
             if let Some(name) = args.get("save").and_then(|v| v.as_str()) {
-                bluforge_core::menu::save(&bluforge_core::menu::store_dir(), name, &doc)
+                keepsake_core::menu::save(&keepsake_core::menu::store_dir(), name, &doc)
                     .map_err(|e| e.to_string())?;
             }
             serde_json::to_value(doc).map_err(|e| e.to_string())
         }
         "menu_list" => {
-            let dir = bluforge_core::menu::store_dir();
-            let menus: Vec<Value> = bluforge_core::menu::list(&dir)
+            let dir = keepsake_core::menu::store_dir();
+            let menus: Vec<Value> = keepsake_core::menu::list(&dir)
                 .into_iter()
                 .map(|(name, path)| {
-                    let doc = bluforge_core::menu::load(&dir, &name).ok();
+                    let doc = keepsake_core::menu::load(&dir, &name).ok();
                     json!({
                         "name": name,
                         "path": path.display().to_string(),
@@ -340,14 +340,14 @@ fn run_tool(name: &str, args: Value) -> Result<Value, String> {
         }
         "menu_show" => {
             let name = str_arg(&args, "template")?;
-            let doc = bluforge_core::menu::load(&bluforge_core::menu::store_dir(), &name)
+            let doc = keepsake_core::menu::load(&keepsake_core::menu::store_dir(), &name)
                 .map_err(|e| e.to_string())?;
             serde_json::to_value(doc).map_err(|e| e.to_string())
         }
         "menu_edit" => {
             let name = str_arg(&args, "template")?;
-            let dir = bluforge_core::menu::store_dir();
-            let mut doc = bluforge_core::menu::load(&dir, &name).map_err(|e| e.to_string())?;
+            let dir = keepsake_core::menu::store_dir();
+            let mut doc = keepsake_core::menu::load(&dir, &name).map_err(|e| e.to_string())?;
             let title = args
                 .get("title")
                 .and_then(|v| v.as_u64())
@@ -364,32 +364,32 @@ fn run_tool(name: &str, args: Value) -> Result<Value, String> {
                         .as_str()
                         .ok_or("`chapters` entries must be strings like \"2:Name\"")?;
                     let (n, text) =
-                        bluforge_core::menu::parse_chapter_spec(spec).map_err(|e| e.to_string())?;
+                        keepsake_core::menu::parse_chapter_spec(spec).map_err(|e| e.to_string())?;
                     doc.set_chapter(title, n, &text)
                         .map_err(|e| e.to_string())?;
                 }
             }
-            bluforge_core::menu::save(&dir, &name, &doc).map_err(|e| e.to_string())?;
+            keepsake_core::menu::save(&dir, &name, &doc).map_err(|e| e.to_string())?;
             serde_json::to_value(doc).map_err(|e| e.to_string())
         }
         "menu_apply" => {
             let name = str_arg(&args, "template")?;
             let target = resolve_source(&str_arg(&args, "target")?);
-            let dir = bluforge_core::menu::store_dir();
-            let tpl = bluforge_core::menu::load(&dir, &name).map_err(|e| e.to_string())?;
+            let dir = keepsake_core::menu::store_dir();
+            let tpl = keepsake_core::menu::load(&dir, &name).map_err(|e| e.to_string())?;
             let target_doc =
-                bluforge_core::menu::parse(Path::new(&target), Some(&keys::keydb_path()))
+                keepsake_core::menu::parse(Path::new(&target), Some(&keys::keydb_path()))
                     .map_err(|e| e.to_string())?;
             let save = args.get("save").and_then(|v| v.as_str());
-            let doc = bluforge_core::menu::apply(&tpl, &target_doc, &name);
+            let doc = keepsake_core::menu::apply(&tpl, &target_doc, &name);
             if let Some(save) = save {
-                bluforge_core::menu::save(&dir, save, &doc).map_err(|e| e.to_string())?;
+                keepsake_core::menu::save(&dir, save, &doc).map_err(|e| e.to_string())?;
             }
             serde_json::to_value(doc).map_err(|e| e.to_string())
         }
         "menu_remove" => {
             let name = str_arg(&args, "template")?;
-            let path = bluforge_core::menu::remove(&bluforge_core::menu::store_dir(), &name)
+            let path = keepsake_core::menu::remove(&keepsake_core::menu::store_dir(), &name)
                 .map_err(|e| e.to_string())?;
             Ok(json!({ "removed": path.display().to_string() }))
         }
@@ -429,17 +429,17 @@ fn run_tool(name: &str, args: Value) -> Result<Value, String> {
             let source = args.get("source").and_then(|v| v.as_str()).unwrap_or("all");
             let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(12) as usize;
             let cfg = AppConfig::load();
-            let sources: Vec<bluforge_core::CoverSource> = if source == "all" {
-                bluforge_core::CoverSource::all().to_vec()
+            let sources: Vec<keepsake_core::CoverSource> = if source == "all" {
+                keepsake_core::CoverSource::all().to_vec()
             } else {
-                bluforge_core::CoverSource::parse(source)
+                keepsake_core::CoverSource::parse(source)
                     .map(|s| vec![s])
-                    .unwrap_or_else(|| bluforge_core::CoverSource::all().to_vec())
+                    .unwrap_or_else(|| keepsake_core::CoverSource::all().to_vec())
             };
             let mut hits = Vec::new();
             for s in sources {
                 if let Ok(mut r) =
-                    bluforge_core::covers::search(s, &query, limit, &cfg.hirescovers_dir)
+                    keepsake_core::covers::search(s, &query, limit, &cfg.hirescovers_dir)
                 {
                     hits.append(&mut r);
                 }
@@ -451,7 +451,7 @@ fn run_tool(name: &str, args: Value) -> Result<Value, String> {
             let dest = str_arg(&args, "dest")?;
             let cfg = AppConfig::load();
             let (bytes, kind) =
-                bluforge_core::covers::fetch(&url, bluforge_core::covers::cookie(&cfg).as_deref())
+                keepsake_core::covers::fetch(&url, keepsake_core::covers::cookie(&cfg).as_deref())
                     .map_err(|e| e.to_string())?;
             if let Some(dir) = Path::new(&dest).parent() {
                 std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
@@ -500,7 +500,7 @@ fn run_tool(name: &str, args: Value) -> Result<Value, String> {
                             .collect()
                     })
                     .unwrap_or_default(),
-                note: Some("bluforge mcp".into()),
+                note: Some("keepsake-atelier mcp".into()),
             };
             let replaced =
                 keys::upsert_at(&keys::keydb_path(), &entry).map_err(|e| e.to_string())?;
@@ -512,7 +512,7 @@ fn run_tool(name: &str, args: Value) -> Result<Value, String> {
             Ok(json!({ "disc_id": id, "removed": removed }))
         }
         "eject" => {
-            let msg = bluforge_core::device::eject().map_err(|e| e.to_string())?;
+            let msg = keepsake_core::device::eject().map_err(|e| e.to_string())?;
             Ok(json!({ "message": msg }))
         }
         "config_get" => serde_json::to_value(AppConfig::load()).map_err(|e| e.to_string()),
@@ -532,7 +532,7 @@ fn run_tool(name: &str, args: Value) -> Result<Value, String> {
                     .unwrap_or("")
                     .to_string()
             };
-            let v = bluforge_core::TemplateVars::build(
+            let v = keepsake_core::TemplateVars::build(
                 &s("disc"),
                 &s("title"),
                 args.get("year").and_then(|x| x.as_str()),
@@ -551,10 +551,10 @@ fn run_tool(name: &str, args: Value) -> Result<Value, String> {
                 ext,
             );
             Ok(json!({
-                "path": bluforge_core::render_template(&template, &v, ext, "{title} - {resolution}")
+                "path": keepsake_core::render_template(&template, &v, ext, "{title} - {resolution}")
             }))
         }
-        "template_placeholders" => Ok(json!(bluforge_core::template::PLACEHOLDERS
+        "template_placeholders" => Ok(json!(keepsake_core::template::PLACEHOLDERS
             .iter()
             .map(|(k, d)| json!({ "key": k, "description": d }))
             .collect::<Vec<_>>())),
@@ -597,7 +597,7 @@ fn resolve_source(p: &str) -> String {
     if !(name.starts_with("rdisk") || name.starts_with("disk")) {
         return p.to_string();
     }
-    if let Some(d) = bluforge_core::device::list_optical().into_iter().next() {
+    if let Some(d) = keepsake_core::device::list_optical().into_iter().next() {
         let path = d
             .device_path
             .unwrap_or_else(|| format!("/dev/r{}", d.bsd_name));
@@ -786,7 +786,7 @@ fn start_author(args: Value) -> Result<Value, String> {
         serde_json::from_value(args).map_err(|e| format!("bad author arguments: {e}"))?;
     require_free_slot()?;
 
-    let req = bluforge_core::author::AuthorRequest {
+    let req = keepsake_core::author::AuthorRequest {
         inputs: vec![PathBuf::from(&a.input)],
         dest: PathBuf::from(&a.dest),
         label: a.label,
@@ -810,7 +810,7 @@ fn start_author(args: Value) -> Result<Value, String> {
     }
 
     std::thread::spawn(move || {
-        let res = bluforge_core::author::run(&req, |p: bluforge_core::author::AuthorProgress| {
+        let res = keepsake_core::author::run(&req, |p: keepsake_core::author::AuthorProgress| {
             job_update(id, |j| {
                 j.percent = p.percent;
                 if !p.message.is_empty() {
@@ -1197,4 +1197,4 @@ fn tools() -> Vec<Value> {
 }
 
 // re-export so lib.rs can call the same module
-use bluforge_core::rip;
+use keepsake_core::rip;

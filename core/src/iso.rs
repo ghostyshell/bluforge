@@ -197,7 +197,7 @@ where
         IsoFormat::Iso => {
             let parent = req.dest.parent().unwrap_or(Path::new("."));
             std::fs::create_dir_all(parent)?;
-            (parent.join(format!(".{}.bluforge-tmp", label)), true)
+            (parent.join(format!(".{}.keepsake-tmp", label)), true)
         }
     };
     if work.exists() {

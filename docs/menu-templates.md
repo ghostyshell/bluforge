@@ -71,24 +71,24 @@ regression fixture in `core/src/menu.rs`.
 
 ```sh
 # Parse a mounted disc or a BDMV folder. `--json` emits the document.
-bluforge menu parse /Volumes/MY_DISC
-bluforge menu parse /Volumes/MY_DISC --save my-disc
+keepsake-atelier menu parse /Volumes/MY_DISC
+keepsake-atelier menu parse /Volumes/MY_DISC --save my-disc
 
-# Templates live in ~/Library/Application Support/bluforge/menus/
-bluforge menu list
-bluforge menu show my-disc
-bluforge menu show my-disc --json
+# Templates live in ~/Library/Application Support/keepsake-atelier/menus/
+keepsake-atelier menu list
+keepsake-atelier menu show my-disc
+keepsake-atelier menu show my-disc --json
 
 # Edit in place: rename title 51, make it the main feature, label chapters.
-bluforge menu edit my-disc --title 51 --name "The Jungle Book"
-bluforge menu edit my-disc --title 51 --main
-bluforge menu edit my-disc --title 51 --chapter 1:"Opening Credits" --chapter 2:"Bare Necessities"
+keepsake-atelier menu edit my-disc --title 51 --name "The Jungle Book"
+keepsake-atelier menu edit my-disc --title 51 --main
+keepsake-atelier menu edit my-disc --title 51 --chapter 1:"Opening Credits" --chapter 2:"Bare Necessities"
 
 # Apply the saved document to a different disc.
-bluforge menu apply my-disc /Volumes/OTHER_DISC
-bluforge menu apply my-disc /Volumes/OTHER_DISC --save other-disc
+keepsake-atelier menu apply my-disc /Volumes/OTHER_DISC
+keepsake-atelier menu apply my-disc /Volumes/OTHER_DISC --save other-disc
 
-bluforge menu remove my-disc
+keepsake-atelier menu remove my-disc
 ```
 
 `show`, `edit` and `apply` accept either a template name or a path to a `.json`

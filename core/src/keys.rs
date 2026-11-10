@@ -494,7 +494,7 @@ mod tests {
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
                 .as_nanos();
-            p.push(format!("bluforge-keys-{tag}-{n}.cfg"));
+            p.push(format!("keepsake-keys-{tag}-{n}.cfg"));
             let _ = fs::remove_file(&p);
             TempFile(p)
         }

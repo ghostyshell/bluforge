@@ -35,7 +35,7 @@ tested and used on a real disc.
 
 ## Phase 5 - Surfaces - done
 
-- CLI for everything (`bluforge ...`).
+- CLI for everything (`keepsake-atelier ...`).
 - Tauri desktop app (Keepsake Atelier) for devices, disc inspection and track
   lists, rips, covers, ISO export, authoring, keys, BD+ and menu documents.
 - MCP server exposing the core to agents.
@@ -49,9 +49,9 @@ Parse a disc's menu, edit it, save it as a template, apply it to another disc.
   so both 12-byte and legacy layouts parse.
 - Playable titles from libbluray, joined with editable names, the main-feature
   flag and chapter labels.
-- Templates under `~/Library/Application Support/bluforge/menus/`, applied to a
+- Templates under `~/Library/Application Support/keepsake-atelier/menus/`, applied to a
   different disc by playlist id, then duration, then position.
-- CLI: `bluforge menu parse|list|show|edit|apply|remove`.
+- CLI: `keepsake-atelier menu parse|list|show|edit|apply|remove`.
 - See `docs/menu-templates.md`.
 
 ## Phase 7 - Menu documents in the desktop app - done
@@ -71,14 +71,14 @@ Parse a disc's menu, edit it, save it as a template, apply it to another disc.
 - Jobs run one at a time. A queue panel shows each job's state
   (queued/running/done/error/cancelled) and progress, and can cancel a running
   job or remove queued and finished ones.
-- The queue is persisted to `~/Library/Application Support/bluforge/queue.json`
+- The queue is persisted to `~/Library/Application Support/keepsake-atelier/queue.json`
   on every state change, restored on launch (a job that was running becomes
   queued again), and never auto-starts on launch: the queue panel has a Resume
   button.
 
 ## Phase 9 - Authored menus - deferred
 
-Generating a graphical top menu for a disc that `bluforge author` builds needs
+Generating a graphical top menu for a disc that `keepsake-atelier author` builds needs
 an HDMV interactive-graphics stream or a BD-J application. Neither toolchain is
 present: tsMuxeR does not write menus, and there is no BD-J compiler or player
 to verify against. A navigation-only menu (no drawn buttons) would not be a
@@ -91,12 +91,12 @@ consume a saved document directly.
 ## Phase 10 - AACS2 / UHD unit keys - future
 
 - Current native recovery derives the AACS1 media key and VUK. AACS2 discs need
-  the unit-key table; `bluforge keys` already stores and uses one when present.
+  the unit-key table; `keepsake-atelier keys` already stores and uses one when present.
 - Next: derive/import unit keys and show the disc's AACS generation in the app.
 
 ## Phase 11 - 1:1 disc clone - done
 
-- `bluforge clone <device> <image.iso>` copies the raw sectors, preserving
+- `keepsake-atelier clone <device> <image.iso>` copies the raw sectors, preserving
   AACS/BD+, and `Clone 1:1` in the ISO panel does the same from the app.
 - Progress is byte-based (block size and count come from the drive on macOS),
   the copy is uncached, a drive drop stops with the byte offset, and cancelling

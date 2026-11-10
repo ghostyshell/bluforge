@@ -42,7 +42,7 @@ Keepsake Atelier does both:
   call site resolving on its own.
 - MakeMKV's `libmmbd` is the last-resort fallback: a disc that still cannot be
   keyed, or BD+ (Homebrew's `libbdplus` ships no BD+ VM config). Force either
-  backend with `BLUFORGE_DECRYPT=aacs|mmbd`. `bluforge libs` / `disc` print the
+  backend with `KEEPSAKE_DECRYPT=aacs|mmbd`. `keepsake-atelier libs` / `disc` print the
   choice.
 
 libaacs's own macOS MMC layer cannot even find the device ("Could not find
@@ -52,7 +52,7 @@ identically, to libmmbd's.
 
 ## Key store
 
-`bluforge keys add|list|show|remove|import` manages `KEYDB.cfg` line entries
+`keepsake-atelier keys add|list|show|remove|import` manages `KEYDB.cfg` line entries
 (`0x<discid> = <name> | D | <date> | M | ... | I | ... | V | <vuk> | U | <n>-<keys>`).
 Disc id is `SHA-1(AACS/Unit_Key_RO.inf)`; `--from <mount>` derives it. The store
 is what "retires MakeMKV": once a disc is keyed it rips natively and offline.
@@ -66,8 +66,8 @@ is preserved on refresh.
 Preferred: derive it from the disc itself. No MakeMKV, no external oracle.
 
 ```sh
-bluforge keys native --from /Volumes/MY_DISC   # read VID, derive, store
-bluforge keys native --print                   # print only (default: mounted disc)
+keepsake-atelier keys native --from /Volumes/MY_DISC   # read VID, derive, store
+keepsake-atelier keys native --print                   # print only (default: mounted disc)
 ```
 
 That runs the native path: the VID comes from the drive (LibreDrive vendor read,
@@ -80,7 +80,7 @@ drive whose revocation list has rejected every published certificate, fall back
 to an external oracle and store the key by hand:
 
 ```sh
-bluforge keys add --from /Volumes/MY_DISC --vuk 0x<VUK> [--unit-key 0x<UK>]
+keepsake-atelier keys add --from /Volumes/MY_DISC --vuk 0x<VUK> [--unit-key 0x<UK>]
 ```
 
 ## BD+ discs
@@ -88,7 +88,7 @@ bluforge keys add --from /Volumes/MY_DISC --vuk 0x<VUK> [--unit-key 0x<UK>]
 BD+ is separate from AACS. libbdplus runs the BD+ VM but ships no VM data:
 
 ```sh
-bluforge bdplus --install
+keepsake-atelier bdplus --install
 ```
 
 unpacks the public `bdplus-vm0.bz2` into libbdplus's config dir; BD+ discs then
@@ -132,7 +132,7 @@ is why revoked host certificates and `SEND KEY` never matter to MakeMKV.
 `bf_aacs_vid_libredrive()` in `core/src/aacs_mmc.c` issues exactly that read.
 `bf_native_key()` prefers it and only falls back to host-certificate
 authentication when the vendor read fails. That closes the last MakeMKV
-dependency: `bluforge keys native` needs no certificate and never runs
+dependency: `keepsake-atelier keys native` needs no certificate and never runs
 `makemkvcon`. Verified on the Danganronpa disc: the VID recovered this way is
 `BA4E09AE31DE87E680D05E229E03F4AB`, matching KEYDB exactly.
 
@@ -148,7 +148,7 @@ Kept for a drive without LibreDrive firmware. MakeMKV writes what it read into
 The MK needs **no** host certificate (device keys + MKB, offline), and
 `VUK = AES-G(MK, VID)`. So MakeMKV only has to supply the VID.
 
-    bluforge keys from-makemkv [--from <mount>] [--print]
+    keepsake-atelier keys from-makemkv [--from <mount>] [--print]
 
 - runs `makemkvcon backup` just far enough to get `discatt.dat`, then kills it
   (`SDF_STOP` is set so MakeMKV does not switch the drive into LibreDrive, which
@@ -181,7 +181,7 @@ AACS host cert finds nothing that verifies, and why its `sdf.bin`
 (raw-deflate + preset dictionary) holds only drive-tool scripts.
 
 `makemkvcon` is now only a last-resort oracle for a non-LibreDrive drive, and
-`BLUFORGE_HOST_CERT` / `BLUFORGE_HOST_PRIV` let a licensed certificate replace
+`KEEPSAKE_HOST_CERT` / `KEEPSAKE_HOST_PRIV` let a licensed certificate replace
 even that.
 
 ## Traps seen in practice
@@ -191,11 +191,11 @@ even that.
   (`drutil` reports "No Media Inserted", no `/dev/disk` node). It needs a
   physical replug; a powered hub is the real fix.
 - **The first rip after a replug tends to fail** with `Unable decrypt unit`
-  (libaacs) and then succeeds on retry. `bluforge rip` now re-runs the whole rip
+  (libaacs) and then succeeds on retry. `keepsake-atelier rip` now re-runs the whole rip
   on failure by default (`--retries`, default 2), so this is handled without a
   manual second command.
 - **`/dev/rdiskN` numbers change** when the drive re-enumerates; never cache the
-  node, re-read it (`bluforge devices`).
+  node, re-read it (`keepsake-atelier devices`).
 - **A disc read right after authentication needs a moment.** Our MMC auth takes
   exclusive access, and on release the USB drive re-enumerates and the media
   briefly disappears. The native path remounts and waits for the volume to

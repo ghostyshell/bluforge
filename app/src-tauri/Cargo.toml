@@ -1,19 +1,19 @@
 [package]
-name = "bluforge-app"
+name = "keepsake-atelier-app"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 description = "Keepsake Atelier desktop app"
 
 [lib]
-name = "bluforge_app"
+name = "keepsake_atelier_app"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-bluforge-core = { path = "../../core" }
+keepsake-core = { path = "../../core" }
 tauri = { version = "2", features = [] }
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"

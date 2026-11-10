@@ -44,15 +44,53 @@ pub enum CoreError {
     Config(String),
 }
 
-/// Per-user config/state directory (`~/Library/Application Support/bluforge`
+/// Per-user config/state directory (`~/Library/Application Support/keepsake-atelier`
 /// on macOS).
+///
+/// A pre-rename `bluforge` directory is moved into place once, so existing
+/// keys, menus, queue and settings carry over.
 pub fn config_dir() -> PathBuf {
-    if let Some(proj) = directories::ProjectDirs::from("", "", "bluforge") {
+    let dir = if let Some(proj) = directories::ProjectDirs::from("", "", "keepsake-atelier") {
         proj.config_dir().to_path_buf()
     } else {
         let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
-        PathBuf::from(home).join(".config/bluforge")
+        PathBuf::from(home).join(".config/keepsake-atelier")
+    };
+    migrate_legacy_dir(&dir);
+    dir
+}
+
+fn migrate_legacy_dir(new: &std::path::Path) {
+    if new.exists() {
+        return;
     }
+    let Some(old) =
+        directories::ProjectDirs::from("", "", "bluforge").map(|p| p.config_dir().to_path_buf())
+    else {
+        return;
+    };
+    if !old.exists() {
+        return;
+    }
+    if let Some(parent) = new.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    // Both paths sit in the same parent directory, so this is an atomic rename.
+    if std::fs::rename(&old, new).is_err() && !new.exists() {
+        tracing::warn!(
+            old = %old.display(),
+            new = %new.display(),
+            "could not move the pre-rename data directory; starting with a fresh one"
+        );
+    }
+}
+
+/// Look up a setting from the environment, accepting both the current
+/// `KEEPSAKE_*` name and the pre-rename `BLUFORGE_*` name.
+pub fn env_compat(name: &str) -> Option<String> {
+    std::env::var(format!("KEEPSAKE_{name}"))
+        .or_else(|_| std::env::var(format!("BLUFORGE_{name}")))
+        .ok()
 }
 
 /// Everything the UI needs to render a first screen.

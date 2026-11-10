@@ -1,10 +1,10 @@
 use clap::{Parser, Subcommand};
 
-use bluforge_core::{device, keys, AppConfig};
+use keepsake_core::{device, keys, AppConfig};
 
 #[derive(Parser)]
 #[command(
-    name = "bluforge",
+    name = "keepsake-atelier",
     version,
     about = "Keepsake Atelier - Blu-ray ripping & authoring"
 )]
@@ -59,7 +59,7 @@ enum Cmd {
         /// Output .mkv/.mp4 file, or a directory (anything without an
         /// extension, or ending in /). Defaults to the configured folder.
         output: Option<std::path::PathBuf>,
-        /// Title index (see `bluforge disc`). Default: the main title.
+        /// Title index (see `keepsake-atelier disc`). Default: the main title.
         #[arg(long)]
         title: Option<u32>,
         /// Re-encode video instead of lossless remux.
@@ -371,7 +371,7 @@ fn resolve_source(p: &std::path::Path) -> std::path::PathBuf {
     if !(name.starts_with("rdisk") || name.starts_with("disk")) {
         return p.to_path_buf();
     }
-    if let Some(d) = bluforge_core::device::list_optical().into_iter().next() {
+    if let Some(d) = keepsake_core::device::list_optical().into_iter().next() {
         let path = d
             .device_path
             .clone()
@@ -387,8 +387,8 @@ fn resolve_source(p: &std::path::Path) -> std::path::PathBuf {
     p.to_path_buf()
 }
 
-fn nav_label(t: &bluforge_core::menu::NavTarget) -> String {
-    use bluforge_core::menu::NavType;
+fn nav_label(t: &keepsake_core::menu::NavTarget) -> String {
+    use keepsake_core::menu::NavType;
     let kind = match t.kind {
         NavType::Hdmv => "HDMV",
         NavType::Bdj => "BD-J",
@@ -407,7 +407,7 @@ fn menu_clock(secs: f64) -> String {
     format!("{:02}:{:02}:{:02}", s / 3600, (s % 3600) / 60, s % 60)
 }
 
-fn print_menu(doc: &bluforge_core::menu::DiscMenu) {
+fn print_menu(doc: &keepsake_core::menu::DiscMenu) {
     println!("disc      : {}", doc.label);
     if let Some(id) = &doc.disc_id {
         println!("disc id   : 0x{id}");
@@ -461,7 +461,7 @@ fn main() {
     std::process::exit(code);
 }
 
-fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
+fn run(cli: &Cli) -> Result<(), keepsake_core::CoreError> {
     match &cli.cmd {
         Cmd::Devices { all } => {
             let devs = if *all {
@@ -473,7 +473,7 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
                 println!(
                     "{}",
                     serde_json::to_string_pretty(&devs)
-                        .map_err(|e| bluforge_core::CoreError::Device(e.to_string()))?
+                        .map_err(|e| keepsake_core::CoreError::Device(e.to_string()))?
                 );
             } else if devs.is_empty() {
                 println!("No optical devices found.");
@@ -524,10 +524,10 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
                     volume_id: volume_id.as_deref().and_then(norm_hex),
                     vuk: vuk.as_deref().and_then(norm_hex),
                     unit_keys: unit_keys.iter().filter_map(|s| norm_hex(s)).collect(),
-                    note: Some("bluforge".into()),
+                    note: Some("keepsake-atelier".into()),
                 };
                 if entry.vuk.is_none() && entry.unit_keys.is_empty() && entry.media_key.is_none() {
-                    return Err(bluforge_core::CoreError::Keys(
+                    return Err(keepsake_core::CoreError::Keys(
                         "nothing to store: give --vuk (and/or --unit-key)".into(),
                     ));
                 }
@@ -542,24 +542,24 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
             KeysAction::Native { from, print } => {
                 let mount = match from {
                     Some(p) => p.clone(),
-                    None => bluforge_core::device::list_optical()
+                    None => keepsake_core::device::list_optical()
                         .into_iter()
                         .find_map(|d| d.mount_point.map(std::path::PathBuf::from))
                         .ok_or_else(|| {
-                            bluforge_core::CoreError::Device(
+                            keepsake_core::CoreError::Device(
                                 "no mounted optical volume; pass --from <mount>".into(),
                             )
                         })?,
                 };
                 if *print {
-                    let k = bluforge_core::native::derive(&mount)?;
+                    let k = keepsake_core::native::derive(&mount)?;
                     println!("disc      : {}", k.name);
                     println!("id        : 0x{}", k.id);
                     println!("volume id : 0x{}", k.vid);
                     println!("media key : 0x{}", k.media_key);
                     println!("vuk       : 0x{}", k.vuk);
                 } else {
-                    let (k, added) = bluforge_core::native::derive_and_store(&mount)?;
+                    let (k, added) = keepsake_core::native::derive_and_store(&mount)?;
                     eprintln!(
                         "{} 0x{} {}",
                         if added { "derived" } else { "already keyed" },
@@ -571,24 +571,24 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
             KeysAction::FromMakemkv { from, print } => {
                 let mount = match from {
                     Some(p) => p.clone(),
-                    None => bluforge_core::device::list_optical()
+                    None => keepsake_core::device::list_optical()
                         .into_iter()
                         .find_map(|d| d.mount_point.map(std::path::PathBuf::from))
                         .ok_or_else(|| {
-                            bluforge_core::CoreError::Device(
+                            keepsake_core::CoreError::Device(
                                 "no mounted optical volume; pass --from <mount>".into(),
                             )
                         })?,
                 };
                 if *print {
-                    let (k, _dc, _rdk) = bluforge_core::native::from_makemkv(&mount)?;
+                    let (k, _dc, _rdk) = keepsake_core::native::from_makemkv(&mount)?;
                     println!("disc      : {}", k.name);
                     println!("id        : 0x{}", k.id);
                     println!("volume id : 0x{}", k.vid);
                     println!("media key : 0x{}", k.media_key);
                     println!("vuk       : 0x{}", k.vuk);
                 } else {
-                    let (k, added) = bluforge_core::native::from_makemkv_and_store(&mount)?;
+                    let (k, added) = keepsake_core::native::from_makemkv_and_store(&mount)?;
                     eprintln!(
                         "{} 0x{} {}",
                         if added { "derived" } else { "already keyed" },
@@ -652,17 +652,17 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
             start_episode,
         } => {
             let source = resolve_source(path);
-            let backend = bluforge_core::Disc::resolve_backend_for(Some(&source));
-            let keyed = bluforge_core::Disc::disc_id_for_source(&source)
-                .map(|id| bluforge_core::keys::has(&id).unwrap_or(false))
+            let backend = keepsake_core::Disc::resolve_backend_for(Some(&source));
+            let keyed = keepsake_core::Disc::disc_id_for_source(&source)
+                .map(|id| keepsake_core::keys::has(&id).unwrap_or(false))
                 .unwrap_or(false);
-            let disc = bluforge_core::Disc::open(&source, Some(&keys::keydb_path()))?;
+            let disc = keepsake_core::Disc::open(&source, Some(&keys::keydb_path()))?;
             let info = disc.info()?;
             if cli.json {
                 println!(
                     "{}",
                     serde_json::to_string_pretty(&info)
-                        .map_err(|e| bluforge_core::CoreError::Disc(e.to_string()))?
+                        .map_err(|e| keepsake_core::CoreError::Disc(e.to_string()))?
                 );
             } else {
                 println!(
@@ -686,13 +686,13 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
                 );
                 println!("titles    : {}", info.titles.len());
                 if *episodes {
-                    let dbg = bluforge_core::tv::parse_label(&info.name).0;
-                    println!("tmdb tv id : {:?}", bluforge_core::tv::tmdb_tv_id(&dbg));
+                    let dbg = keepsake_core::tv::parse_label(&info.name).0;
+                    println!("tmdb tv id : {:?}", keepsake_core::tv::tmdb_tv_id(&dbg));
                     println!(
                         "tmdb season: {:?}",
-                        bluforge_core::tv::tmdb_season(63926, 1).map(|e| e.len())
+                        keepsake_core::tv::tmdb_season(63926, 1).map(|e| e.len())
                     );
-                    match bluforge_core::tv::lookup_series(&dbg, 1) {
+                    match keepsake_core::tv::lookup_series(&dbg, 1) {
                         Ok(Some(sr)) => println!(
                             "lookup    : {} (tmdb {:?}) eps={} poster={}",
                             sr.name,
@@ -703,7 +703,7 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
                         Ok(None) => println!("lookup    : nothing for {dbg:?}"),
                         Err(e) => println!("lookup    : ERROR {e}"),
                     }
-                    match bluforge_core::tv::plan(&disc, &info, series.as_deref(), *start_episode) {
+                    match keepsake_core::tv::plan(&disc, &info, series.as_deref(), *start_episode) {
                         Ok(p) => {
                             println!(
                                 "series    : {} - season {} (disc {:?}, tmdb {:?}, mal {:?})",
@@ -734,20 +734,20 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
                                     });
                                 let marks = disc.chapters(first).unwrap_or_default();
                                 for it in &p.items {
-                                    let mut ch: Vec<bluforge_core::disc::Chapter> = marks
+                                    let mut ch: Vec<keepsake_core::disc::Chapter> = marks
                                         .iter()
                                         .filter(|c| {
                                             c.start_secs >= it.start_secs - 1.0
                                                 && c.start_secs
                                                     < it.start_secs + it.duration_secs - 0.5
                                         })
-                                        .map(|c| bluforge_core::disc::Chapter {
+                                        .map(|c| keepsake_core::disc::Chapter {
                                             start_secs: c.start_secs - it.start_secs,
                                             name: c.name.clone(),
                                         })
                                         .collect();
                                     if anime {
-                                        bluforge_core::rip::label_anime_chapters(
+                                        keepsake_core::rip::label_anime_chapters(
                                             &mut ch,
                                             it.duration_secs,
                                         );
@@ -824,7 +824,7 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
             no_chapters,
             auto_chapters,
         } => {
-            let req = bluforge_core::author::AuthorRequest {
+            let req = keepsake_core::author::AuthorRequest {
                 inputs: inputs.clone(),
                 dest: out.clone(),
                 label: label.clone(),
@@ -832,7 +832,7 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
                 auto_chapter_minutes: *auto_chapters,
             };
             let mut last = -1i64;
-            let written = bluforge_core::author::run(&req, |p| {
+            let written = keepsake_core::author::run(&req, |p| {
                 let pct = p.percent as i64;
                 if pct != last {
                     last = pct;
@@ -846,12 +846,12 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
             // so read it before unmounting the disc for exclusive access.
             let ukf = std::fs::read(disc.join("AACS").join("Unit_Key_RO.inf")).ok();
             let unmounted = false; // read-only: do not disturb a mounted disc
-            let vid = bluforge_core::disc::aacs_volume_id(device);
+            let vid = keepsake_core::disc::aacs_volume_id(device);
             match (vid, ukf) {
                 (Some(vid), Some(ukf)) => {
                     let hex: String = vid.iter().map(|b| format!("{b:02x}")).collect();
                     println!("volume id : {hex} (unmounted: {unmounted})");
-                    let ok = bluforge_core::disc::aacs_cache_volume_id_bytes(&ukf, &vid);
+                    let ok = keepsake_core::disc::aacs_cache_volume_id_bytes(&ukf, &vid);
                     println!("cached    : {ok}");
                 }
                 (Some(vid), None) => {
@@ -862,40 +862,40 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
                 (None, _) => println!("volume id : unreadable (unmounted: {unmounted})"),
             }
         }
-        Cmd::Eject => match bluforge_core::device::eject() {
+        Cmd::Eject => match keepsake_core::device::eject() {
             Ok(m) => println!("{m}"),
             Err(e) => return Err(e),
         },
         Cmd::Bdplus { install } => {
             if *install {
-                let dir = bluforge_core::bdplus::install()?;
+                let dir = keepsake_core::bdplus::install()?;
                 eprintln!("installed BD+ VM data at {}", dir.display());
             } else {
-                let dir = bluforge_core::bdplus::config_dir();
+                let dir = keepsake_core::bdplus::config_dir();
                 println!("BD+ vm config : {}", dir.display());
                 println!(
                     "installed     : {}",
-                    if bluforge_core::bdplus::installed() {
+                    if keepsake_core::bdplus::installed() {
                         "yes"
                     } else {
-                        "no (run `bluforge bdplus --install`)"
+                        "no (run `keepsake-atelier bdplus --install`)"
                     }
                 );
             }
         }
         Cmd::Libs => {
-            bluforge_core::Disc::init_env();
-            let (aacs, bdplus) = bluforge_core::Disc::decryption_backend();
-            let chosen = bluforge_core::Disc::resolve_backend_for(None);
-            println!("bluforge-core : {}", bluforge_core::version());
-            println!("libbluray     : {}", bluforge_core::disc::library_version());
+            keepsake_core::Disc::init_env();
+            let (aacs, bdplus) = keepsake_core::Disc::decryption_backend();
+            let chosen = keepsake_core::Disc::resolve_backend_for(None);
+            println!("keepsake-core : {}", keepsake_core::version());
+            println!("libbluray     : {}", keepsake_core::disc::library_version());
             println!("chosen backend: {}", chosen.label());
             println!("AACS backend  : {}", aacs.as_deref().unwrap_or("(default)"));
             println!(
                 "BD+ backend   : {}",
                 bdplus.as_deref().unwrap_or("(default)")
             );
-            println!("config dir    : {}", bluforge_core::config_dir().display());
+            println!("config dir    : {}", keepsake_core::config_dir().display());
         }
         Cmd::Iso {
             source,
@@ -903,7 +903,7 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
             folder,
             label,
         } => {
-            use bluforge_core::{IsoFormat, IsoProgress, IsoRequest};
+            use keepsake_core::{IsoFormat, IsoProgress, IsoRequest};
             let req = IsoRequest {
                 source: resolve_source(source),
                 keydb: Some(keys::keydb_path()),
@@ -916,7 +916,7 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
                 label: label.clone(),
             };
             let mut last = String::new();
-            bluforge_core::iso::run(&req, |p: IsoProgress| {
+            keepsake_core::iso::run(&req, |p: IsoProgress| {
                 let line = format!("[{}] {:.0}% {}", p.stage, p.percent, p.message);
                 if line != last {
                     last = line.clone();
@@ -948,7 +948,7 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
             start_episode,
             retries,
         } => {
-            use bluforge_core::{
+            use keepsake_core::{
                 Container, EncodeSettings, RipMode, RipProgress, RipRequest, VideoCodec,
             };
             let container_kind = if container.eq_ignore_ascii_case("mp4") {
@@ -988,14 +988,14 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
                 poster: !*no_poster,
                 movie: movie.clone(),
                 audio: match audio.as_str() {
-                    "main" => bluforge_core::rip::AudioSel::Main,
-                    "english" | "eng" => bluforge_core::rip::AudioSel::English,
-                    _ => bluforge_core::rip::AudioSel::All,
+                    "main" => keepsake_core::rip::AudioSel::Main,
+                    "english" | "eng" => keepsake_core::rip::AudioSel::English,
+                    _ => keepsake_core::rip::AudioSel::All,
                 },
                 subs: match subs.as_str() {
-                    "english" | "eng" => bluforge_core::rip::SubSel::English,
-                    "none" => bluforge_core::rip::SubSel::None,
-                    _ => bluforge_core::rip::SubSel::All,
+                    "english" | "eng" => keepsake_core::rip::SubSel::English,
+                    "none" => keepsake_core::rip::SubSel::None,
+                    _ => keepsake_core::rip::SubSel::All,
                 },
                 covers: !*no_covers,
                 tv: *tv,
@@ -1014,7 +1014,7 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
                 attempt += 1;
                 let mut last = -1i64;
                 let mut dest = String::new();
-                let res = bluforge_core::rip::run(&req, &cancel, |p: RipProgress| {
+                let res = keepsake_core::rip::run(&req, &cancel, |p: RipProgress| {
                     if let Some(d) = p.dest {
                         dest = d.display().to_string();
                     }
@@ -1046,7 +1046,7 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
             }
         }
         Cmd::Covers { cmd } => {
-            use bluforge_core::covers::{self, CoverSource};
+            use keepsake_core::covers::{self, CoverSource};
             let cfg = AppConfig::load();
             match cmd {
                 CoversCmd::Sources => {
@@ -1063,7 +1063,7 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
                         CoverSource::all().to_vec()
                     } else {
                         vec![CoverSource::parse(source).ok_or_else(|| {
-                            bluforge_core::CoreError::Config(format!("unknown source '{source}'"))
+                            keepsake_core::CoreError::Config(format!("unknown source '{source}'"))
                         })?]
                     };
                     let mut rows = Vec::new();
@@ -1077,7 +1077,7 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
                         println!(
                             "{}",
                             serde_json::to_string_pretty(&rows)
-                                .map_err(|e| bluforge_core::CoreError::Config(e.to_string()))?
+                                .map_err(|e| keepsake_core::CoreError::Config(e.to_string()))?
                         );
                     } else if rows.is_empty() {
                         eprintln!("no covers found");
@@ -1099,7 +1099,7 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
                     stem,
                 } => {
                     let s = CoverSource::parse(source).ok_or_else(|| {
-                        bluforge_core::CoreError::Config(format!("unknown source '{source}'"))
+                        keepsake_core::CoreError::Config(format!("unknown source '{source}'"))
                     })?;
                     let hit = match covers::by_id(s, id, &cfg.hirescovers_dir)? {
                         Some(h) => h,
@@ -1108,12 +1108,12 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
                                 .into_iter()
                                 .find(|h| h.id == *id)
                                 .ok_or_else(|| {
-                                    bluforge_core::CoreError::Config(format!(
+                                    keepsake_core::CoreError::Config(format!(
                                         "no cover {source}:{id}"
                                     ))
                                 })?,
                             None => {
-                                return Err(bluforge_core::CoreError::Config(format!(
+                                return Err(keepsake_core::CoreError::Config(format!(
                                     "no cover {source}:{id}"
                                 )))
                             }
@@ -1146,10 +1146,10 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
                 }
                 CoversCmd::Login => {
                     let user = cfg.hirescovers_user.clone().ok_or_else(|| {
-                        bluforge_core::CoreError::Config("no hirescovers_user".into())
+                        keepsake_core::CoreError::Config("no hirescovers_user".into())
                     })?;
                     let pass = cfg.hirescovers_pass.clone().ok_or_else(|| {
-                        bluforge_core::CoreError::Config("no hirescovers_pass".into())
+                        keepsake_core::CoreError::Config("no hirescovers_pass".into())
                     })?;
                     let cookie = covers::login_hirescovers(&user, &pass)?;
                     if covers::verify_cookie(&cookie).unwrap_or(false) {
@@ -1168,7 +1168,7 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
                         println!(
                             "{}",
                             serde_json::to_string_pretty(&info)
-                                .map_err(|e| bluforge_core::CoreError::Config(e.to_string()))?
+                                .map_err(|e| keepsake_core::CoreError::Config(e.to_string()))?
                         );
                     } else {
                         println!("file    : {}", info.path.display());
@@ -1212,8 +1212,8 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
         Cmd::Clone { source, dest } => {
             let cancel = std::sync::atomic::AtomicBool::new(false);
             eprintln!("cloning {} -> {}", source.display(), dest.display());
-            let written = bluforge_core::clone::run(
-                &bluforge_core::CloneRequest {
+            let written = keepsake_core::clone::run(
+                &keepsake_core::CloneRequest {
                     source: source.clone(),
                     dest: dest.clone(),
                 },
@@ -1234,10 +1234,10 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
                 println!(
                     "{}",
                     serde_json::to_string_pretty(&cfg)
-                        .map_err(|e| bluforge_core::CoreError::Config(e.to_string()))?
+                        .map_err(|e| keepsake_core::CoreError::Config(e.to_string()))?
                 );
             } else {
-                println!("config dir : {}", bluforge_core::config_dir().display());
+                println!("config dir : {}", keepsake_core::config_dir().display());
                 println!("output dir : {}", cfg.output_dir.display());
                 println!("auto keys  : {}", cfg.auto_update_keys);
                 println!("auto update: {}", cfg.auto_check_updates);
@@ -1245,30 +1245,30 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
         }
         Cmd::Menu { action } => match action {
             MenuAction::Parse { source, save } => {
-                let doc = bluforge_core::menu::parse(source, Some(&keys::keydb_path()))?;
+                let doc = keepsake_core::menu::parse(source, Some(&keys::keydb_path()))?;
                 if let Some(name) = save {
                     let path =
-                        bluforge_core::menu::save(&bluforge_core::menu::store_dir(), name, &doc)?;
+                        keepsake_core::menu::save(&keepsake_core::menu::store_dir(), name, &doc)?;
                     eprintln!("saved template {}", path.display());
                 }
                 if cli.json {
                     println!(
                         "{}",
                         serde_json::to_string_pretty(&doc)
-                            .map_err(|e| bluforge_core::CoreError::Config(e.to_string()))?
+                            .map_err(|e| keepsake_core::CoreError::Config(e.to_string()))?
                     );
                 } else {
                     print_menu(&doc);
                 }
             }
             MenuAction::List => {
-                let entries = bluforge_core::menu::list(&bluforge_core::menu::store_dir());
+                let entries = keepsake_core::menu::list(&keepsake_core::menu::store_dir());
                 if cli.json {
                     let rows: Vec<_> = entries
                         .iter()
                         .map(|(name, path)| {
                             let doc =
-                                bluforge_core::menu::load(&bluforge_core::menu::store_dir(), name)
+                                keepsake_core::menu::load(&keepsake_core::menu::store_dir(), name)
                                     .ok();
                             serde_json::json!({
                                 "name": name,
@@ -1281,16 +1281,16 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
                     println!(
                         "{}",
                         serde_json::to_string_pretty(&rows)
-                            .map_err(|e| bluforge_core::CoreError::Config(e.to_string()))?
+                            .map_err(|e| keepsake_core::CoreError::Config(e.to_string()))?
                     );
                 } else if entries.is_empty() {
                     println!(
                         "no saved menus in {}",
-                        bluforge_core::menu::store_dir().display()
+                        keepsake_core::menu::store_dir().display()
                     );
                 } else {
                     for (name, path) in entries {
-                        match bluforge_core::menu::load(&bluforge_core::menu::store_dir(), &name) {
+                        match keepsake_core::menu::load(&keepsake_core::menu::store_dir(), &name) {
                             Ok(doc) => println!(
                                 "{:<28} {:>3} titles  {}  ({})",
                                 name,
@@ -1304,13 +1304,13 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
                 }
             }
             MenuAction::Show { template } => {
-                let dir = bluforge_core::menu::store_dir();
-                let doc = bluforge_core::menu::load(&dir, template)?;
+                let dir = keepsake_core::menu::store_dir();
+                let doc = keepsake_core::menu::load(&dir, template)?;
                 if cli.json {
                     println!(
                         "{}",
                         serde_json::to_string_pretty(&doc)
-                            .map_err(|e| bluforge_core::CoreError::Config(e.to_string()))?
+                            .map_err(|e| keepsake_core::CoreError::Config(e.to_string()))?
                     );
                 } else {
                     print_menu(&doc);
@@ -1323,8 +1323,8 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
                 main,
                 chapters,
             } => {
-                let dir = bluforge_core::menu::store_dir();
-                let mut doc = bluforge_core::menu::load(&dir, template)?;
+                let dir = keepsake_core::menu::store_dir();
+                let mut doc = keepsake_core::menu::load(&dir, template)?;
                 let idx = *title;
                 if *main {
                     doc.set_main(idx)?;
@@ -1333,15 +1333,15 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
                     doc.set_name(idx, name)?;
                 }
                 for spec in chapters {
-                    let (n, text) = bluforge_core::menu::parse_chapter_spec(spec)?;
+                    let (n, text) = keepsake_core::menu::parse_chapter_spec(spec)?;
                     doc.set_chapter(idx, n, &text)?;
                 }
-                let path = bluforge_core::menu::save(&dir, template, &doc)?;
+                let path = keepsake_core::menu::save(&dir, template, &doc)?;
                 if cli.json {
                     println!(
                         "{}",
                         serde_json::to_string_pretty(&doc)
-                            .map_err(|e| bluforge_core::CoreError::Config(e.to_string()))?
+                            .map_err(|e| keepsake_core::CoreError::Config(e.to_string()))?
                     );
                 } else {
                     eprintln!("updated {}", path.display());
@@ -1353,19 +1353,19 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
                 target,
                 save,
             } => {
-                let dir = bluforge_core::menu::store_dir();
-                let tpl = bluforge_core::menu::load(&dir, template)?;
-                let target_doc = bluforge_core::menu::parse(target, Some(&keys::keydb_path()))?;
-                let doc = bluforge_core::menu::apply(&tpl, &target_doc, template);
+                let dir = keepsake_core::menu::store_dir();
+                let tpl = keepsake_core::menu::load(&dir, template)?;
+                let target_doc = keepsake_core::menu::parse(target, Some(&keys::keydb_path()))?;
+                let doc = keepsake_core::menu::apply(&tpl, &target_doc, template);
                 if let Some(save) = save {
-                    let path = bluforge_core::menu::save(&dir, save, &doc)?;
+                    let path = keepsake_core::menu::save(&dir, save, &doc)?;
                     eprintln!("saved template {}", path.display());
                 }
                 if cli.json {
                     println!(
                         "{}",
                         serde_json::to_string_pretty(&doc)
-                            .map_err(|e| bluforge_core::CoreError::Config(e.to_string()))?
+                            .map_err(|e| keepsake_core::CoreError::Config(e.to_string()))?
                     );
                 } else {
                     print_menu(&doc);
@@ -1373,7 +1373,7 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
             }
             MenuAction::Remove { template } => {
                 let path =
-                    bluforge_core::menu::remove(&bluforge_core::menu::store_dir(), template)?;
+                    keepsake_core::menu::remove(&keepsake_core::menu::store_dir(), template)?;
                 println!("removed {}", path.display());
             }
         },
@@ -1399,29 +1399,29 @@ fn norm_hex(s: &str) -> Option<String> {
 fn resolve_disc_id(
     disc: &Option<String>,
     from: &Option<std::path::PathBuf>,
-) -> Result<String, bluforge_core::CoreError> {
+) -> Result<String, keepsake_core::CoreError> {
     if let Some(d) = disc {
         return match norm_hex(d).filter(|s| s.len() == 40) {
             Some(id) => Ok(id),
-            None => Err(bluforge_core::CoreError::Keys(format!("bad disc id '{d}'"))),
+            None => Err(keepsake_core::CoreError::Keys(format!("bad disc id '{d}'"))),
         };
     }
     if let Some(p) = from {
-        return bluforge_core::keys::disc_id_for_path(p).ok_or_else(|| {
-            bluforge_core::CoreError::Keys(format!("no AACS/Unit_Key_RO.inf under {}", p.display()))
+        return keepsake_core::keys::disc_id_for_path(p).ok_or_else(|| {
+            keepsake_core::CoreError::Keys(format!("no AACS/Unit_Key_RO.inf under {}", p.display()))
         });
     }
-    Err(bluforge_core::CoreError::Keys(
+    Err(keepsake_core::CoreError::Keys(
         "give --disc <id> or --from <mounted disc>".into(),
     ))
 }
 
-fn print_keys(json: bool, st: keys::KeyDbStatus) -> Result<(), bluforge_core::CoreError> {
+fn print_keys(json: bool, st: keys::KeyDbStatus) -> Result<(), keepsake_core::CoreError> {
     if json {
         println!(
             "{}",
             serde_json::to_string_pretty(&st)
-                .map_err(|e| bluforge_core::CoreError::Keys(e.to_string()))?
+                .map_err(|e| keepsake_core::CoreError::Keys(e.to_string()))?
         );
     } else {
         println!("path    : {}", st.path.display());

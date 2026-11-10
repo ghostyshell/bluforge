@@ -17,7 +17,7 @@ use crate::CoreError;
 
 /// TMDB's edge 403s *browser* User-Agents coming from this client; a plain
 /// token works (same trick as core::metadata). MAL/Jikan want a browser UA.
-const TMDB_UA: &str = "BluForge/0.1";
+const TMDB_UA: &str = "KeepsakeAtelier/0.1";
 const UA: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157 Safari/537.36";
 
 /// Episodes shorter than this are menus / logos, not episodes.

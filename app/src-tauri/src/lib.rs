@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
 
-use bluforge_core::{config::AppConfig, disc::DiscInfo, iso, keys::KeyDbStatus, rip, CoreSnapshot};
+use keepsake_core::{config::AppConfig, disc::DiscInfo, iso, keys::KeyDbStatus, rip, CoreSnapshot};
 
 mod mcp;
 
@@ -183,7 +183,7 @@ impl QueueState {
 }
 
 fn queue_path() -> std::path::PathBuf {
-    bluforge_core::config_dir().join("queue.json")
+    keepsake_core::config_dir().join("queue.json")
 }
 
 /// Write the queue snapshot atomically. Called on state transitions, not on
@@ -355,7 +355,7 @@ struct PreviewVars {
 /// Render an output path exactly as the ripper would.
 #[tauri::command]
 fn preview_output(template: String, vars: PreviewVars) -> String {
-    let v = bluforge_core::TemplateVars::build(
+    let v = keepsake_core::TemplateVars::build(
         &vars.disc,
         &vars.title,
         vars.year.as_deref(),
@@ -371,7 +371,7 @@ fn preview_output(template: String, vars: PreviewVars) -> String {
         vars.index,
         &vars.ext,
     );
-    let rel = bluforge_core::render_template(&template, &v, &vars.ext, "{title} - {resolution}");
+    let rel = keepsake_core::render_template(&template, &v, &vars.ext, "{title} - {resolution}");
     std::path::PathBuf::from(&vars.output_dir)
         .join(rel)
         .display()
@@ -381,7 +381,7 @@ fn preview_output(template: String, vars: PreviewVars) -> String {
 /// Placeholders offered for the output template: `(name, description)`.
 #[tauri::command]
 fn template_placeholders() -> Vec<(String, String)> {
-    bluforge_core::template::PLACEHOLDERS
+    keepsake_core::template::PLACEHOLDERS
         .iter()
         .map(|(a, b)| (a.to_string(), b.to_string()))
         .collect()
@@ -397,7 +397,7 @@ struct MovieHit {
 /// TMDB lookup for the template preview.
 #[tauri::command]
 fn tmdb_lookup(movie: String, runtime_secs: f64) -> Option<MovieHit> {
-    bluforge_core::lookup_movie(&movie, runtime_secs)
+    keepsake_core::lookup_movie(&movie, runtime_secs)
         .ok()
         .flatten()
         .map(|m| MovieHit {
@@ -435,18 +435,18 @@ fn b64(data: &[u8]) -> String {
 
 /// Cover search across the sources.
 #[tauri::command]
-fn covers_search(query: String, source: String, limit: usize) -> Vec<bluforge_core::CoverHit> {
+fn covers_search(query: String, source: String, limit: usize) -> Vec<keepsake_core::CoverHit> {
     let cfg = AppConfig::load();
-    let sources: Vec<bluforge_core::CoverSource> = if source == "all" {
-        bluforge_core::CoverSource::all().to_vec()
+    let sources: Vec<keepsake_core::CoverSource> = if source == "all" {
+        keepsake_core::CoverSource::all().to_vec()
     } else {
-        bluforge_core::CoverSource::parse(&source)
+        keepsake_core::CoverSource::parse(&source)
             .map(|s| vec![s])
-            .unwrap_or_else(|| bluforge_core::CoverSource::all().to_vec())
+            .unwrap_or_else(|| keepsake_core::CoverSource::all().to_vec())
     };
     let mut out = Vec::new();
     for s in sources {
-        if let Ok(mut r) = bluforge_core::covers::search(s, &query, limit, &cfg.hirescovers_dir) {
+        if let Ok(mut r) = keepsake_core::covers::search(s, &query, limit, &cfg.hirescovers_dir) {
             out.append(&mut r);
         }
     }
@@ -458,8 +458,8 @@ fn covers_search(query: String, source: String, limit: usize) -> Vec<bluforge_co
 #[tauri::command]
 fn cover_thumb(url: String) -> Option<String> {
     let cfg = AppConfig::load();
-    let cookie = bluforge_core::covers::cookie(&cfg);
-    let (bytes, ctype) = bluforge_core::covers::fetch(&url, cookie.as_deref()).ok()?;
+    let cookie = keepsake_core::covers::cookie(&cfg);
+    let (bytes, ctype) = keepsake_core::covers::fetch(&url, cookie.as_deref()).ok()?;
     if bytes.len() > 6_000_000 {
         return None;
     }
@@ -501,24 +501,24 @@ fn save_covers(
     items: Vec<SaveItem>,
 ) -> Result<Vec<SavedCover>, String> {
     let cfg = AppConfig::load();
-    let cookie = bluforge_core::covers::cookie(&cfg);
+    let cookie = keepsake_core::covers::cookie(&cfg);
     let dir = std::path::PathBuf::from(&dest_dir);
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let mut out = Vec::new();
     for it in items {
-        let src = bluforge_core::CoverSource::parse(&it.source).ok_or("unknown source")?;
-        let hit = bluforge_core::covers::by_id(src, &it.id, &cfg.hirescovers_dir)
+        let src = keepsake_core::CoverSource::parse(&it.source).ok_or("unknown source")?;
+        let hit = keepsake_core::covers::by_id(src, &it.id, &cfg.hirescovers_dir)
             .map_err(|e| e.to_string())?
             .or_else(|| {
                 let q = it.title.clone()?;
-                bluforge_core::covers::search(src, &q, 60, &cfg.hirescovers_dir)
+                keepsake_core::covers::search(src, &q, 60, &cfg.hirescovers_dir)
                     .ok()?
                     .into_iter()
                     .find(|h| h.id == it.id)
             })
             .ok_or_else(|| format!("{}:{} not found", it.source, it.id))?;
-        let name = bluforge_core::covers::role_filename(&it.role, &stem);
-        let saved = bluforge_core::covers::download(&hit, &dir.join(name), cookie.as_deref())
+        let name = keepsake_core::covers::role_filename(&it.role, &stem);
+        let saved = keepsake_core::covers::download(&hit, &dir.join(name), cookie.as_deref())
             .map_err(|e| e.to_string())?;
         out.push(SavedCover {
             role: it.role,
@@ -534,31 +534,31 @@ fn save_covers(
 
 /// Detect the episodes on a TV/anime disc (clip boundaries + TMDB titles).
 #[tauri::command]
-fn tv_plan(source: String, start: Option<u32>) -> Result<bluforge_core::tv::Plan, String> {
-    let disc = bluforge_core::Disc::open(std::path::Path::new(&source), None)
+fn tv_plan(source: String, start: Option<u32>) -> Result<keepsake_core::tv::Plan, String> {
+    let disc = keepsake_core::Disc::open(std::path::Path::new(&source), None)
         .map_err(|e| e.to_string())?;
     let info = disc.info().map_err(|e| e.to_string())?;
-    bluforge_core::tv::plan(&disc, &info, None, start).map_err(|e| e.to_string())
+    keepsake_core::tv::plan(&disc, &info, None, start).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn eject() -> Result<String, String> {
-    bluforge_core::device::eject().map_err(|e| e.to_string())
+    keepsake_core::device::eject().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn snapshot() -> CoreSnapshot {
-    bluforge_core::snapshot()
+    keepsake_core::snapshot()
 }
 
 #[tauri::command]
 fn keys_status() -> KeyDbStatus {
-    bluforge_core::keys::status()
+    keepsake_core::keys::status()
 }
 
 #[tauri::command]
 fn keys_update() -> Result<KeyDbStatus, String> {
-    bluforge_core::keys::update().map_err(|e| e.to_string())
+    keepsake_core::keys::update().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -577,11 +577,11 @@ fn config_set(config: AppConfig) -> Result<(), String> {
 #[tauri::command]
 fn open_disc(path: String) -> Result<DiscInfo, String> {
     let p = PathBuf::from(&path);
-    let disc = bluforge_core::Disc::open(&p, Some(&bluforge_core::keys::keydb_path()))
+    let disc = keepsake_core::Disc::open(&p, Some(&keepsake_core::keys::keydb_path()))
         .map_err(|e| e.to_string())?;
     let mut info = disc.info().map_err(|e| e.to_string())?;
     info.path = path.clone();
-    info.name = bluforge_core::device::source_name(&path, &info.name);
+    info.name = keepsake_core::device::source_name(&path, &info.name);
     Ok(info)
 }
 
@@ -591,10 +591,10 @@ fn open_disc(path: String) -> Result<DiscInfo, String> {
 /// directory; fall back to the mounted optical volume in that case.
 fn menu_source(source: &str) -> PathBuf {
     let p = PathBuf::from(source);
-    if !source.is_empty() && bluforge_core::menu::bdmv_dir(&p).is_some() {
+    if !source.is_empty() && keepsake_core::menu::bdmv_dir(&p).is_some() {
         return p;
     }
-    if let Some(m) = bluforge_core::device::list_optical()
+    if let Some(m) = keepsake_core::device::list_optical()
         .into_iter()
         .find_map(|d| d.mount_point)
     {
@@ -604,31 +604,31 @@ fn menu_source(source: &str) -> PathBuf {
 }
 
 #[tauri::command]
-fn disc_streams(path: String, title: u32) -> Result<Vec<bluforge_core::disc::StreamInfo>, String> {
-    let disc = bluforge_core::Disc::open(
+fn disc_streams(path: String, title: u32) -> Result<Vec<keepsake_core::disc::StreamInfo>, String> {
+    let disc = keepsake_core::Disc::open(
         std::path::Path::new(&path),
-        Some(&bluforge_core::keys::keydb_path()),
+        Some(&keepsake_core::keys::keydb_path()),
     )
     .map_err(|e| e.to_string())?;
     disc.streams(title).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn menu_parse(source: String) -> Result<bluforge_core::menu::DiscMenu, String> {
-    bluforge_core::menu::parse(
+fn menu_parse(source: String) -> Result<keepsake_core::menu::DiscMenu, String> {
+    keepsake_core::menu::parse(
         &menu_source(&source),
-        Some(&bluforge_core::keys::keydb_path()),
+        Some(&keepsake_core::keys::keydb_path()),
     )
     .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn menu_list() -> Result<Vec<serde_json::Value>, String> {
-    let dir = bluforge_core::menu::store_dir();
-    Ok(bluforge_core::menu::list(&dir)
+    let dir = keepsake_core::menu::store_dir();
+    Ok(keepsake_core::menu::list(&dir)
         .into_iter()
         .map(|(name, path)| {
-            let doc = bluforge_core::menu::load(&dir, &name).ok();
+            let doc = keepsake_core::menu::load(&dir, &name).ok();
             serde_json::json!({
                 "name": name,
                 "path": path.display().to_string(),
@@ -640,14 +640,14 @@ fn menu_list() -> Result<Vec<serde_json::Value>, String> {
 }
 
 #[tauri::command]
-fn menu_load(template: String) -> Result<bluforge_core::menu::DiscMenu, String> {
-    bluforge_core::menu::load(&bluforge_core::menu::store_dir(), &template)
+fn menu_load(template: String) -> Result<keepsake_core::menu::DiscMenu, String> {
+    keepsake_core::menu::load(&keepsake_core::menu::store_dir(), &template)
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn menu_save(template: String, doc: bluforge_core::menu::DiscMenu) -> Result<String, String> {
-    bluforge_core::menu::save(&bluforge_core::menu::store_dir(), &template, &doc)
+fn menu_save(template: String, doc: keepsake_core::menu::DiscMenu) -> Result<String, String> {
+    keepsake_core::menu::save(&keepsake_core::menu::store_dir(), &template, &doc)
         .map(|p| p.display().to_string())
         .map_err(|e| e.to_string())
 }
@@ -657,24 +657,24 @@ fn menu_apply(
     template: String,
     target: String,
     save: Option<String>,
-) -> Result<bluforge_core::menu::DiscMenu, String> {
-    let dir = bluforge_core::menu::store_dir();
-    let tpl = bluforge_core::menu::load(&dir, &template).map_err(|e| e.to_string())?;
-    let target_doc = bluforge_core::menu::parse(
+) -> Result<keepsake_core::menu::DiscMenu, String> {
+    let dir = keepsake_core::menu::store_dir();
+    let tpl = keepsake_core::menu::load(&dir, &template).map_err(|e| e.to_string())?;
+    let target_doc = keepsake_core::menu::parse(
         &menu_source(&target),
-        Some(&bluforge_core::keys::keydb_path()),
+        Some(&keepsake_core::keys::keydb_path()),
     )
     .map_err(|e| e.to_string())?;
-    let doc = bluforge_core::menu::apply(&tpl, &target_doc, &template);
+    let doc = keepsake_core::menu::apply(&tpl, &target_doc, &template);
     if let Some(name) = save {
-        bluforge_core::menu::save(&dir, &name, &doc).map_err(|e| e.to_string())?;
+        keepsake_core::menu::save(&dir, &name, &doc).map_err(|e| e.to_string())?;
     }
     Ok(doc)
 }
 
 #[tauri::command]
 fn menu_remove(template: String) -> Result<String, String> {
-    bluforge_core::menu::remove(&bluforge_core::menu::store_dir(), &template)
+    keepsake_core::menu::remove(&keepsake_core::menu::store_dir(), &template)
         .map(|p| p.display().to_string())
         .map_err(|e| e.to_string())
 }
@@ -685,14 +685,14 @@ fn menu_remove(template: String) -> Result<String, String> {
 fn keys_native(source: Option<String>) -> Result<serde_json::Value, String> {
     let mount = menu_source(source.as_deref().unwrap_or(""));
     let (key, added) =
-        bluforge_core::native::derive_and_store(&mount).map_err(|e| e.to_string())?;
+        keepsake_core::native::derive_and_store(&mount).map_err(|e| e.to_string())?;
     Ok(serde_json::json!({ "key": key, "added": added }))
 }
 
 /// Install the public BD+ VM data so BD+ discs decrypt without MakeMKV.
 #[tauri::command]
 fn bdplus_install() -> Result<String, String> {
-    bluforge_core::bdplus::install()
+    keepsake_core::bdplus::install()
         .map(|p| p.display().to_string())
         .map_err(|e| e.to_string())
 }
@@ -727,7 +727,7 @@ fn start_rip(
 fn clone_start(
     app: AppHandle,
     state: State<RpState>,
-    request: bluforge_core::clone::CloneRequest,
+    request: keepsake_core::clone::CloneRequest,
 ) -> Result<(), String> {
     if state.running.load(Ordering::Relaxed) {
         return Err("a rip or clone is already running".into());
@@ -738,7 +738,7 @@ fn clone_start(
     let cancel = state.cancel.clone();
     let running = state.running.clone();
     std::thread::spawn(move || {
-        let res = bluforge_core::clone::run(&request, &cancel, |p| {
+        let res = keepsake_core::clone::run(&request, &cancel, |p| {
             let _ = app2.emit("clone://progress", p);
         });
         running.store(false, Ordering::Relaxed);
@@ -767,11 +767,11 @@ fn clone_start(
 #[tauri::command]
 fn author_start(
     app: AppHandle,
-    request: bluforge_core::author::AuthorRequest,
+    request: keepsake_core::author::AuthorRequest,
 ) -> Result<(), String> {
     let app2 = app.clone();
     std::thread::spawn(move || {
-        let res = bluforge_core::author::run(&request, |p| {
+        let res = keepsake_core::author::run(&request, |p| {
             let _ = app2.emit("author://progress", p);
         });
         match res {

@@ -6,7 +6,7 @@
 //! (playlist, duration, chapter count, streams).
 //!
 //! Documents can be edited, saved as named templates under
-//! `~/Library/Application Support/bluforge/menus/`, and applied to a different
+//! `~/Library/Application Support/keepsake-atelier/menus/`, and applied to a different
 //! disc. Applying transfers the editable parts (title names, the main-feature
 //! flag, chapter names) by matching playlists and durations; the target disc's
 //! own navigation objects are left alone, because those are disc-specific.
@@ -70,7 +70,7 @@ pub struct NavIndex {
 /// One playable title, with the editable fields a template carries.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct MenuTitle {
-    /// Title index as `bluforge disc` / `--title` use it.
+    /// Title index as `keepsake-atelier disc` / `--title` use it.
     pub index: u32,
     pub playlist: u32,
     pub duration_secs: f64,
@@ -624,7 +624,7 @@ mod tests {
 
     #[test]
     fn store_round_trip_and_slug() {
-        let dir = std::env::temp_dir().join(format!("bluforge-menu-test-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("keepsake-menu-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let d = doc("My Disc", &[(1, 2.0)]);
         let p = save(&dir, "My Disc: 1967", &d).expect("saved");

@@ -4,7 +4,7 @@ A cross-platform desktop app for **ripping Blu-rays** and everything around them
 decrypted ISOs, MKV/MP4 remuxes, CPU- and GPU-encoded output, plus (later) Blu-ray
 authoring, disc menus, and (later) burning.
 
-The engine, CLI binary and crate names are still `bluforge`.
+The engine, CLI binary and crate names are still `keepsake-atelier`.
 
 > **Iteration 1 (this)**: ripping first. Decrypted title streaming, lossless remux
 > and re-encode, automatic AACS key refresh, and a desktop UI.
@@ -15,7 +15,7 @@ The engine, CLI binary and crate names are still `bluforge`.
 | --- | --- |
 | Device discovery (IOKit, optical detection) | ✅ |
 | AACS key database (`KEYDB.cfg`) auto-fetch / store | ✅ |
-| Key store: `bluforge keys add / list / show / remove / import` | ✅ |
+| Key store: `keepsake-atelier keys add / list / show / remove / import` | ✅ |
 | Disc inspection (titles, streams, HDR, AACS state) via libbluray | ✅ |
 | Rip: MKV / MP4 remux (lossless) | ✅ |
 | Rip: x264 / x265 / VideoToolbox encode | ✅ |
@@ -40,7 +40,7 @@ Phases and what is next: [`docs/roadmap.md`](docs/roadmap.md).
 ## Architecture
 
 ```
-core/           bluforge-core - framework-agnostic engine (Rust)
+core/           keepsake-core - framework-agnostic engine (Rust)
   device.rs       IOKit device enumeration, optical detection
   keys.rs         KEYDB.cfg fetch + store + validation
   disc.rs         libbluray FFI (titles, decrypted title streaming)
@@ -49,7 +49,7 @@ core/           bluforge-core - framework-agnostic engine (Rust)
   rip.rs          ffmpeg orchestration (remux / encode) with progress
   iso.rs          decrypted ISO / backup-folder export
   config.rs       persisted settings
-cli/            `bluforge` - headless CLI for testing the engine
+cli/            `keepsake-atelier` - headless CLI for testing the engine
 app/            Tauri v2 desktop app (React + TypeScript frontend)
   src-tauri/      Rust commands bridging the UI to core
 ```
@@ -60,14 +60,16 @@ key store, so a keyed disc rips with no MakeMKV and no proprietary code. If
 **MakeMKV** is installed its `libmmbd` is used only as a fallback: for a disc
 whose key is not in KEYDB yet, and for BD+ (Homebrew's `libbdplus` ships no BD+
 VM config). Native libaacs cannot read a *mounted* volume, so a rip unmounts it
-and remounts it afterwards. `bluforge libs` and `bluforge disc` print the chosen
-backend; force one with `BLUFORGE_DECRYPT=aacs|mmbd`, or override the library
-paths with `LIBAACS_PATH` / `LIBBDPLUS_PATH`. ffmpeg is used only for
-muxing/encoding, never decryption.
+and remounts it afterwards. `keepsake-atelier libs` and
+`keepsake-atelier disc` print the chosen backend; force one with
+`KEEPSAKE_DECRYPT=aacs|mmbd`, or override the library paths with
+`LIBAACS_PATH` / `LIBBDPLUS_PATH`. ffmpeg is used only for muxing/encoding,
+never decryption.
 
-A keyless disc can be keyed from the drive itself with `bluforge keys native`
-(read the volume id from the drive, derive from the disc's own MKB, no MakeMKV);
-BD+ VM data for libbdplus installs with `bluforge bdplus --install`. See
+A keyless disc can be keyed from the drive itself with
+`keepsake-atelier keys native` (read the volume id from the drive, derive from
+the disc's own MKB, no MakeMKV); BD+ VM data for libbdplus installs with
+`keepsake-atelier bdplus --install`. See
 [`docs/decryption.md`](docs/decryption.md) for the full picture.
 
 ## Build & run
@@ -77,16 +79,16 @@ Prerequisites (macOS, Homebrew): `ffmpeg libbluray libaacs libbdplus`, Rust, Nod
 ```sh
 # engine + CLI
 cargo build --release
-./target/release/bluforge devices          # find your drive / disc
-./target/release/bluforge keys update       # refresh AACS keys
-./target/release/bluforge keys add --from /Volumes/MY_DISC --vuk 0x... # key a disc
-./target/release/bluforge keys list --keyed --limit 20
-./target/release/bluforge disc /Volumes/MY_DISC   # inspect titles
-./target/release/bluforge libs
-./target/release/bluforge iso /Volumes/MY_DISC ~/movie.iso            # decrypted ISO
-./target/release/bluforge clone /dev/rdisk4 ~/movie-clone.iso         # 1:1, encrypted
-./target/release/bluforge rip /Volumes/MY_DISC                        # main title -> ~/Downloads
-./target/release/bluforge rip /dev/rdisk5 --title 3 ~/Movies/out.mkv  # explicit title + output
+./target/release/keepsake-atelier devices          # find your drive / disc
+./target/release/keepsake-atelier keys update       # refresh AACS keys
+./target/release/keepsake-atelier keys add --from /Volumes/MY_DISC --vuk 0x... # key a disc
+./target/release/keepsake-atelier keys list --keyed --limit 20
+./target/release/keepsake-atelier disc /Volumes/MY_DISC   # inspect titles
+./target/release/keepsake-atelier libs
+./target/release/keepsake-atelier iso /Volumes/MY_DISC ~/movie.iso            # decrypted ISO
+./target/release/keepsake-atelier clone /dev/rdisk4 ~/movie-clone.iso         # 1:1, encrypted
+./target/release/keepsake-atelier rip /Volumes/MY_DISC                        # main title -> ~/Downloads
+./target/release/keepsake-atelier rip /dev/rdisk5 --title 3 ~/Movies/out.mkv  # explicit title + output
 
 # desktop app
 cd app && npm install
@@ -94,7 +96,8 @@ npm run tauri dev        # or: npm run tauri build
 ```
 
 `BLURAY_PREFIX` overrides the libbluray prefix (default `/opt/homebrew`).
-`BLUFORGE_FFMPEG` points at a specific ffmpeg binary.
+`KEEPSAKE_FFMPEG` points at a specific ffmpeg binary. The pre-rename
+`BLUFORGE_*` names are still accepted for every `KEEPSAKE_*` setting.
 
 ## Testing without a drive
 
@@ -104,9 +107,9 @@ runs with no hardware:
 
 ```sh
 node scripts/mkbd.mjs /tmp/testbd 8
-./target/release/bluforge disc /tmp/testbd
-./target/release/bluforge rip  /tmp/testbd /tmp/out.mkv --title 0
-./target/release/bluforge iso  /tmp/testbd /tmp/out.iso --label SINTEL
+./target/release/keepsake-atelier disc /tmp/testbd
+./target/release/keepsake-atelier rip  /tmp/testbd /tmp/out.mkv --title 0
+./target/release/keepsake-atelier iso  /tmp/testbd /tmp/out.iso --label SINTEL
 ```
 
 ## Remux metadata
@@ -160,13 +163,13 @@ or BD-J object name) plus the playable titles with their playlists, durations
 and chapters.
 
 ```sh
-bluforge menu parse /Volumes/MY_DISC --save my-disc   # parse + save a template
-bluforge menu list                                     # saved templates
-bluforge menu edit my-disc --title 51 --name "Feature" --main
-bluforge menu apply my-disc /Volumes/OTHER_DISC        # reuse it elsewhere
+keepsake-atelier menu parse /Volumes/MY_DISC --save my-disc   # parse + save a template
+keepsake-atelier menu list                                     # saved templates
+keepsake-atelier menu edit my-disc --title 51 --name "Feature" --main
+keepsake-atelier menu apply my-disc /Volumes/OTHER_DISC        # reuse it elsewhere
 ```
 
-Documents are JSON under `~/Library/Application Support/bluforge/menus/`, so
+Documents are JSON under `~/Library/Application Support/keepsake-atelier/menus/`, so
 they can also be edited by hand. Applying a template matches titles by playlist
 id, then duration, then position, and carries over the title names, the
 main-feature flag and chapter labels. The target disc keeps its own navigation
@@ -177,9 +180,9 @@ objects. See [`docs/menu-templates.md`](docs/menu-templates.md).
 `covers` searches three sources and downloads the one you pick:
 
 ```sh
-./target/release/bluforge covers search "Gladiator II" --source hirescovers
-./target/release/bluforge covers get hirescovers 200648 --out ~/Downloads
-./target/release/bluforge covers login     # store a HiResCovers member cookie
+./target/release/keepsake-atelier covers search "Gladiator II" --source hirescovers
+./target/release/keepsake-atelier covers get hirescovers 200648 --out ~/Downloads
+./target/release/keepsake-atelier covers login     # store a HiResCovers member cookie
 ```
 
 * **hirescovers** - case covers and disc labels. Its 204k-item manifest is read
@@ -202,7 +205,7 @@ else on the open web is a *derivative*. `covers inspect <file>` tells them apart
 from the bytes alone - no image viewer needed:
 
 ```console
-$ bluforge covers inspect cover.jpg
+$ keepsake-atelier covers inspect cover.jpg
 format  : jpeg 720x400
 creator : "CREATOR: gd-jpeg v1.0 (using IJG JPEG v62), quality = 85"
 verdict : watermarked preview (server re-encode)
@@ -227,12 +230,12 @@ valid cookie the public previews are used and labelled as such.
 Turn a finished MKV/MP4 back into a Blu-ray:
 
 ```bash
-bluforge author "/path/Episode.mkv" --out "/path/Disc.iso" --label MY_DISC
+keepsake-atelier author "/path/Episode.mkv" --out "/path/Disc.iso" --label MY_DISC
 ```
 
 * Uses `tsMuxeR`; the app looks for it at
-  `~/Library/Application Support/bluforge/bin/tsMuxeR` (override with
-  `BLUFORGE_TSMUXER`).
+  `~/Library/Application Support/keepsake-atelier/bin/tsMuxeR` (override with
+  `KEEPSAKE_TSMUXER`).
 * Writes a UDF 2.50 image with a complete BDMV tree (index.bdmv,
   MovieObject.bdmv, PLAYLIST, CLIPINF, STREAM) - playable in a hardware player.
 * Chapter marks are carried over from the input; `--auto-chapters N` forces one
@@ -262,7 +265,7 @@ Client configuration:
 ```json
 {
   "mcpServers": {
-    "bluforge": { "type": "http", "url": "http://127.0.0.1:8848/mcp" }
+    "keepsake-atelier": { "type": "http", "url": "http://127.0.0.1:8848/mcp" }
   }
 }
 ```
@@ -297,27 +300,27 @@ default**; MakeMKV's `libmmbd` is a fallback, not a requirement.
 | Backend | When | Notes |
 | --- | --- | --- |
 | `libaacs` + KEYDB | default, whenever the disc is keyed | No proprietary code, no MakeMKV process. Decrypts from the disc's VUK/unit key in `KEYDB.cfg`; libaacs needs the raw device and an *unmounted* volume, which the rip arranges. |
-| `libmmbd` (MakeMKV) | a disc that cannot be keyed natively, or BD+ | ABI-compatible; last-resort fallback. Force with `BLUFORGE_DECRYPT=mmbd`. |
+| `libmmbd` (MakeMKV) | a disc that cannot be keyed natively, or BD+ | ABI-compatible; last-resort fallback. Force with `KEEPSAKE_DECRYPT=mmbd`. |
 
 Key a disc so it never needs MakeMKV again:
 
 ```sh
-bluforge keys add --from /Volumes/MY_DISC --vuk 0x<VUK> [--unit-key 0x<UK>] --name "My Disc"
-bluforge keys list --keyed
-bluforge keys import /path/to/KEYDB.cfg     # merge a community database
+keepsake-atelier keys add --from /Volumes/MY_DISC --vuk 0x<VUK> [--unit-key 0x<UK>] --name "My Disc"
+keepsake-atelier keys list --keyed
+keepsake-atelier keys import /path/to/KEYDB.cfg     # merge a community database
 ```
 
 The VUK (and, for AHD/AACS2 discs, the unit key) come from the disc's `KEYDB.cfg`
-entry, from `bluforge keys native` (VID read from the drive, media key from the
-disc's own MKB), or from a one-off MakeMKV/FindVUK pass. `bluforge aacs <device>
+entry, from `keepsake-atelier keys native` (VID read from the drive, media key from the
+disc's own MKB), or from a one-off MakeMKV/FindVUK pass. `keepsake-atelier aacs <device>
 --disc <mount>` reads the drive's AACS volume ID (LibreDrive vendor read, or the
 standard command if the drive serves it) and seeds libaacs's cache.
 
 ## Configuration & data
 
-* Config: `~/Library/Application Support/bluforge/config.json`
-* Keys:   `~/Library/Application Support/bluforge/KEYDB.cfg`
-* Disc memory: `~/Library/Application Support/bluforge/tv_discs.json` - which
+* Config: `~/Library/Application Support/keepsake-atelier/config.json`
+* Keys:   `~/Library/Application Support/keepsake-atelier/KEYDB.cfg`
+* Disc memory: `~/Library/Application Support/keepsake-atelier/tv_discs.json` - which
   episode numbers each disc held, so a later disc continues from there even when
   discs hold different counts (8 + 4 here). Override with `--start-episode`.
 

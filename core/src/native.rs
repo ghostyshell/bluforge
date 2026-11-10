@@ -69,7 +69,7 @@ fn makemkv_drive_ids(exe: &std::path::Path) -> Vec<String> {
 /// and, without LibreDrive, the RDK). MakeMKV authenticates with its own
 /// (unrevoked) host certificate; we never talk AACS to the drive ourselves.
 fn discatt_for(exe: &std::path::Path) -> Option<Vec<u8>> {
-    let dir = std::env::temp_dir().join(format!("bluforge-discatt-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("keepsake-discatt-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).ok()?;
     let path = dir.join("discatt.dat");
@@ -313,12 +313,8 @@ fn read_header(keydb: &Path) -> Result<Header, CoreError> {
 
     // A host certificate/key supplied by the environment wins (lets a user
     // bring their own licensed certificate without editing KEYDB).
-    let env_priv = std::env::var("BLUFORGE_HOST_PRIV")
-        .ok()
-        .and_then(|v| hexbytes(&v));
-    let env_cert = std::env::var("BLUFORGE_HOST_CERT")
-        .ok()
-        .and_then(|v| hexbytes(&v));
+    let env_priv = crate::env_compat("HOST_PRIV").and_then(|v| hexbytes(&v));
+    let env_cert = crate::env_compat("HOST_CERT").and_then(|v| hexbytes(&v));
     if let (Some(k), Some(c)) = (env_priv, env_cert) {
         if k.len() == 20 && c.len() == 92 {
             return Ok(Header {

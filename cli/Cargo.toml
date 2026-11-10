@@ -1,15 +1,15 @@
 [package]
-name = "bluforge"
+name = "keepsake-atelier"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [[bin]]
-name = "bluforge"
+name = "keepsake-atelier"
 path = "src/main.rs"
 
 [dependencies]
-bluforge-core = { path = "../core" }
+keepsake-core = { path = "../core" }
 clap = { version = "4", features = ["derive"] }
 serde_json.workspace = true
 tracing.workspace = true

@@ -162,7 +162,8 @@ pub struct RipProgress {
 }
 
 pub fn ffmpeg_path() -> PathBuf {
-    std::env::var_os("BLUFORGE_FFMPEG")
+    crate::env_compat("FFMPEG")
+        .map(std::ffi::OsString::from)
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("ffmpeg"))
 }
@@ -643,7 +644,7 @@ where
     }
     times.pop(); // no boundary after the last
 
-    let tmp_dir = std::env::temp_dir().join(format!("bluforge-tv-{}", std::process::id()));
+    let tmp_dir = std::env::temp_dir().join(format!("keepsake-tv-{}", std::process::id()));
     let _ = std::fs::create_dir_all(&tmp_dir);
     // Chapters of the whole title; sliced per episode below. (Read before the
     // split so the marks cover the title even if the split runs long.)
