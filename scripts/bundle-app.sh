@@ -11,6 +11,8 @@
 set -euo pipefail
 
 APP=${1:?usage: bundle-app.sh "/path/to/Keepsake Atelier.app"}
+# Resolve before changing directory: CI passes a path relative to the repo root.
+APP=$(cd "$(dirname "$APP")" && pwd)/$(basename "$APP")
 BIN="$APP/Contents/MacOS/keepsake-atelier-app"
 RES="$APP/Contents/Resources"
 LIB="$RES/lib"
