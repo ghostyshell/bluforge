@@ -152,10 +152,14 @@ jobs:
           if command -v ntldd >/dev/null 2>&1; then
             ntldd -R target/x86_64-pc-windows-gnu/release/keepsake-atelier.exe \
               | awk '{print $3}' | while read -r dll; do
-                  [ -f "$dll" ] && cp -n "$dll" dist/
+                  case "$dll" in
+                    *mingw64/bin/*|*mingw64\\bin\\*)
+                      [ -f "$dll" ] && cp -n "$dll" dist/ ;;
+                  esac
                 done
           fi
-          cd dist && zip -9 "keepsake-atelier-${V}-windows-x64.zip" * && unzip -l *.zip
+          cd dist && zip -9 "keepsake-atelier-${V}-windows-x64.zip" *
+          ls -lh
           ls -lh
       - uses: actions/upload-artifact@v4
         with:
