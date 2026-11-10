@@ -56,7 +56,9 @@ scripts/publish-release.sh
 What it does, in order:
 
 1. Reads the version from `app/src-tauri/tauri.conf.json`.
-2. Builds the app DMG and the CLI tarball into `dist/`.
+2. Builds the `.app`, bundles libbluray/libaacs/libbdplus and their dependencies
+   with `scripts/bundle-app.sh` (dylibbundler, ad-hoc signing), creates the DMG
+   with `hdiutil`, and builds the CLI tarball into `dist/`.
 3. Uploads both to GoFile (with retries) and file.kiwi.
 4. Writes `.release-<version>-<date>/links.txt`, recording
    `name | gofile | kiwi | size | sha256`.

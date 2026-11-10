@@ -48,8 +48,10 @@ Apple Silicon, macOS 12 or newer. The links are refreshed weekly because GoFile
 expires free-tier files. The [project site](https://ghostyshell.github.io/keepsake-atelier/#downloads)
 reads the same manifest.
 
-The app is not notarized. On first launch, right-click the app, choose **Open**,
-then confirm. Or clear the quarantine flag:
+The DMG is self-contained: libbluray, libaacs, libbdplus and their dependencies
+are inside the bundle. The CLI tarballs are not; they need the Homebrew
+libraries. The app is not notarized. On first launch, right-click the app,
+choose **Open**, then confirm. Or clear the quarantine flag:
 
 ```sh
 xattr -dr com.apple.quarantine "/Applications/Keepsake Atelier.app"

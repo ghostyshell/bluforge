@@ -21,9 +21,11 @@ interfaces, so each platform is at a different stage.
 
 ## macOS
 
-The reference platform. The app is a signed-by-you DMG, the bundled ffmpeg has
-`dvdvideo`, libx264 and libx265, and the native AACS path uses IOKit and a
-LibreDrive vendor read.
+The reference platform. The DMG bundles libbluray, libaacs, libbdplus and their
+dependencies (fixed and re-signed with `scripts/bundle-app.sh`), the bundled
+ffmpeg has `dvdvideo`, libx264 and libx265, and the native AACS path uses IOKit
+and a LibreDrive vendor read. The CLI tarballs are not bundled and need the
+Homebrew libraries.
 
 - **Apple Silicon:** the normal download.
 - **Intel:** built in CI on an Intel runner (`x86_64-apple-darwin`). The same

@@ -117,12 +117,14 @@ pub fn run() -> DoctorReport {
     ));
 
     // libbdplus + VM data
-    let bdplus = crate::disc::libbdplus_path();
+    let bdplus = std::env::var("LIBBDPLUS_PATH")
+        .ok()
+        .or_else(|| crate::disc::libbdplus_path().map(|p| format!("{p}.dylib")));
     let vm = crate::bdplus::installed();
     r.checks.push(check(
         "libbdplus",
         bdplus.is_some(),
-        match (bdplus, vm) {
+        match (&bdplus, vm) {
             (Some(p), true) => format!(
                 "{p}{}, VM installed",
                 if cfg!(target_os = "macos") {

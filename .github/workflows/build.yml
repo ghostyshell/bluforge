@@ -34,19 +34,18 @@ jobs:
           cache-dependency-path: app/package-lock.json
       - name: Build ffmpeg
         run: |
-          brew install nasm meson cmake ninja pkg-config libbluray libaacs libbdplus
+          brew install nasm meson cmake ninja pkg-config dylibbundler libbluray libaacs libbdplus
           scripts/build-ffmpeg.sh
       - name: Build app
         working-directory: app
-        run: npm ci && npx tauri build --bundles dmg --target aarch64-apple-darwin --config '{"bundle":{"createUpdaterArtifacts":false}}'
-      - name: Build CLI
-        run: cargo build --release --target aarch64-apple-darwin -p keepsake-atelier
-      - name: Package artifacts
+        run: npm ci && npx tauri build --bundles app --target aarch64-apple-darwin --config '{"bundle":{"createUpdaterArtifacts":false}}'
+      - name: Bundle libraries and DMG
         run: |
           V=$(python3 -c 'import json; print(json.load(open("app/src-tauri/tauri.conf.json"))["version"])')
+          APP=$(ls -d target/aarch64-apple-darwin/release/bundle/macos/*.app | head -1)
+          scripts/bundle-app.sh "$APP"
           mkdir -p dist
-          DMG=$(ls target/aarch64-apple-darwin/release/bundle/dmg/*.dmg | head -1)
-          cp "$DMG" "dist/Keepsake-Atelier-${V}-arm64.dmg"
+          hdiutil create -volname "Keepsake Atelier" -srcfolder "$APP" -ov -format UDZO "dist/Keepsake-Atelier-${V}-arm64.dmg"
           tar -czf "dist/keepsake-atelier-${V}-macos-arm64.tar.gz" -C target/aarch64-apple-darwin/release keepsake-atelier
           ls -lh dist
       - uses: actions/upload-artifact@v4
@@ -70,19 +69,18 @@ jobs:
           cache-dependency-path: app/package-lock.json
       - name: Build ffmpeg
         run: |
-          brew install nasm meson cmake ninja pkg-config libbluray libaacs libbdplus
+          brew install nasm meson cmake ninja pkg-config dylibbundler libbluray libaacs libbdplus
           scripts/build-ffmpeg.sh
       - name: Build app
         working-directory: app
-        run: npm ci && npx tauri build --bundles dmg --target x86_64-apple-darwin --config '{"bundle":{"createUpdaterArtifacts":false}}'
-      - name: Build CLI
-        run: cargo build --release --target x86_64-apple-darwin -p keepsake-atelier
-      - name: Package artifacts
+        run: npm ci && npx tauri build --bundles app --target x86_64-apple-darwin --config '{"bundle":{"createUpdaterArtifacts":false}}'
+      - name: Bundle libraries and DMG
         run: |
           V=$(python3 -c 'import json; print(json.load(open("app/src-tauri/tauri.conf.json"))["version"])')
+          APP=$(ls -d target/x86_64-apple-darwin/release/bundle/macos/*.app | head -1)
+          scripts/bundle-app.sh "$APP"
           mkdir -p dist
-          DMG=$(ls target/x86_64-apple-darwin/release/bundle/dmg/*.dmg | head -1)
-          cp "$DMG" "dist/Keepsake-Atelier-${V}-x64.dmg"
+          hdiutil create -volname "Keepsake Atelier" -srcfolder "$APP" -ov -format UDZO "dist/Keepsake-Atelier-${V}-x64.dmg"
           tar -czf "dist/keepsake-atelier-${V}-macos-x64.tar.gz" -C target/x86_64-apple-darwin/release keepsake-atelier
           ls -lh dist
       - uses: actions/upload-artifact@v4

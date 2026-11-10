@@ -56,15 +56,15 @@ export KEEPSAKE_FFMPEG="/Applications/Keepsake Atelier.app/Contents/Resources/ff
 
 ## Runtime libraries
 
-The DMG links Homebrew's libbluray, libaacs and libbdplus. If the app refuses to
-launch with a dyld error, install them:
+The DMG is self-contained: libbluray, libaacs, libbdplus and their dependencies
+are bundled in `Contents/Resources/lib`. The CLI tarballs are not bundled; they
+need the Homebrew libraries:
 
 ```sh
 brew install libbluray libaacs libbdplus
 ```
 
-`keepsake-atelier doctor` reports the exact library it is missing. The CLI
-tarballs have the same requirement.
+`keepsake-atelier doctor` reports the exact library it is missing.
 
 ## First launch
 

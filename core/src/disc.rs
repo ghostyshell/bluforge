@@ -274,6 +274,33 @@ fn find_lib(stems: &'static [&'static str]) -> Option<&'static str> {
     stems.iter().copied().find(|s| lib_file_exists(s))
 }
 
+/// A library shipped in the app bundle's `Contents/Resources/lib`, if present.
+pub fn bundled_lib(name: &str) -> Option<std::path::PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let contents = exe.parent()?.parent()?;
+    let path = contents.join("Resources/lib").join(name);
+    path.is_file().then_some(path)
+}
+
+/// Point libbluray at the libraries bundled with the app, when present.
+///
+/// The app links libbluray directly (rebased by dylibbundler), but libaacs and
+/// libbdplus are `dlopen`ed by name. Setting these before the first `bd_open`
+/// makes a clean Mac that has never seen Homebrew decrypt and play discs.
+pub fn use_bundled_libs() {
+    for (var, file) in [
+        ("LIBAACS_PATH", "libaacs.0.dylib"),
+        ("LIBBDPLUS_PATH", "libbdplus.0.dylib"),
+    ] {
+        if std::env::var_os(var).is_some() {
+            continue;
+        }
+        if let Some(path) = bundled_lib(file) {
+            std::env::set_var(var, path);
+        }
+    }
+}
+
 /// Path to libaacs, when installed.
 pub fn libaacs_path() -> Option<&'static str> {
     find_lib(LIBAACS_STEMS)
@@ -400,6 +427,8 @@ impl Disc {
 
     fn apply_env(backend: DecryptBackend) {
         use std::env;
+
+        crate::disc::use_bundled_libs();
 
         // Overwrite a path we set earlier (so a backend switch takes effect),
         // but never a path the user exported themselves.
