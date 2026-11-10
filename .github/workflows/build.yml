@@ -131,6 +131,7 @@ jobs:
             mingw-w64-x86_64-libaacs
             mingw-w64-x86_64-libbdplus
             mingw-w64-x86_64-pkg-config
+            mingw-w64-x86_64-ntldd
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-gnu
@@ -148,9 +149,13 @@ jobs:
           V=$(python3 -c 'import json; print(json.load(open("app/src-tauri/tauri.conf.json"))["version"])')
           mkdir -p dist
           cp target/x86_64-pc-windows-gnu/release/keepsake-atelier.exe dist/
-          ldd target/x86_64-pc-windows-gnu/release/keepsake-atelier.exe \
-            | grep -E '/mingw64/bin/' | awk '{print $3}' | xargs -r -I{} cp {} dist/ || true
-          cd dist && zip -9 "keepsake-atelier-${V}-windows-x64.zip" *
+          if command -v ntldd >/dev/null 2>&1; then
+            ntldd -R target/x86_64-pc-windows-gnu/release/keepsake-atelier.exe \
+              | awk '{print $3}' | while read -r dll; do
+                  [ -f "$dll" ] && cp -n "$dll" dist/
+                done
+          fi
+          cd dist && zip -9 "keepsake-atelier-${V}-windows-x64.zip" * && unzip -l *.zip
           ls -lh
       - uses: actions/upload-artifact@v4
         with:
