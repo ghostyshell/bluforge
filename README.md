@@ -2,7 +2,7 @@
 
 A cross-platform desktop app for **ripping Blu-rays** and everything around them:
 decrypted ISOs, MKV/MP4 remuxes, CPU- and GPU-encoded output, plus (later) Blu-ray
-authoring with custom menus and burning.
+authoring, disc menus, and (later) burning.
 
 The engine, CLI binary and crate names are still `bluforge`.
 
@@ -26,9 +26,11 @@ The engine, CLI binary and crate names are still `bluforge`.
 | TV / anime: per-episode split, SxxExx titles, OP/ED/preview chapters | ✅ |
 | Desktop UI (Tauri v2) | ✅ |
 | MCP server (all features as tools, localhost, off by default) | ✅ |
-| Blu-ray authoring + burning | ✅ |
+| Blu-ray authoring (BDMV / ISO) | ✅ |
 | Disc menu documents (parse, edit, save, apply to another disc) | ✅ |
+| Batch rip queue | ✅ |
 | Authored menus (generate a menu for a disc you author) | 🚧 |
+| Burning to disc | 🚧 |
 | Self-update wiring (Tauri updater) | ✅ (needs a signed release) |
 | Windows / Linux | 🚧 (macOS first; non-macOS device layer stubbed) |
 

@@ -244,6 +244,18 @@ export type StreamInfo = {
   pid: number;
 };
 
+export type QueueJob = {
+  id: number;
+  title: number | null;
+  source: string;
+  output: string | null;
+  /** queued | running | done | error | cancelled */
+  state: string;
+  percent: number;
+  message: string;
+  dest: string | null;
+};
+
 export const api = {
   snapshot: () => invoke<Snapshot>("snapshot"),
   keysStatus: () => invoke<KeyDbStatus>("keys_status"),
@@ -325,4 +337,17 @@ export const api = {
   bdplusInstall: () => invoke<string>("bdplus_install"),
   discStreams: (path: string, title: number) =>
     invoke<StreamInfo[]>("disc_streams", { path, title }),
+  queueAdd: (request: RipRequest) => invoke<number>("queue_add", { request }),
+  queueList: () => invoke<QueueJob[]>("queue_list"),
+  queueCancel: (id: number) => invoke<void>("queue_cancel", { id }),
+  queueRemove: (id: number) => invoke<void>("queue_remove", { id }),
+  queueClear: () => invoke<void>("queue_clear"),
+  onQueueChanged: (cb: () => void): Promise<UnlistenFn> =>
+    listen("queue://changed", () => cb()),
+  onQueueProgress: (
+    cb: (p: { id: number; progress: RipProgress }) => void,
+  ): Promise<UnlistenFn> =>
+    listen<{ id: number; progress: RipProgress }>("queue://progress", (e) =>
+      cb(e.payload),
+    ),
 };

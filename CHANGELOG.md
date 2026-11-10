@@ -22,6 +22,10 @@ All notable changes to Keepsake Atelier. Newest first.
 
 ### Added
 
+- **Batch rip queue** in the desktop app: "Start rip" enqueues the selected
+  title (or TV plan), and `+` on a title row queues that title. Jobs run one at
+  a time, with a queue panel for state, progress, cancel and cleanup. In-memory
+  only for now.
 - **Disc menu documents** (`bluforge menu`): parse a disc's menu into an
   editable JSON document, save it as a named template, and apply it to a
   different disc. The document holds the `BDMV/index.bdmv` navigation table

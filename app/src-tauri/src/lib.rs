@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -22,6 +22,246 @@ fn mcp_status() -> serde_json::Value {
 struct RpState {
     cancel: Arc<AtomicBool>,
     running: Arc<AtomicBool>,
+    queue: Arc<Mutex<QueueState>>,
+}
+
+/// A queued rip. `request` is the exact `RipRequest` handed to the ripper.
+struct QueueJob {
+    id: u64,
+    request: rip::RipRequest,
+    /// queued | running | done | error | cancelled
+    state: String,
+    percent: f64,
+    message: String,
+    dest: Option<String>,
+}
+
+#[derive(Serialize)]
+struct QueueJobView {
+    id: u64,
+    title: Option<u32>,
+    source: String,
+    output: Option<String>,
+    state: String,
+    percent: f64,
+    message: String,
+    dest: Option<String>,
+}
+
+impl QueueJob {
+    fn view(&self) -> QueueJobView {
+        QueueJobView {
+            id: self.id,
+            title: self.request.title,
+            source: self.request.source.display().to_string(),
+            output: self.request.output.as_ref().map(|p| p.display().to_string()),
+            state: self.state.clone(),
+            percent: self.percent,
+            message: self.message.clone(),
+            dest: self.dest.clone(),
+        }
+    }
+}
+
+/// In-memory rip queue. Pure state transitions with no threads or events, so it
+/// can be unit-tested; `pump_queue` owns the running thread.
+#[derive(Default)]
+struct QueueState {
+    jobs: Vec<QueueJob>,
+    next_id: u64,
+}
+
+impl QueueState {
+    fn enqueue(&mut self, request: rip::RipRequest) -> u64 {
+        self.next_id += 1;
+        let id = self.next_id;
+        self.jobs.push(QueueJob {
+            id,
+            request,
+            state: "queued".into(),
+            percent: 0.0,
+            message: "waiting".into(),
+            dest: None,
+        });
+        id
+    }
+
+    /// Claim the first queued job, marking it running. Returns `None` while
+    /// another job is running, so one ripper thread at a time is an invariant
+    /// of the queue itself.
+    fn start_next(&mut self) -> Option<(u64, rip::RipRequest)> {
+        if self.jobs.iter().any(|j| j.state == "running") {
+            return None;
+        }
+        let job = self.jobs.iter_mut().find(|j| j.state == "queued")?;
+        job.state = "running".into();
+        job.percent = 0.0;
+        job.message = "starting".into();
+        Some((job.id, job.request.clone()))
+    }
+
+    fn update(&mut self, id: u64, percent: f64, message: &str, dest: Option<String>) {
+        if let Some(job) = self.jobs.iter_mut().find(|j| j.id == id) {
+            job.percent = percent;
+            job.message = message.to_string();
+            if dest.is_some() {
+                job.dest = dest;
+            }
+        }
+    }
+
+    fn finish(&mut self, id: u64, error: Option<String>, cancelled: bool) {
+        if let Some(job) = self.jobs.iter_mut().find(|j| j.id == id) {
+            match error {
+                None => {
+                    job.state = "done".into();
+                    job.percent = 100.0;
+                    job.message = "done".into();
+                }
+                Some(e) => {
+                    job.state = if cancelled { "cancelled" } else { "error" }.into();
+                    job.message = e;
+                }
+            }
+        }
+    }
+
+    /// Cancel a job. Returns true when it was running, so the caller can trip
+    /// the ripper's cancel flag.
+    fn cancel(&mut self, id: u64) -> bool {
+        let Some(job) = self.jobs.iter_mut().find(|j| j.id == id) else {
+            return false;
+        };
+        match job.state.as_str() {
+            "running" => {
+                job.message = "cancelling".into();
+                true
+            }
+            "queued" => {
+                job.state = "cancelled".into();
+                job.message = "cancelled".into();
+                false
+            }
+            _ => false,
+        }
+    }
+
+    fn remove(&mut self, id: u64) {
+        self.jobs.retain(|j| !(j.id == id && j.state != "running"));
+    }
+
+    fn clear_finished(&mut self) {
+        self.jobs
+            .retain(|j| j.state == "queued" || j.state == "running");
+    }
+
+    fn views(&self) -> Vec<QueueJobView> {
+        self.jobs.iter().map(|j| j.view()).collect()
+    }
+}
+
+fn pump_queue(app: AppHandle, state: &RpState) {
+    if state.running.load(Ordering::Relaxed) {
+        return;
+    }
+    let (id, request) = {
+        let Ok(mut q) = state.queue.lock() else {
+            return;
+        };
+        let Some(next) = q.start_next() else {
+            return;
+        };
+        next
+    };
+    state.cancel.store(false, Ordering::Relaxed);
+    state.running.store(true, Ordering::Relaxed);
+    let _ = app.emit("queue://changed", ());
+
+    let app2 = app.clone();
+    let cancel = state.cancel.clone();
+    let running = state.running.clone();
+    let queue = state.queue.clone();
+    std::thread::spawn(move || {
+        let res = rip::run(&request, &cancel, |p| {
+            if let Ok(mut q) = queue.lock() {
+                q.update(
+                    id,
+                    p.percent,
+                    &p.message,
+                    p.dest.as_ref().map(|d| d.display().to_string()),
+                );
+            }
+            let _ = app2.emit("rip://progress", p.clone());
+            let _ = app2.emit(
+                "queue://progress",
+                serde_json::json!({ "id": id, "progress": p }),
+            );
+        });
+        running.store(false, Ordering::Relaxed);
+        let cancelled = cancel.load(Ordering::Relaxed);
+        if let Ok(mut q) = queue.lock() {
+            q.finish(id, res.as_ref().err().map(|e| e.to_string()), cancelled);
+        }
+        if let Err(e) = &res {
+            if !cancelled {
+                let _ = app2.emit("rip://error", e.to_string());
+            }
+        }
+        let _ = app2.emit("queue://changed", ());
+        if let Some(st) = app2.try_state::<RpState>() {
+            pump_queue(app2.clone(), &st);
+        }
+    });
+}
+
+#[tauri::command]
+fn queue_add(
+    app: AppHandle,
+    state: State<RpState>,
+    request: rip::RipRequest,
+) -> Result<u64, String> {
+    let id = {
+        let mut q = state.queue.lock().map_err(|_| "queue lock poisoned")?;
+        q.enqueue(request)
+    };
+    let _ = app.emit("queue://changed", ());
+    pump_queue(app, &state);
+    Ok(id)
+}
+
+#[tauri::command]
+fn queue_list(state: State<RpState>) -> Vec<QueueJobView> {
+    state
+        .queue
+        .lock()
+        .map(|q| q.views())
+        .unwrap_or_default()
+}
+
+#[tauri::command]
+fn queue_cancel(state: State<RpState>, id: u64) {
+    let running = state
+        .queue
+        .lock()
+        .map(|mut q| q.cancel(id))
+        .unwrap_or(false);
+    if running {
+        state.cancel.store(true, Ordering::Relaxed);
+    }
+}
+
+#[tauri::command]
+fn queue_remove(state: State<RpState>, id: u64) {
+    if let Ok(mut q) = state.queue.lock() {
+        q.remove(id);
+    }
+}
+
+#[tauri::command]
+fn queue_clear(state: State<RpState>) {
+    if let Ok(mut q) = state.queue.lock() {
+        q.clear_finished();
+    }
 }
 
 #[derive(Serialize)]
@@ -539,6 +779,7 @@ pub fn run() {
         .manage(RpState {
             cancel: Arc::new(AtomicBool::new(false)),
             running: Arc::new(AtomicBool::new(false)),
+            queue: Arc::new(Mutex::new(QueueState::default())),
         })
         .invoke_handler(tauri::generate_handler![
             snapshot,
@@ -571,7 +812,12 @@ pub fn run() {
             menu_remove,
             keys_native,
             bdplus_install,
-            disc_streams
+            disc_streams,
+            queue_add,
+            queue_list,
+            queue_cancel,
+            queue_remove,
+            queue_clear
         ])
         .setup(|app| {
             let _ = app.get_webview_window("main");
@@ -579,4 +825,89 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running Keepsake Atelier");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn req(title: u32) -> rip::RipRequest {
+        rip::RipRequest {
+            source: "/tmp/disc".into(),
+            keydb: None,
+            title: Some(title),
+            output: None,
+            mode: rip::RipMode::Remux {
+                container: rip::Container::Mkv,
+            },
+            chapters: true,
+            poster: false,
+            movie: None,
+            audio: rip::AudioSel::All,
+            subs: rip::SubSel::None,
+            covers: false,
+            tv: false,
+            series: None,
+            episodes: None,
+            start_episode: None,
+        }
+    }
+
+    #[test]
+    fn drains_in_order_and_marks_states() {
+        let mut q = QueueState::default();
+        assert!(q.start_next().is_none());
+        let a = q.enqueue(req(1));
+        let b = q.enqueue(req(2));
+        assert!(a < b);
+        assert_eq!(q.views().len(), 2);
+
+        let (id, r) = q.start_next().expect("first");
+        assert_eq!(id, a);
+        assert_eq!(r.title, Some(1));
+        assert!(q.start_next().is_none(), "only one job runs at a time");
+
+        q.update(a, 42.0, "encoding", None);
+        assert_eq!(q.views()[0].percent, 42.0);
+        q.finish(a, None, false);
+        assert_eq!(q.views()[0].state, "done");
+        assert_eq!(q.views()[0].percent, 100.0);
+
+        let (id, _) = q.start_next().expect("second");
+        assert_eq!(id, b);
+        q.finish(b, Some("boom".into()), false);
+        assert_eq!(q.views()[1].state, "error");
+        assert_eq!(q.views()[1].message, "boom");
+        assert!(q.start_next().is_none());
+    }
+
+    #[test]
+    fn cancels_running_and_queued_jobs() {
+        let mut q = QueueState::default();
+        let a = q.enqueue(req(1));
+        let b = q.enqueue(req(2));
+        q.start_next();
+        assert!(q.cancel(a), "a running job signals the ripper");
+        q.finish(a, Some("cancelled".into()), true);
+        assert_eq!(q.views()[0].state, "cancelled");
+        assert!(!q.cancel(b), "a queued job is cancelled without a thread");
+        assert_eq!(q.views()[1].state, "cancelled");
+    }
+
+    #[test]
+    fn removes_finished_but_keeps_running() {
+        let mut q = QueueState::default();
+        let a = q.enqueue(req(1));
+        let b = q.enqueue(req(2));
+        let c = q.enqueue(req(3));
+        q.start_next();
+        q.finish(a, None, false);
+        q.clear_finished();
+        let ids: Vec<u64> = q.views().iter().map(|v| v.id).collect();
+        assert!(ids.contains(&b) && ids.contains(&c));
+        assert!(!ids.contains(&a));
+        q.start_next();
+        q.remove(b);
+        assert!(q.views().iter().any(|v| v.id == b), "running job stays");
+    }
 }

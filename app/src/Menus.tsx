@@ -23,6 +23,8 @@ function slug(s: string): string {
 
 type Props = {
   source: string;
+  /** True while a rip is running: keep off the drive. */
+  busy?: boolean;
   onError: (msg: string) => void;
   onToast: (msg: string) => void;
 };
@@ -32,7 +34,7 @@ type Props = {
  * main feature and chapter labels, save it as a template, and apply a template
  * to a different disc.
  */
-export function Menus({ source, onError, onToast }: Props) {
+export function Menus({ source, busy: driveBusy, onError, onToast }: Props) {
   const [entries, setEntries] = useState<MenuEntry[]>([]);
   const [pick, setPick] = useState("");
   const [doc, setDoc] = useState<DiscMenu | null>(null);
@@ -200,7 +202,7 @@ export function Menus({ source, onError, onToast }: Props) {
       </div>
 
       <div className="row wrap" style={{ marginTop: 10, gap: 8 }}>
-        <button onClick={parseDisc} disabled={!!busy || !source}>
+        <button onClick={parseDisc} disabled={!!busy || !!driveBusy || !source}>
           {busy === "parse" ? "Parsing…" : "Parse this disc"}
         </button>
         <select
@@ -398,7 +400,7 @@ export function Menus({ source, onError, onToast }: Props) {
             <button
               className="ghost"
               onClick={apply}
-              disabled={!name || !applyName || applyName === name || !!busy || !source}
+              disabled={!name || !applyName || applyName === name || !!busy || !!driveBusy || !source}
               title="Match this template's titles to the inserted disc and save the result"
             >
               {busy === "apply" ? "Applying…" : "Apply"}

@@ -40,7 +40,7 @@ tested and used on a real disc.
   lists, rips, covers, ISO export, authoring, keys, BD+ and menu documents.
 - MCP server exposing the core to agents.
 
-## Phase 6 - Disc menu documents and templates - done (this change)
+## Phase 6 - Disc menu documents and templates - done
 
 Parse a disc's menu, edit it, save it as a template, apply it to another disc.
 
@@ -63,18 +63,34 @@ Parse a disc's menu, edit it, save it as a template, apply it to another disc.
 - Also surfaced alongside it: native key derivation for the inserted disc, BD+
   VM installation, and the per-title stream list.
 
-## Phase 8 - Authored menus - future
+## Phase 8 - Batch queue - done
 
-- Generate an HDMV menu (or a minimal BD-J menu) for discs built by
-  `bluforge author`: top menu, title selection, chapter selection, playback
-  commands.
-- Reuse a saved menu document as the input for that generator, so a menu
-  designed once can be emitted onto a new disc rather than only mapped onto it.
+- The desktop app queues rip requests: "Start rip" enqueues the selected title
+  (or the TV plan), and `+` on any title row queues that title with the current
+  settings.
+- Jobs run one at a time. A queue panel shows each job's state
+  (queued/running/done/error/cancelled) and progress, and can cancel a running
+  job or remove queued and finished ones.
+- The queue is in-memory: it does not survive an app restart. A persistent
+  queue is a later refinement.
 
-## Phase 9 - AACS2 / UHD unit keys - future
+## Phase 9 - Authored menus - deferred
+
+Generating a graphical top menu for a disc that `bluforge author` builds needs
+an HDMV interactive-graphics stream or a BD-J application. Neither toolchain is
+present: tsMuxeR does not write menus, and there is no BD-J compiler or player
+to verify against. A navigation-only menu (no drawn buttons) would not be a
+usable menu, so this is deferred rather than shipped half-working.
+
+The parts that are ready for it: saved menu documents (Phase 6), the menu UI
+(Phase 7) and authoring (Phase 4). When an IG or BD-J generator is added, it can
+consume a saved document directly.
+
+## Phase 10 - AACS2 / UHD unit keys - future
 
 - Current native recovery derives the AACS1 media key and VUK. AACS2 discs need
   the unit-key table; `bluforge keys` already stores and uses one when present.
+- Next: derive/import unit keys and show the disc's AACS generation in the app.
 
 ## Parity with DVDFab-class apps
 
@@ -98,7 +114,7 @@ What the app covers today, against the ripping-suite feature set:
 | Burning to disc | not started |
 | Cinavia detection/removal | not implemented |
 | UHD/AACS2 unit-key workflow | partial (core stores unit keys, no UI) |
-| Batch queue (one job at a time) | not started |
+| Batch queue (one job at a time) | done |
 
 ## Deliberately out of scope
 

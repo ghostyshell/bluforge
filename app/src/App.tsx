@@ -8,6 +8,7 @@ import {
   type CoverHit,
   type IsoProgress,
   type MovieHit,
+  type QueueJob,
   type RipMode,
   type RipProgress,
   type Snapshot,
@@ -82,6 +83,7 @@ export default function App() {
   const [discPath, setDiscPath] = useState("");
   const [title, setTitle] = useState<number | null>(null);
   const [streams, setStreams] = useState<StreamInfo[]>([]);
+  const [queue, setQueue] = useState<QueueJob[]>([]);
   const [container, setContainer] = useState<"mkv" | "mp4">("mkv");
   const [lossless, setLossless] = useState(true);
   const [enc, setEnc] = useState<EncodeSettings>({
@@ -141,6 +143,25 @@ export default function App() {
       .catch(() => { if (live) setStreams([]); });
     return () => { live = false; };
   }, [title, discPath]);
+
+  const refreshQueue = useCallback(async () => {
+    try { setQueue(await api.queueList()); } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => {
+    void refreshQueue();
+    const us = [
+      api.onQueueChanged(() => { void refreshQueue(); }),
+      api.onQueueProgress(({ id, progress }) =>
+        setQueue((q) =>
+          q.map((j) =>
+            j.id === id ? { ...j, percent: progress.percent, message: progress.message } : j,
+          ),
+        ),
+      ),
+    ];
+    return () => { us.forEach((u) => u.then((f) => f())); };
+  }, [refreshQueue]);
 
   const refresh = useCallback(async () => {
     try {
@@ -264,34 +285,45 @@ export default function App() {
     } catch (e) { setError(String(e)); }
   };
 
-  const startRip = async () => {
-    // A TV rip does not need a title: the episode plan picks the title.
-    if (!discPath || (!tvPlan && title == null)) return;
+  // Build the request for one title (or the TV plan). The queue backend runs
+  // jobs one at a time, so "Start rip" and the per-title buttons share this.
+  const ripRequest = (t: number | null) => {
+    if (!discPath || (!tvPlan && t == null)) return null;
     // Decryption must read the raw device; a mounted optical volume returns
     // still-encrypted bytes.
     const dev = optical[0];
     const onOptical = !!dev && (discPath === dev.mount_point || discPath === `/dev/r${dev.bsd_name}`);
     const src = onOptical ? `/dev/r${dev.bsd_name}` : discPath;
-    setError(null); setBusy("ripping"); setProgress({ out_time_ms: 0, total_ms: 0, frames: 0, fps: 0, speed: "", done: false, percent: 0, message: "starting", dest: null });
+    return {
+      source: src,
+      keydb: snap?.keys?.path ?? null,
+      title: t ?? 0,
+      output: null, // render the configured output template
+      mode,
+      chapters,
+      poster,
+      movie,
+      audio,
+      subs,
+      covers,
+      tv: !!tvPlan,
+      series: tvPlan?.series ?? null,
+      episodes: tvPlan
+        ? Object.entries(tvSel).filter(([, v]) => v).map(([k]) => k).join(",")
+        : null,
+      start_episode: tvPlan && startEp !== "" ? Number(startEp) : null,
+    };
+  };
+
+  const enqueueRip = async (t: number | null = title) => {
+    const req = ripRequest(t);
+    if (!req) return;
+    setError(null);
     try {
-      await api.startRip({
-        source: src,
-        keydb: snap?.keys?.path ?? null,
-        title: title ?? 0,
-        output: null, // render the configured output template
-        mode,
-        chapters,
-        poster,
-        movie,
-        audio,
-        subs,
-        covers,
-        tv: !!tvPlan,
-        series: tvPlan?.series ?? null,
-        episodes: tvPlan ? Object.entries(tvSel).filter(([, v]) => v).map(([k]) => k).join(",") : null,
-        start_episode: tvPlan && startEp !== "" ? Number(startEp) : null,
-      });
-    } catch (e) { setError(String(e)); setBusy(null); }
+      await api.queueAdd(req);
+      await refreshQueue();
+      setToast(tvPlan ? "episodes queued" : `title ${t ?? "main"} queued`);
+    } catch (e) { setError(String(e)); }
   };
 
   const patchTab = (role: CoverRole, p: Partial<TabState>) =>
@@ -417,7 +449,6 @@ export default function App() {
     finally { setSavingCovers(false); }
   };
 
-  const cancel = async () => { try { await api.cancelRip(); } catch { /* ignore */ } setBusy(null); };
 
   useEffect(() => {
     const us = [
@@ -451,6 +482,7 @@ export default function App() {
 
   const keys = snap?.keys;
   const optical = snap?.optical ?? [];
+  const runningJob = queue.find((j) => j.state === "running") ?? null;
 
   return (
     <div className="app">
@@ -535,6 +567,10 @@ export default function App() {
                         {fmtDuration(t.duration_secs)} · {t.resolution ?? "?"} · {t.chapters} chapters · audio {t.audio_streams}
                       </div>
                     </div>
+                    <button className="ghost sm" title="Add this title to the queue"
+                      onClick={(e) => { e.stopPropagation(); void enqueueRip(t.index); }}>
+                      +
+                    </button>
                   </div>
                 ))}
               </div>
@@ -557,7 +593,7 @@ export default function App() {
           )}
 
           {/* Disc menu */}
-          <Menus source={discPath} onError={setError} onToast={setToast} />
+          <Menus source={discPath} busy={!!runningJob} onError={setError} onToast={setToast} />
 
           {/* Output */}
           <section className="card">
@@ -842,7 +878,7 @@ export default function App() {
               ? <div className="sub">{keys.entries.toLocaleString()} entries · {fmtBytes(keys.bytes)}</div>
               : <div className="sub">Not downloaded yet</div>}
             <div className="row wrap" style={{ gap: 8, marginTop: 10 }}>
-              <button className="ghost sm" disabled={!discPath || !!busy}
+              <button className="ghost sm" disabled={!discPath || !!busy || !!runningJob}
                 onClick={async () => {
                   setBusy("derive");
                   try {
@@ -946,14 +982,43 @@ export default function App() {
           </section>
 
           <div style={{ marginTop: 18 }}>
-            {!busy
-              ? <button className="primary" style={{ width: "100%", justifyContent: "center" }} disabled={!discPath || (!tvPlan && title == null)} onClick={startRip}>
-                  Start rip
+            {runningJob
+              ? <button style={{ width: "100%", justifyContent: "center" }}
+                  onClick={() => void api.queueCancel(runningJob.id)}>
+                  <span className="spin" /> ripping title {runningJob.title ?? "main"}… (cancel)
                 </button>
-              : <button style={{ width: "100%", justifyContent: "center" }} onClick={cancel}>
-                  <span className="spin" /> {busy}… (cancel)
+              : <button className="primary" style={{ width: "100%", justifyContent: "center" }}
+                  disabled={!discPath || (!tvPlan && title == null)} onClick={() => void enqueueRip()}>
+                  Start rip
                 </button>}
           </div>
+
+          {queue.length > 0 && (
+            <section className="card" style={{ marginTop: 16 }}>
+              <div className="row between">
+                <h2>Queue</h2>
+                <button className="ghost sm" onClick={async () => { await api.queueClear(); await refreshQueue(); }}>
+                  Clear finished
+                </button>
+              </div>
+              <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
+                {queue.map((j) => (
+                  <div key={j.id} className="row" style={{ gap: 8, alignItems: "center" }}>
+                    <span className={`pill ${j.state === "error" ? "bad" : j.state === "done" ? "good" : j.state === "running" ? "warn" : ""}`}>
+                      <span className="dot" />{j.state}
+                    </span>
+                    <div className="grow" style={{ minWidth: 0 }}>
+                      <div className="sub truncate">title {j.title ?? "main"} · {j.percent.toFixed(0)}%</div>
+                      <div className="sub truncate" title={j.message}>{j.message}</div>
+                    </div>
+                    {j.state === "running" || j.state === "queued"
+                      ? <button className="ghost sm" onClick={async () => { await api.queueCancel(j.id); await refreshQueue(); }}>cancel</button>
+                      : <button className="ghost sm" onClick={async () => { await api.queueRemove(j.id); await refreshQueue(); }}>remove</button>}
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
 
           {progress && (
             <div style={{ marginTop: 16 }}>
@@ -977,11 +1042,11 @@ export default function App() {
             </div>
             <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
               <button className="ghost" style={{ flex: 1, justifyContent: "center" }}
-                disabled={!discPath || isoBusy || !!busy} onClick={() => exportIso("iso")}>
+                disabled={!discPath || isoBusy || !!busy || !!runningJob} onClick={() => exportIso("iso")}>
                 Export .iso
               </button>
               <button className="ghost" style={{ flex: 1, justifyContent: "center" }}
-                disabled={!discPath || isoBusy || !!busy} onClick={() => exportIso("folder")}>
+                disabled={!discPath || isoBusy || !!busy || !!runningJob} onClick={() => exportIso("folder")}>
                 Export folder
               </button>
             </div>
