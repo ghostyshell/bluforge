@@ -71,8 +71,10 @@ Parse a disc's menu, edit it, save it as a template, apply it to another disc.
 - Jobs run one at a time. A queue panel shows each job's state
   (queued/running/done/error/cancelled) and progress, and can cancel a running
   job or remove queued and finished ones.
-- The queue is in-memory: it does not survive an app restart. A persistent
-  queue is a later refinement.
+- The queue is persisted to `~/Library/Application Support/bluforge/queue.json`
+  on every state change, restored on launch (a job that was running becomes
+  queued again), and never auto-starts on launch: the queue panel has a Resume
+  button.
 
 ## Phase 9 - Authored menus - deferred
 

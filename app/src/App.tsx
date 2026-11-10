@@ -1018,9 +1018,16 @@ export default function App() {
             <section className="card" style={{ marginTop: 16 }}>
               <div className="row between">
                 <h2>Queue</h2>
-                <button className="ghost sm" onClick={async () => { await api.queueClear(); await refreshQueue(); }}>
-                  Clear finished
-                </button>
+                <div className="row" style={{ gap: 6 }}>
+                  {!runningJob && queue.some((j) => j.state === "queued") && (
+                    <button className="ghost sm" onClick={async () => { await api.queueResume(); await refreshQueue(); }}>
+                      Resume
+                    </button>
+                  )}
+                  <button className="ghost sm" onClick={async () => { await api.queueClear(); await refreshQueue(); }}>
+                    Clear finished
+                  </button>
+                </div>
               </div>
               <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
                 {queue.map((j) => (

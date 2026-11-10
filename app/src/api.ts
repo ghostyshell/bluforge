@@ -350,6 +350,7 @@ export const api = {
   queueCancel: (id: number) => invoke<void>("queue_cancel", { id }),
   queueRemove: (id: number) => invoke<void>("queue_remove", { id }),
   queueClear: () => invoke<void>("queue_clear"),
+  queueResume: () => invoke<void>("queue_resume"),
   onQueueChanged: (cb: () => void): Promise<UnlistenFn> =>
     listen("queue://changed", () => cb()),
   onQueueProgress: (

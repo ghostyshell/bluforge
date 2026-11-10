@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use bluforge_core::{config::AppConfig, disc::DiscInfo, iso, keys::KeyDbStatus, rip, CoreSnapshot};
@@ -26,6 +26,7 @@ struct RpState {
 }
 
 /// A queued rip. `request` is the exact `RipRequest` handed to the ripper.
+#[derive(Clone, Serialize, Deserialize)]
 struct QueueJob {
     id: u64,
     request: rip::RipRequest,
@@ -162,6 +163,54 @@ impl QueueState {
     fn views(&self) -> Vec<QueueJobView> {
         self.jobs.iter().map(|j| j.view()).collect()
     }
+
+    fn snapshot(&self) -> Vec<QueueJob> {
+        self.jobs.clone()
+    }
+
+    /// Replace the queue from a saved snapshot. Anything that was running when
+    /// the app stopped is put back in the queue; `next_id` never goes backwards.
+    fn restore(&mut self, mut jobs: Vec<QueueJob>) {
+        for job in &mut jobs {
+            if job.state == "running" {
+                job.state = "queued".into();
+                job.message = "waiting".into();
+            }
+        }
+        self.next_id = jobs.iter().map(|j| j.id).max().unwrap_or(0);
+        self.jobs = jobs;
+    }
+}
+
+fn queue_path() -> std::path::PathBuf {
+    bluforge_core::config_dir().join("queue.json")
+}
+
+/// Write the queue snapshot atomically. Called on state transitions, not on
+/// every progress tick.
+fn persist_queue(state: &RpState) {
+    let jobs = match state.queue.lock() {
+        Ok(q) => q.snapshot(),
+        Err(_) => return,
+    };
+    let path = queue_path();
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    let Ok(text) = serde_json::to_string_pretty(&jobs) else {
+        return;
+    };
+    let tmp = path.with_extension("json.tmp");
+    if std::fs::write(&tmp, text + "\n").is_ok() {
+        let _ = std::fs::rename(&tmp, &path);
+    }
+}
+
+fn load_queue() -> Vec<QueueJob> {
+    let Ok(text) = std::fs::read_to_string(queue_path()) else {
+        return Vec::new();
+    };
+    serde_json::from_str(&text).unwrap_or_default()
 }
 
 fn pump_queue(app: AppHandle, state: &RpState) {
@@ -179,6 +228,7 @@ fn pump_queue(app: AppHandle, state: &RpState) {
     };
     state.cancel.store(false, Ordering::Relaxed);
     state.running.store(true, Ordering::Relaxed);
+    persist_queue(state);
     let _ = app.emit("queue://changed", ());
 
     let app2 = app.clone();
@@ -213,6 +263,7 @@ fn pump_queue(app: AppHandle, state: &RpState) {
         }
         let _ = app2.emit("queue://changed", ());
         if let Some(st) = app2.try_state::<RpState>() {
+            persist_queue(&st);
             pump_queue(app2.clone(), &st);
         }
     });
@@ -228,6 +279,7 @@ fn queue_add(
         let mut q = state.queue.lock().map_err(|_| "queue lock poisoned")?;
         q.enqueue(request)
     };
+    persist_queue(&state);
     let _ = app.emit("queue://changed", ());
     pump_queue(app, &state);
     Ok(id)
@@ -248,6 +300,7 @@ fn queue_cancel(state: State<RpState>, id: u64) {
     if running {
         state.cancel.store(true, Ordering::Relaxed);
     }
+    persist_queue(&state);
 }
 
 #[tauri::command]
@@ -255,6 +308,7 @@ fn queue_remove(state: State<RpState>, id: u64) {
     if let Ok(mut q) = state.queue.lock() {
         q.remove(id);
     }
+    persist_queue(&state);
 }
 
 #[tauri::command]
@@ -262,6 +316,14 @@ fn queue_clear(state: State<RpState>) {
     if let Ok(mut q) = state.queue.lock() {
         q.clear_finished();
     }
+    persist_queue(&state);
+}
+
+/// Run the restored queue after an app restart. Jobs are never auto-started on
+/// launch, so a restart cannot begin ripping before the user asks.
+#[tauri::command]
+fn queue_resume(app: AppHandle, state: State<RpState>) {
+    pump_queue(app, &state);
 }
 
 #[derive(Serialize)]
@@ -853,9 +915,15 @@ pub fn run() {
             queue_cancel,
             queue_remove,
             queue_clear,
+            queue_resume,
             clone_start
         ])
         .setup(|app| {
+            if let Some(st) = app.try_state::<RpState>() {
+                if let Ok(mut q) = st.queue.lock() {
+                    q.restore(load_queue());
+                }
+            }
             let _ = app.get_webview_window("main");
             Ok(())
         })
@@ -915,6 +983,24 @@ mod tests {
         assert_eq!(q.views()[1].state, "error");
         assert_eq!(q.views()[1].message, "boom");
         assert!(q.start_next().is_none());
+    }
+
+    #[test]
+    fn restores_running_jobs_as_queued() {
+        let mut q = QueueState::default();
+        q.enqueue(req(1));
+        q.enqueue(req(2));
+        q.start_next();
+        let saved = serde_json::to_string(&q.snapshot()).unwrap();
+        let back: Vec<QueueJob> = serde_json::from_str(&saved).unwrap();
+
+        let mut restored = QueueState::default();
+        restored.restore(back);
+        let views = restored.views();
+        assert_eq!(views.len(), 2);
+        assert!(views.iter().all(|v| v.state == "queued"));
+        let next = restored.enqueue(req(3));
+        assert!(next > views.iter().map(|v| v.id).max().unwrap());
     }
 
     #[test]
