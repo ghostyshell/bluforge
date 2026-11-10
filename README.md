@@ -52,7 +52,9 @@ xattr -dr com.apple.quarantine "/Applications/Keepsake Atelier.app"
 ```
 
 The tarball is the CLI only. Unpack it and put `keepsake-atelier` on your
-`PATH` if you want the command line without the app.
+`PATH` if you want the command line without the app. Linux and Windows rows in
+the table are CLI previews; the macOS DMG is the full app. See
+[docs/platforms.md](docs/platforms.md) for what works on each platform.
 
 ## Support
 
