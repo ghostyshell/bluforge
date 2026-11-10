@@ -32,6 +32,16 @@ pub struct AuthorRequest {
     /// folders rather than a re-encoded movie cut in half.
     #[serde(default)]
     pub split_gb: Option<f64>,
+    /// Add an authored BD-J title menu as first play and top menu. Experimental:
+    /// it is verified with libbluray, not on a hardware player.
+    #[serde(default)]
+    pub menu: bool,
+    /// Background image for the authored menu (`BDMV/JAR/menu.png`).
+    #[serde(default)]
+    pub menu_background: Option<PathBuf>,
+    /// Saved menu document whose title names feed the authored menu.
+    #[serde(default)]
+    pub menu_template: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -300,6 +310,67 @@ where
     Ok(req.dest.clone())
 }
 
+/// A display name for one input.
+fn title_name(input: &Path) -> String {
+    input
+        .file_stem()
+        .map(|s| s.to_string_lossy().replace(['_', '.'], " "))
+        .map(|s| s.split_whitespace().collect::<Vec<_>>().join(" "))
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "Title".into())
+}
+
+/// Build the menu spec for `playlists`, taking names from the inputs or a
+/// saved menu document.
+fn menu_spec(
+    req: &AuthorRequest,
+    playlists: &[u32],
+) -> Result<Option<crate::bdmv::MenuSpec>, CoreError> {
+    if !req.menu {
+        return Ok(None);
+    }
+    let jar = crate::bdjo::jar_path().ok_or_else(|| {
+        CoreError::Disc(
+            "menu JAR not found; run scripts/build-menu.sh or set KEEPSAKE_MENU_JAR".into(),
+        )
+    })?;
+    if let Some(bg) = &req.menu_background {
+        if !bg.is_file() {
+            return Err(CoreError::Disc(format!(
+                "menu background not found: {}",
+                bg.display()
+            )));
+        }
+    }
+    let mut names: Vec<String> = req.inputs.iter().map(|p| title_name(p)).collect();
+    if let Some(path) = &req.menu_template {
+        let doc = crate::menu::load(&crate::menu::store_dir(), &path.to_string_lossy())?;
+        for (i, name) in names.iter_mut().enumerate() {
+            if let Some(n) = doc.titles.get(i).and_then(|t| t.name.as_ref()) {
+                if !n.trim().is_empty() {
+                    *name = n.trim().to_string();
+                }
+            }
+        }
+    }
+    Ok(Some(crate::bdmv::MenuSpec {
+        heading: "Keepsake Atelier".into(),
+        label: req.label.clone().unwrap_or_else(|| "KEEPSAKE".into()),
+        entries: names.into_iter().zip(playlists.iter().copied()).collect(),
+        jar,
+        background: req.menu_background.clone(),
+    }))
+}
+
+/// Build a native UDF 2.50 image containing an already-staged disc tree.
+fn iso_from_tree(tree: &Path, dest: &Path, label: &str) -> Result<(), CoreError> {
+    let payload = crate::udf::tree_size(&tree.join("BDMV"));
+    let size = crate::udf::image_size(payload);
+    crate::udf::with_image(dest, size, label, |mount| {
+        crate::bdmv::export_tree(tree, mount)
+    })
+}
+
 /// Author `req.inputs` into one disc at `dest`: a single title, or one title per
 /// input (merged by `bdmv::merge`).
 fn author_group<F>(
@@ -312,6 +383,46 @@ where
     F: FnMut(AuthorProgress),
 {
     if req.inputs.len() == 1 {
+        if req.menu {
+            // tsMuxeR writes a bare title; stage it, add the menu, then export
+            // the folder or build the UDF image ourselves.
+            let menu = menu_spec(req, &[0])?.expect("menu requested");
+            let stage = std::env::temp_dir().join(format!(
+                "keepsake-menu-{}-{}",
+                std::process::id(),
+                dest.file_name()
+                    .map(|n| n.to_string_lossy().replace(['/', ' '], "_"))
+                    .unwrap_or_default()
+            ));
+            let _ = std::fs::remove_dir_all(&stage);
+            let sub = AuthorRequest {
+                inputs: req.inputs.clone(),
+                dest: stage.clone(),
+                label: req.label.clone(),
+                chapters: req.chapters,
+                auto_chapter_minutes: req.auto_chapter_minutes,
+                split_gb: None,
+                menu: false,
+                menu_background: None,
+                menu_template: None,
+            };
+            author_one(&sub, bin, &stage, on_progress)?;
+            crate::bdmv::install_menu(&stage, &menu, 1)?;
+            let result = if dest
+                .extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("iso"))
+            {
+                iso_from_tree(
+                    &stage,
+                    dest,
+                    &req.label.clone().unwrap_or_else(|| "KEEPSAKE".into()),
+                )
+            } else {
+                crate::bdmv::export_tree(&stage, dest)
+            };
+            let _ = std::fs::remove_dir_all(&stage);
+            return result;
+        }
         return author_one(req, bin, dest, on_progress);
     }
     let want_iso = dest
@@ -325,6 +436,7 @@ where
     }
 
     let n = req.inputs.len();
+    let menu = menu_spec(req, &(0..n as u32).collect::<Vec<_>>())?;
     let mut parts = Vec::with_capacity(n);
     for (i, input) in req.inputs.iter().enumerate() {
         let temp =
@@ -337,6 +449,9 @@ where
             chapters: req.chapters,
             auto_chapter_minutes: req.auto_chapter_minutes,
             split_gb: None,
+            menu: false,
+            menu_background: None,
+            menu_template: None,
         };
         let base = 70.0 * i as f64 / n as f64;
         let span = 70.0 / n as f64;
@@ -366,7 +481,7 @@ where
             done: false,
         });
         crate::udf::with_image(dest, size, &label, |mount| {
-            crate::bdmv::merge(&parts, mount, |pct| {
+            crate::bdmv::merge(&parts, mount, menu.as_ref(), |pct| {
                 on_progress(AuthorProgress {
                     percent: 74.0 + pct * 0.24,
                     message: "writing titles".into(),
@@ -375,7 +490,7 @@ where
             })
         })?;
     } else {
-        crate::bdmv::merge(&parts, dest, |pct| {
+        crate::bdmv::merge(&parts, dest, menu.as_ref(), |pct| {
             on_progress(AuthorProgress {
                 percent: 70.0 + pct * 0.3,
                 message: "merging titles".into(),
@@ -453,6 +568,9 @@ where
             chapters: req.chapters,
             auto_chapter_minutes: req.auto_chapter_minutes,
             split_gb: None,
+            menu: req.menu,
+            menu_background: req.menu_background.clone(),
+            menu_template: req.menu_template.clone(),
         };
         let base = 100.0 * gi as f64 / n as f64;
         let span = 100.0 / n as f64;

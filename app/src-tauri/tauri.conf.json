@@ -47,7 +47,8 @@
     "resources": {
       "resources/ffmpeg": "ffmpeg",
       "resources/ffprobe": "ffprobe",
-      "resources/ffmpeg-LICENSES.txt": "ffmpeg-LICENSES.txt"
+      "resources/ffmpeg-LICENSES.txt": "ffmpeg-LICENSES.txt",
+      "resources/00000.jar": "00000.jar"
     }
   },
   "plugins": {

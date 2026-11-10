@@ -846,6 +846,15 @@ struct AuthorArgs {
     auto_chapter_minutes: Option<u32>,
     #[serde(default)]
     split_gb: Option<f64>,
+    /// Add an authored BD-J title menu (experimental).
+    #[serde(default)]
+    menu: bool,
+    /// Background image for the authored menu.
+    #[serde(default)]
+    menu_background: Option<String>,
+    /// Saved menu document to take title names from.
+    #[serde(default)]
+    menu_template: Option<String>,
 }
 
 fn start_author(args: Value) -> Result<Value, String> {
@@ -874,6 +883,9 @@ fn start_author(args: Value) -> Result<Value, String> {
         chapters: a.chapters.unwrap_or(true),
         auto_chapter_minutes: a.auto_chapter_minutes,
         split_gb: a.split_gb,
+        menu: a.menu,
+        menu_background: a.menu_background.map(PathBuf::from),
+        menu_template: a.menu_template.map(PathBuf::from),
     };
 
     let id = NEXT_JOB.fetch_add(1, Ordering::SeqCst);
@@ -1422,7 +1434,7 @@ fn tools() -> Vec<Value> {
         }),
         json!({
             "name": "author_start",
-            "description": "Author a Blu-ray (BDMV/ISO) from finished files. One input can be an ISO; several become one title each in a BDMV folder. Chapters come from the input's marks; needs tsMuxeR. Returns a job id.",
+            "description": "Author a Blu-ray (BDMV/ISO) from finished files. One or several inputs become one title each, written as a UDF 2.50 ISO (native newfs_udf) or a BDMV folder. Chapters come from the input's marks; needs tsMuxeR. Returns a job id.",
             "inputSchema": { "type": "object", "properties": {
                 "input": { "type": "string", "description": "Single MKV/MP4/M2TS (kept for compatibility)." },
                 "inputs": { "type": "array", "items": { "type": "string" }, "description": "One title per file, merged into one BDMV folder." },
@@ -1430,7 +1442,10 @@ fn tools() -> Vec<Value> {
                 "label": { "type": "string" },
                 "chapters": { "type": "boolean" },
                 "auto_chapter_minutes": { "type": "integer", "description": "Force a chapter every N minutes instead." },
-                "split_gb": { "type": "number", "description": "Split whole inputs across discs of at most this many GB (25/50); writes one folder per disc." }
+                "split_gb": { "type": "number", "description": "Split whole inputs across discs of at most this many GB (25/50); writes one folder per disc." },
+                "menu": { "type": "boolean", "description": "Add an authored BD-J title menu as first play and top menu (experimental; verified with libbluray, not on hardware)." },
+                "menu_background": { "type": "string", "description": "Background image for the authored menu." },
+                "menu_template": { "type": "string", "description": "Saved menu document (name or path) whose title names feed the menu." }
             }, "required": ["dest"] }
         }),
         json!({

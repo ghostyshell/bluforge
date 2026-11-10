@@ -33,12 +33,19 @@ pub struct VerifyTitle {
 pub struct VerifyReport {
     pub path: String,
     pub first_play: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub first_play_bdj: Option<String>,
     pub top_menu: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub top_menu_bdj: Option<String>,
     pub titles: Vec<VerifyTitle>,
     pub errors: Vec<String>,
     pub warnings: Vec<String>,
     pub ok: bool,
 }
+
+const INDIRECT: &str =
+    "some titles have no immediate PlayPL (playlist chosen at runtime, or empty object)";
 
 fn be16(b: &[u8], o: usize) -> Option<u16> {
     Some(u16::from_be_bytes([*b.get(o)?, *b.get(o + 1)?]))
@@ -191,35 +198,103 @@ pub fn run(source: &Path) -> Result<VerifyReport, CoreError> {
                 }
                 Some(o) => {
                     if need_playlist && o.playlist.is_none() {
-                        report
-                            .errors
-                            .push(format!("{what}: movie object {id} has no PlayPL command"));
+                        // Pressed discs often pick the playlist from a GPR, or use
+                        // an empty object as a hidden-title placeholder. Only an
+                        // authored disc that lost its PlayPL matters, and that is
+                        // covered by the writer's tests.
+                        report.warnings.push(INDIRECT.to_string());
                     }
                     o.playlist
                 }
             }
         };
 
+    // A BD-J menu is a real object: its BDJO and the application JAR must be
+    // on disc, or the player has nothing to start.
+    let check_bdj =
+        |target: &menu::NavTarget, report: &mut VerifyReport, what: &str| match &target.name {
+            Some(name) => {
+                let path = bdmv.join("BDJO").join(format!("{name}.bdjo"));
+                if !path.is_file() {
+                    report
+                        .errors
+                        .push(format!("{what}: missing BDJO/{name}.bdjo"));
+                }
+            }
+            None => report
+                .errors
+                .push(format!("{what}: BD-J entry has no object name")),
+        };
+
     report.first_play = match nav.first_playback.kind {
         NavType::Hdmv => nav.first_playback.object,
         NavType::None => None,
-        _ => {
+        NavType::Bdj => {
+            check_bdj(&nav.first_playback, &mut report, "first playback");
+            report.first_play_bdj = nav.first_playback.name.clone();
+            None
+        }
+        NavType::Unknown => {
             report
                 .warnings
-                .push("first playback is a BD-J object; not checked".into());
+                .push("first playback is an unknown object type".into());
             None
         }
     };
     report.top_menu = match nav.top_menu.kind {
         NavType::Hdmv => nav.top_menu.object,
         NavType::None => None,
-        _ => {
+        NavType::Bdj => {
+            check_bdj(&nav.top_menu, &mut report, "top menu");
+            report.top_menu_bdj = nav.top_menu.name.clone();
+            None
+        }
+        NavType::Unknown => {
             report
                 .warnings
-                .push("top menu is a BD-J object; not checked".into());
+                .push("top menu is an unknown object type".into());
             None
         }
     };
+
+    // If an authored menu is present, its rows must point at real playlists.
+    let menu_txt = bdmv.join("JAR/menu.txt");
+    if menu_txt.is_file() {
+        let mut rows = 0;
+        if let Ok(text) = std::fs::read_to_string(&menu_txt) {
+            for (n, line) in text.lines().enumerate() {
+                let Some((_, tail)) = line.trim().rsplit_once('|') else {
+                    continue;
+                };
+                let Ok(pl) = tail.trim().parse::<u32>() else {
+                    continue;
+                };
+                rows += 1;
+                let path = bdmv.join("PLAYLIST").join(format!("{pl:05}.mpls"));
+                if !path.is_file() {
+                    report.errors.push(format!(
+                        "menu.txt line {}: playlist {pl:05}.mpls is missing",
+                        n + 1
+                    ));
+                }
+            }
+        }
+        if !bdmv.join("JAR").is_dir()
+            || std::fs::read_dir(bdmv.join("JAR"))
+                .map(|d| {
+                    d.flatten()
+                        .all(|e| e.path().extension().is_none_or(|x| x != "jar"))
+                })
+                .unwrap_or(true)
+        {
+            report
+                .errors
+                .push("BDMV/JAR has no application JAR for the menu".into());
+        }
+        if rows == 0 {
+            report.warnings.push("menu.txt has no playable rows".into());
+        }
+    }
     if let Some(id) = report.first_play {
         check_object(id, &mut report, "first playback", false);
     }
@@ -290,6 +365,11 @@ pub fn run(source: &Path) -> Result<VerifyReport, CoreError> {
             report.errors.push(format!("title #{}: {e}", t.index));
         }
     }
+    // Collapse the per-title "not statically resolvable" notes into one.
+    let mut seen = std::collections::BTreeSet::new();
+    report
+        .warnings
+        .retain(|w| *w != INDIRECT || seen.insert(w.clone()));
     report.ok = report.errors.is_empty();
     Ok(report)
 }

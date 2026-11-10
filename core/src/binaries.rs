@@ -18,6 +18,7 @@ fn candidates(name: &str) -> Vec<PathBuf> {
         // dev tree: target/debug -> <repo>/app/src-tauri/resources and vendor
         if let Some(repo) = dir.parent().and_then(|p| p.parent()) {
             v.push(repo.join("app/src-tauri/resources").join(name));
+            v.push(repo.join("core/assets/menu").join(name));
             v.push(repo.join("vendor/ffmpeg").join(name));
         }
     }

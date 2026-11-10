@@ -78,17 +78,11 @@ Parse a disc's menu, edit it, save it as a template, apply it to another disc.
   queued again), and never auto-starts on launch: the queue panel has a Resume
   button.
 
-## Phase 9 - Authored menus - deferred
+## Phase 9 - Authored menus - superseded by Phase 18
 
-Generating a graphical top menu for a disc that `keepsake-atelier author` builds needs
-an HDMV interactive-graphics stream or a BD-J application. Neither toolchain is
-present: tsMuxeR does not write menus, and there is no BD-J compiler or player
-to verify against. A navigation-only menu (no drawn buttons) would not be a
-usable menu, so this is deferred rather than shipped half-working.
-
-The parts that are ready for it: saved menu documents (Phase 6), the menu UI
-(Phase 7) and authoring (Phase 4). When an IG or BD-J generator is added, it can
-consume a saved document directly.
+Generating a graphical top menu for a disc that `keepsake-atelier author` builds
+needs an HDMV interactive-graphics stream or a BD-J application. A BD-J menu is
+implemented in Phase 18; the saved menu documents from Phase 6 feed its names.
 
 ## Phase 10 - AACS2 / UHD unit keys - done
 
@@ -189,7 +183,8 @@ What the app covers today, against the ripping-suite feature set:
 | Decrypted ISO / folder export (`Copy`) | done |
 | Authoring: BDMV/ISO from finished files | done (single or multi-title, native UDF 2.50) |
 | Disc menu parse, edit, save, apply | done |
-| Native AACS key derivation, BD+ VM | done |
+| Authored BD-J title menu (opt-in) | done (asset + container verified; hardware untested) |
+| Native AACS key derivation, BD+ VM | done (needs a LibreDrive-unlocked drive for the volume ID) |
 | Cover art | done |
 | DVD (`VIDEO_TS`) ripping | done (MPEG-2/AC-3/DTS copy, no menus) |
 | 1:1 encrypted disc clone | done |

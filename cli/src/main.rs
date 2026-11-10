@@ -144,6 +144,16 @@ enum Cmd {
         /// Whole inputs stay together, so the output is one folder per disc.
         #[arg(long)]
         split: Option<f64>,
+        /// Add an authored BD-J title menu (experimental; verified with
+        /// libbluray, not on a hardware player).
+        #[arg(long)]
+        menu: bool,
+        /// Background image for the authored menu.
+        #[arg(long, requires = "menu")]
+        menu_background: Option<std::path::PathBuf>,
+        /// Saved menu document to take title names from.
+        #[arg(long, requires = "menu")]
+        menu_template: Option<std::path::PathBuf>,
     },
     /// AACS helper: read the volume ID from the drive and cache it for libaacs.
     Aacs {
@@ -947,6 +957,9 @@ fn run(cli: &Cli) -> Result<(), keepsake_core::CoreError> {
             no_chapters,
             auto_chapters,
             split,
+            menu,
+            menu_background,
+            menu_template,
         } => {
             let req = keepsake_core::author::AuthorRequest {
                 inputs: inputs.clone(),
@@ -955,6 +968,9 @@ fn run(cli: &Cli) -> Result<(), keepsake_core::CoreError> {
                 chapters: !*no_chapters,
                 auto_chapter_minutes: *auto_chapters,
                 split_gb: *split,
+                menu: *menu,
+                menu_background: menu_background.clone(),
+                menu_template: menu_template.clone(),
             };
             let mut last = -1i64;
             let written = keepsake_core::author::run(&req, |p| {
@@ -1448,20 +1464,20 @@ fn run(cli: &Cli) -> Result<(), keepsake_core::CoreError> {
                 );
             } else {
                 println!("tree      : {}", report.path);
+                let nav = |object: Option<u16>, bdj: &Option<String>| {
+                    if let Some(o) = object {
+                        format!("movie object {o}")
+                    } else if let Some(name) = bdj {
+                        format!("BD-J object {name}")
+                    } else {
+                        "none".into()
+                    }
+                };
                 println!(
                     "first play: {}",
-                    report
-                        .first_play
-                        .map(|o| format!("movie object {o}"))
-                        .unwrap_or_else(|| "none".into())
+                    nav(report.first_play, &report.first_play_bdj)
                 );
-                println!(
-                    "top menu  : {}",
-                    report
-                        .top_menu
-                        .map(|o| format!("movie object {o}"))
-                        .unwrap_or_else(|| "none".into())
-                );
+                println!("top menu  : {}", nav(report.top_menu, &report.top_menu_bdj));
                 println!("titles    : {}", report.titles.len());
                 for t in &report.titles {
                     println!(

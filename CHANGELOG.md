@@ -26,6 +26,24 @@ All notable changes to Keepsake Atelier. Newest first.
 
 ### Added
 
+- **Authored BD-J title menus (opt-in):** `author --menu` adds a real 1920x1080
+  menu as first play and top menu. `bdjo.rs` writes `BDMV/BDJO/00000.bdjo`;
+  `bdmv::install_menu` rewrites `index.bdmv` (BD-J first play/top menu, one HDMV
+  object per title) and installs `JAR/00000.jar` + `JAR/menu.txt`. The single
+  generic Xlet (`core/assets/menu/00000.jar`, rebuilt by `scripts/build-menu.sh`)
+  reads the title rows and an optional background from `menu.txt` at runtime, so
+  no per-disc Java is compiled. Up/Down/Enter/1-9 and mouse select a title and
+  start it with `bd://1.PLAYLIST:0000N`; the menu returns when the title ends.
+  `--menu-background` and `--menu-template` (saved menu document) are optional.
+  The app Author card and MCP `author_start` expose the same flags.
+  Verified with libbluray parsing the BDJO/index and with the Xlet running in a
+  stubbed BD-J harness (render, selection, playlist request, return). Hardware
+  playback is untested and libbluray on macOS cannot run BD-J itself (its JVM
+  enters the AppKit loop inside `bdj_open`), so the menu stays opt-in.
+- **BD-J checks in `verify`:** first play / top menu BD-J objects require their
+  `BDJO/xxxxx.bdjo` and an application JAR; an authored `JAR/menu.txt` is checked
+  against the playlists. Real pressed discs' runtime-selected playlists (GPR
+  operands) now warn once instead of failing every title.
 - **Queue all and a key-store browser:** the Titles card can queue every real
   title (>= 1 minute) with a "queued" badge per row, and the keys panel searches
   the 189k-entry KEYDB (name or id, first 20), imports another KEYDB.cfg and

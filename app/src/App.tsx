@@ -122,6 +122,8 @@ export default function App() {
   const [startEp, setStartEp] = useState<number | "">("");
   const [authorFiles, setAuthorFiles] = useState<string[]>([]);
   const [authorOut, setAuthorOut] = useState("");
+  const [authorMenu, setAuthorMenu] = useState(false);
+  const [authorMenuBg, setAuthorMenuBg] = useState("");
   const [authorSplit, setAuthorSplit] = useState("");
   const [authorBusy, setAuthorBusy] = useState(false);
   const [authorProg, setAuthorProg] = useState<{ percent: number; message: string } | null>(null);
@@ -507,6 +509,9 @@ export default function App() {
         chapters: true,
         auto_chapter_minutes: null,
         split_gb: authorSplit.trim() === "" ? null : Number(authorSplit) || null,
+        menu: authorMenu,
+        menu_background: authorMenuBg.trim() === "" ? null : authorMenuBg.trim(),
+        menu_template: null,
       });
     } catch (e) { setError(String(e)); setAuthorBusy(false); }
   };
@@ -1019,11 +1024,30 @@ export default function App() {
                   onChange={(e) => setAuthorSplit(e.target.value)} placeholder="off (25 / 50)" />
               </label>
             </div>
+            <div className="row wrap" style={{ marginTop: 10, gap: 10, alignItems: "flex-end" }}>
+              <label className="row" style={{ gap: 8, alignItems: "center", paddingBottom: 6 }}>
+                <input type="checkbox" checked={authorMenu}
+                  onChange={(e) => setAuthorMenu(e.target.checked)} />
+                <span>Add a title menu <span className="sub">(BD-J, experimental)</span></span>
+              </label>
+              <label className="field grow" style={{ minWidth: 240 }}>Menu background (optional)
+                <input className="mono" value={authorMenuBg} disabled={!authorMenu}
+                  onChange={(e) => setAuthorMenuBg(e.target.value)}
+                  placeholder="PNG image, 1920×1080" />
+              </label>
+              <button className="ghost" disabled={!authorMenu}
+                onClick={async () => {
+                  const { open } = await import("@tauri-apps/plugin-dialog");
+                  const picked = await open({ multiple: false, filters: [{ name: "Image", extensions: ["png", "jpg", "jpeg"] }] });
+                  if (typeof picked === "string") setAuthorMenuBg(picked);
+                }}>Choose image</button>
+            </div>
             <div className="row between" style={{ marginTop: 12, alignItems: "flex-end" }}>
               <p className="hint" style={{ margin: 0, maxWidth: 420 }}>
                 One or several inputs write a UDF 2.50 ISO with macOS's native newfs_udf; drop
                 the .iso for a BDMV folder. Several inputs become one title each, with generated
-                index and navigation. Chapter marks are kept.
+                index and navigation. Chapter marks are kept. The optional title menu is real
+                BD-J: it is verified with libbluray but not on a hardware player.
               </p>
               <div className="row" style={{ gap: 8 }}>
                 <button className="ghost" disabled={!authorOut || authorBusy}

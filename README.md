@@ -33,8 +33,8 @@ The engine, CLI binary and crate names are still `keepsake-atelier`.
 | Blu-ray authoring (BDMV / ISO) | ✅ |
 | Disc menu documents (parse, edit, save, apply to another disc) | ✅ |
 | Batch rip queue (single titles, or **Queue all**) | ✅ |
-| Authored menus (generate a menu for a disc you author) | 🚧 blocked on an IG/BD-J toolchain |
-| Burning to disc | 🚧 blocked on a UDF 2.50 writer and a writer drive |
+| Authored menus (BD-J title menu, opt-in) | ✅ (asset verified; hardware playback untested) |
+| Burning to disc | ✅ native `hdiutil burn` (writer detected; write untested here) |
 | Self-update wiring (Tauri updater) | ✅ (needs a signed release) |
 | Windows / Linux | 🚧 (macOS first; non-macOS device layer stubbed) |
 
@@ -48,6 +48,8 @@ core/           keepsake-core - framework-agnostic engine (Rust)
   keys.rs         KEYDB.cfg fetch + store + validation
   disc.rs         libbluray FFI (titles, decrypted title streaming)
   menu.rs         disc menu documents: index.bdmv navigation + editable templates
+  bdjo.rs         BD-J object writer (BDJO) for authored title menus
+  assets/menu/    the generic menu Xlet (00000.jar) + its source
   bluray_shim.c   small C shim so Rust avoids libbluray struct layout churn
   rip.rs          ffmpeg orchestration (remux / encode) with progress
   iso.rs          decrypted ISO / backup-folder export
@@ -271,6 +273,14 @@ keepsake-atelier author ep*.mkv --out "/path/Set" --split 25      # BD-25 per di
   `hdiutil`). Each input gets its own playlist, tsMuxeR's clips are renumbered,
   and `index.bdmv` / `MovieObject.bdmv` are written with one `PlayPL` object per
   title plus first-play and top-menu entries.
+* `--menu` adds a real BD-J title menu as first play and top menu: a 1920x1080
+  AWT screen with the disc label, one row per title, Up/Down/Enter/1-9 and mouse
+  selection, and a `menu_background` image option. The menu is a single generic
+  Xlet (`core/assets/menu/00000.jar`, rebuilt with `scripts/build-menu.sh`) that
+  reads `BDMV/JAR/menu.txt` at runtime, so no per-disc Java compilation is
+  needed. `--menu-template NAME` takes the row names from a saved menu document.
+  It is opt-in because BD-J playback is only verified with libbluray's parser and
+  an offscreen harness, not on a hardware player.
 * `--split <GB>` packs whole inputs onto discs of at most that size (25 or 50)
   under `<out>/Disc1`, `Disc2`, ... A title is never cut across discs; an input
   larger than the limit still gets a disc of its own.
@@ -279,13 +289,22 @@ keepsake-atelier author ep*.mkv --out "/path/Set" --split 25      # BD-25 per di
 * Single and multi-title authoring are validated with libbluray opening the
   authored tree. The generated navigation follows the libbluray parser layouts;
   a hardware-player pass is still worth doing.
+* The BD-J menu (asset + container) is verified in two ways: libbluray parses
+  the BDJO and reports First Play / Top Menu supported, and the Xlet runs in a
+  standalone harness with stubbed BD-J APIs, where it renders, moves the
+  selection, asks to play `bd://1.PLAYLIST:0000N`, and returns after the title
+  ends. libbluray on macOS cannot itself run BD-J: its JVM loads AWT on the
+  calling thread, which enters the AppKit loop inside `bdj_open`.
+  Reproduce the harness check with `scripts/test-menu.sh` (screenshots land in
+  the temp directory it prints).
 
 In the app the Titles card has **Queue all** (every title of at least a minute,
 skipping menus and trailers), and the keys panel has a searchable key store
 with import and remove.
 
 In the app: the **Author a disc** card (choose several files, optional split
-size). Over MCP: `author_start` with `inputs` and `split_gb`.
+size, optional title menu and menu background). Over MCP: `author_start` with
+`inputs`, `split_gb`, `menu`, `menu_background` and `menu_template`.
 
 ### Verifying a tree
 
@@ -298,7 +317,9 @@ Reads `index.bdmv` and `MovieObject.bdmv` directly and checks that every HDMV
 title's movie object plays a playlist that exists, and that every clip a
 playlist references has its `.clpi` and `.m2ts`. It prints the title map and
 per-title duration/mark count, exits non-zero on problems, and warns about BD-J
-titles it cannot check. **Verify** in the app (next to Eject, and next to
+titles it cannot check. When the first play / top menu is BD-J it checks the
+`BDJO/xxxxx.bdjo` and an application JAR exist, and when an authored
+`JAR/menu.txt` is present it checks every row's playlist exists. **Verify** in the app (next to Eject, and next to
 Author) runs the same check.
 
 ## MCP server

@@ -26,6 +26,40 @@ fn index_entry(object_id: u16) -> [u8; 12] {
     e
 }
 
+/// BD-J index entry: object type 2, playback type 3 (interactive), and the
+/// five-digit BDJO name at bytes 6-10.
+fn index_entry_bdj(name: &str) -> [u8; 12] {
+    let mut e = [0u8; 12];
+    e[0] = 0x80; // object_type=2 (BD-J), access_type=0
+    e[4] = 0xC0; // playback_type=3 (interactive)
+    let b = name.as_bytes();
+    for (i, slot) in e[6..11].iter_mut().enumerate() {
+        *slot = *b.get(i).unwrap_or(&b'0');
+    }
+    e
+}
+
+/// The common header: version, app info, then the index body at 0x4e.
+fn wrap_index(body: Vec<u8>) -> Vec<u8> {
+    let mut out = Vec::with_capacity(0x4e + 4 + body.len());
+    out.extend_from_slice(b"INDX0200");
+    out.extend_from_slice(&0x4eu32.to_be_bytes()); // IndexesStartAddress
+    out.extend_from_slice(&0u32.to_be_bytes()); // extension data
+    out.resize(0x28, 0); // reserved
+    out.extend_from_slice(&34u32.to_be_bytes()); // AppInfoLength
+                                                 // AppInfo: reserved(1) output_mode_preference(1) content_exist(1)
+                                                 // reserved(1) dynamic_range(4) video_format(4) frame_rate(4), then
+                                                 // 32 bytes of user data. 2D output, SDR, 1080p, 29.97 Hz.
+    let mut info = [0u8; 34];
+    info[0] = 0x40; // output_mode_preference = 2D (bit 14)
+    info[1] = 0x64; // video_format 6, frame_rate 4
+    out.extend_from_slice(&info);
+    debug_assert_eq!(out.len(), 0x4e);
+    out.extend_from_slice(&(body.len() as u32).to_be_bytes());
+    out.extend_from_slice(&body);
+    out
+}
+
 /// `index.bdmv`: first playback, top menu, and one title per entry.
 pub fn write_index(first_play: u16, top_menu: u16, title_objects: &[u16]) -> Vec<u8> {
     let mut body = Vec::new();
@@ -35,15 +69,20 @@ pub fn write_index(first_play: u16, top_menu: u16, title_objects: &[u16]) -> Vec
     for id in title_objects {
         body.extend_from_slice(&index_entry(*id));
     }
+    wrap_index(body)
+}
 
-    let mut out = Vec::with_capacity(0x4e + 4 + body.len());
-    out.extend_from_slice(b"INDX0200");
-    out.extend_from_slice(&0x4eu32.to_be_bytes()); // IndexesStartAddress
-    out.extend_from_slice(&0u32.to_be_bytes()); // extension data
-    out.resize(0x4e, 0);
-    out.extend_from_slice(&(body.len() as u32).to_be_bytes());
-    out.extend_from_slice(&body);
-    out
+/// `index.bdmv` whose first play and top menu are the BD-J menu `name`, with
+/// one HDMV title object per entry.
+pub fn write_index_bdj(name: &str, title_objects: &[u16]) -> Vec<u8> {
+    let mut body = Vec::new();
+    body.extend_from_slice(&index_entry_bdj(name));
+    body.extend_from_slice(&index_entry_bdj(name));
+    body.extend_from_slice(&(title_objects.len() as u16).to_be_bytes());
+    for id in title_objects {
+        body.extend_from_slice(&index_entry(*id));
+    }
+    wrap_index(body)
 }
 
 /// `PlayPL playlist` command (branch/play, two immediate operands).
@@ -122,6 +161,84 @@ fn five(n: usize) -> [u8; 5] {
     [b[0], b[1], b[2], b[3], b[4]]
 }
 
+/// An authored BD-J title menu.
+#[derive(Debug, Clone)]
+pub struct MenuSpec {
+    /// Heading drawn at the top of the menu.
+    pub heading: String,
+    /// Disc label drawn under the heading.
+    pub label: String,
+    /// One row per title: display text and playlist number.
+    pub entries: Vec<(String, u32)>,
+    /// Prebuilt generic menu Xlet (`00000.jar`).
+    pub jar: PathBuf,
+    /// Optional background image, copied to `BDMV/JAR/menu.png`.
+    pub background: Option<PathBuf>,
+}
+
+impl MenuSpec {
+    /// `menu.txt` consumed by the Xlet at runtime.
+    pub fn text(&self) -> String {
+        let clean = |s: &str| s.replace('|', "-").replace('\n', " ");
+        let mut out = format!("{}|{}\n", clean(&self.heading), clean(&self.label));
+        for (name, playlist) in &self.entries {
+            out.push_str(&format!("{}|{}\n", clean(name), playlist));
+        }
+        if self.background.is_some() {
+            out.push_str("bg=menu.png\n");
+        }
+        out
+    }
+}
+
+/// Write the BD-J menu files and rewrite `index.bdmv`/`MovieObject.bdmv` so the
+/// menu is first play and top menu. `titles` HDMV objects play playlists
+/// `00000..`; the menu itself starts them through `bd://`.
+pub fn install_menu(root: &Path, menu: &MenuSpec, titles: usize) -> Result<(), CoreError> {
+    let bdmv = root.join("BDMV");
+    let backup = bdmv.join("BACKUP");
+    for d in ["BDJO", "JAR"] {
+        std::fs::create_dir_all(bdmv.join(d))?;
+        std::fs::create_dir_all(backup.join(d))?;
+    }
+    if !menu.jar.is_file() {
+        return Err(CoreError::Disc(format!(
+            "menu JAR not found: {} (run scripts/build-menu.sh)",
+            menu.jar.display()
+        )));
+    }
+
+    let app = crate::bdjo::App::new("Menu");
+    let bdjo = crate::bdjo::write(&app)?;
+    std::fs::write(bdmv.join("BDJO/00000.bdjo"), &bdjo)?;
+    std::fs::write(backup.join("BDJO/00000.bdjo"), &bdjo)?;
+
+    for dir in [bdmv.join("JAR"), backup.join("JAR")] {
+        std::fs::copy(&menu.jar, dir.join("00000.jar"))?;
+        std::fs::write(dir.join("menu.txt"), menu.text())?;
+        if let Some(bg) = &menu.background {
+            std::fs::copy(bg, dir.join("menu.png"))?;
+        }
+    }
+
+    let objects: Vec<u16> = (0..titles as u16).collect();
+    let index = write_index_bdj("00000", &objects);
+    let movie = write_movie_objects(titles);
+    std::fs::write(bdmv.join("index.bdmv"), &index)?;
+    std::fs::write(bdmv.join("MovieObject.bdmv"), &movie)?;
+    std::fs::write(backup.join("index.bdmv"), &index)?;
+    std::fs::write(backup.join("MovieObject.bdmv"), &movie)?;
+    Ok(())
+}
+
+/// Copy a staged disc root (`BDMV` plus `CERTIFICATE`) to `dest`.
+pub fn export_tree(src: &Path, dest: &Path) -> Result<(), CoreError> {
+    std::fs::create_dir_all(dest)?;
+    copy_tree(&src.join("BDMV"), &dest.join("BDMV"))?;
+    copy_tree(&src.join("CERTIFICATE"), &dest.join("CERTIFICATE"))?;
+    Ok(())
+}
+
 fn copy_tree(src: &Path, dst: &Path) -> Result<(), CoreError> {
     if !src.exists() {
         return Ok(());
@@ -143,8 +260,14 @@ fn copy_tree(src: &Path, dst: &Path) -> Result<(), CoreError> {
 ///
 /// `parts[i]` is a disc root (the directory containing `BDMV`, as tsMuxeR
 /// writes it). Playlists and clips are renumbered to `i`; index and movie
-/// objects are generated.
-pub fn merge<F>(parts: &[PathBuf], dest: &Path, mut progress: F) -> Result<(), CoreError>
+/// objects are generated. When `menu` is given, a BD-J menu is installed as
+/// first play and top menu.
+pub fn merge<F>(
+    parts: &[PathBuf],
+    dest: &Path,
+    menu: Option<&MenuSpec>,
+    mut progress: F,
+) -> Result<(), CoreError>
 where
     F: FnMut(f64),
 {
@@ -232,6 +355,10 @@ where
     // Carry the first disc's metadata and any certificate folder.
     copy_tree(&parts[0].join("BDMV").join("META"), &dest_bdmv.join("META"))?;
     copy_tree(&parts[0].join("CERTIFICATE"), &dest.join("CERTIFICATE"))?;
+
+    if let Some(menu) = menu {
+        install_menu(dest, menu, parts.len())?;
+    }
     progress(100.0);
     Ok(())
 }
@@ -282,6 +409,42 @@ mod tests {
         let first_play = obj + 3 * 28;
         assert_eq!(data[first_play + 4], 0x21); // Jump title
         assert_eq!(data[first_play + 5], 0x81);
+    }
+
+    #[test]
+    fn installing_a_menu_makes_it_first_play() {
+        let dir = std::env::temp_dir().join(format!("keepsake-bdmv-menu-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("BDMV/PLAYLIST")).unwrap();
+        std::fs::write(dir.join("BDMV/PLAYLIST/00000.mpls"), b"MPLS").unwrap();
+        std::fs::write(dir.join("BDMV/PLAYLIST/00001.mpls"), b"MPLS").unwrap();
+        let jar = dir.join("menu.jar");
+        std::fs::write(&jar, b"PK\x03\x04").unwrap();
+
+        let menu = MenuSpec {
+            heading: "Keepsake Atelier".into(),
+            label: "TEST".into(),
+            entries: vec![("One".into(), 0), ("Two".into(), 1)],
+            jar,
+            background: None,
+        };
+        install_menu(&dir, &menu, 2).unwrap();
+
+        let index = std::fs::read(dir.join("BDMV/index.bdmv")).unwrap();
+        let nav = crate::menu::parse_index(&index).expect("parses");
+        assert_eq!(nav.first_playback.kind, crate::menu::NavType::Bdj);
+        assert_eq!(nav.first_playback.name.as_deref(), Some("00000"));
+        assert_eq!(nav.top_menu.kind, crate::menu::NavType::Bdj);
+        assert_eq!(nav.titles.len(), 2);
+        assert_eq!(nav.titles[0].kind, crate::menu::NavType::Hdmv);
+        assert!(dir.join("BDMV/BDJO/00000.bdjo").is_file());
+        assert!(dir.join("BDMV/JAR/00000.jar").is_file());
+        assert!(dir.join("BDMV/BACKUP/BDJO/00000.bdjo").is_file());
+        assert!(dir.join("BDMV/BACKUP/JAR/00000.jar").is_file());
+        let text = std::fs::read_to_string(dir.join("BDMV/JAR/menu.txt")).unwrap();
+        assert!(text.starts_with("Keepsake Atelier|TEST\n"));
+        assert!(text.contains("Two|1\n"));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
