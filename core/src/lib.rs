@@ -12,6 +12,7 @@ pub mod config;
 pub mod covers;
 pub mod device;
 pub mod disc;
+pub mod doctor;
 pub mod iso;
 pub mod keys;
 pub mod menu;

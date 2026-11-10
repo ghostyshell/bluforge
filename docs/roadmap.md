@@ -162,6 +162,14 @@ What the app covers today, against the ripping-suite feature set:
 | UHD/AACS2 unit-key workflow | partial (core stores unit keys, no UI) |
 | Batch queue (one job at a time) | done |
 
+## Phase 14 - System check - done
+
+- `doctor` reports every external piece (libbluray, libaacs, libbdplus + VM,
+  ffmpeg and its `dvdvideo` demuxer, tsMuxeR, KEYDB, drive, burning tools, data
+  directory) and a capability matrix with the fix for each missing item.
+- CLI (`doctor`, `--json`), an app **System check** panel and an MCP `doctor`
+  tool. This is how the DVD/burning limits below are surfaced to the user.
+
 ### What is blocked, and on what
 
 - **DVD ripping.** Homebrew's ffmpeg 9.0.2 has no `dvdvideo` demuxer and no

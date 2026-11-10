@@ -209,6 +209,18 @@ pub struct Disc {
 
 unsafe impl Send for Disc {}
 
+/// Path to Homebrew's libaacs, when installed.
+pub fn libaacs_path() -> Option<&'static str> {
+    Disc::libaacs_path()
+}
+
+/// Path to Homebrew's libbdplus, when installed.
+pub fn libbdplus_path() -> Option<&'static str> {
+    ["/opt/homebrew/lib/libbdplus", "/usr/local/lib/libbdplus"]
+        .into_iter()
+        .find(|c| Path::new(&format!("{c}.dylib")).is_file())
+}
+
 impl Disc {
     /// Path to Homebrew's libaacs, when installed.
     fn libaacs_path() -> Option<&'static str> {

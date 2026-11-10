@@ -312,6 +312,7 @@ fn run_tool(name: &str, args: Value) -> Result<Value, String> {
             serde_json::to_value(plan).map_err(|e| e.to_string())
         }
         "rip_start" => start_rip(args),
+        "doctor" => serde_json::to_value(keepsake_core::doctor::run()).map_err(|e| e.to_string()),
         "verify" => {
             let path = resolve_source(&str_arg(&args, "path")?);
             let report = keepsake_core::verify::run(Path::new(&path)).map_err(|e| e.to_string())?;
@@ -1049,6 +1050,11 @@ fn tools() -> Vec<Value> {
                 "series": { "type": "string", "description": "Series name override for the TMDB lookup." },
                 "start": { "type": "integer", "description": "First episode number on this disc (overrides the remembered mapping)." }
             }, "required": ["source"] }
+        }),
+        json!({
+            "name": "doctor",
+            "description": "Installed tools, versions, and which capability each missing piece blocks (DVD, burning, BD+, ...).",
+            "inputSchema": { "type": "object", "properties": {} }
         }),
         json!({
             "name": "verify",

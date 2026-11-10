@@ -1,0 +1,305 @@
+//! System check: what is installed, and which capability each missing piece
+//! blocks. Every "missing" line names the command that fixes it, so the
+//! DVD/burning/menu limits are diagnosable instead of mysterious.
+
+use std::path::PathBuf;
+
+use serde::Serialize;
+
+#[derive(Debug, Clone, Serialize)]
+pub struct Check {
+    pub name: String,
+    pub ok: bool,
+    pub detail: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fix: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct Capability {
+    pub name: String,
+    pub ok: bool,
+    pub detail: String,
+}
+
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct DoctorReport {
+    pub version: String,
+    pub checks: Vec<Check>,
+    pub capabilities: Vec<Capability>,
+    pub errors: Vec<String>,
+    /// Core stack present: libbluray + ffmpeg.
+    pub ok: bool,
+}
+
+fn check(name: &str, ok: bool, detail: impl Into<String>, fix: Option<&str>) -> Check {
+    Check {
+        name: name.into(),
+        ok,
+        detail: detail.into(),
+        fix: fix.map(str::to_string),
+    }
+}
+
+fn in_path(name: &str) -> Option<PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    std::env::split_paths(&path)
+        .map(|d| d.join(name))
+        .find(|p| p.is_file())
+}
+
+fn first_line(output: Option<std::process::Output>) -> Option<String> {
+    output
+        .map(|o| {
+            String::from_utf8_lossy(&o.stdout)
+                .lines()
+                .next()
+                .unwrap_or("")
+                .trim()
+                .to_string()
+        })
+        .filter(|s| !s.is_empty())
+}
+
+fn ffmpeg_demuxers(bin: &std::path::Path) -> String {
+    std::process::Command::new(bin)
+        .args(["-hide_banner", "-demuxers"])
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+        .unwrap_or_default()
+}
+
+pub fn run() -> DoctorReport {
+    let mut r = DoctorReport {
+        version: crate::version(),
+        ..Default::default()
+    };
+
+    // libbluray
+    let lb = crate::disc::library_version();
+    let lb_ok = lb != "unavailable";
+    r.checks.push(check(
+        "libbluray",
+        lb_ok,
+        if lb_ok {
+            lb.clone()
+        } else {
+            "not loaded".into()
+        },
+        Some("brew install libbluray"),
+    ));
+
+    // libaacs
+    let aacs = crate::disc::libaacs_path();
+    r.checks.push(check(
+        "libaacs",
+        aacs.is_some(),
+        aacs.map(|p| format!("{p}.dylib"))
+            .unwrap_or_else(|| "not installed".into()),
+        Some("brew install libaacs"),
+    ));
+
+    // libbdplus + VM data
+    let bdplus = crate::disc::libbdplus_path();
+    let vm = crate::bdplus::installed();
+    r.checks.push(check(
+        "libbdplus",
+        bdplus.is_some(),
+        match (bdplus, vm) {
+            (Some(p), true) => format!("{p}.dylib, VM installed"),
+            (Some(p), false) => format!("{p}.dylib, VM data missing"),
+            (None, _) => "not installed".into(),
+        },
+        Some(if vm {
+            "brew install libbdplus"
+        } else {
+            "keepsake-atelier bdplus --install"
+        }),
+    ));
+
+    // ffmpeg + the dvdvideo demuxer
+    let ff = crate::rip::ffmpeg_path();
+    let ff_version = first_line(
+        std::process::Command::new(&ff)
+            .arg("-version")
+            .output()
+            .ok(),
+    )
+    .unwrap_or_else(|| "not found".into());
+    let dvdvideo = ffmpeg_demuxers(&ff)
+        .lines()
+        .any(|l| l.split_whitespace().any(|w| w == "dvdvideo"));
+    r.checks.push(check(
+        "ffmpeg",
+        ff_version != "not found",
+        format!(
+            "{} (dvdvideo: {})",
+            ff_version,
+            if dvdvideo { "yes" } else { "no" }
+        ),
+        Some("brew install ffmpeg"),
+    ));
+    if !dvdvideo {
+        r.checks.push(check(
+            "ffmpeg dvdvideo",
+            false,
+            "this ffmpeg cannot read a VIDEO_TS tree",
+            Some("install an ffmpeg built with --enable-libdvdread --enable-libdvdnav"),
+        ));
+    }
+
+    // tsMuxeR
+    let ts = crate::author::tsmuxer_path();
+    let ts_version = ts
+        .as_ref()
+        .and_then(|p| first_line(std::process::Command::new(p).output().ok()))
+        .unwrap_or_else(|| "not installed".into());
+    r.checks.push(check(
+        "tsMuxeR",
+        ts.is_some(),
+        match &ts {
+            Some(p) => format!("{} ({ts_version})", p.display()),
+            None => "not installed".into(),
+        },
+        Some("put tsMuxeR in ~/Library/Application Support/keepsake-atelier/bin"),
+    ));
+
+    // KEYDB
+    let kb = crate::keys::status();
+    r.checks.push(check(
+        "KEYDB",
+        kb.exists,
+        format!("{} entries ({} bytes)", kb.entries, kb.bytes),
+        Some("keepsake-atelier keys update"),
+    ));
+
+    // Drive
+    let drives = crate::device::list_optical();
+    let drive = drives.iter().find_map(|d| {
+        d.product
+            .clone()
+            .or_else(|| d.vendor.clone())
+            .or_else(|| Some(d.bsd_name.clone()))
+    });
+    r.checks.push(check(
+        "optical drive",
+        !drives.is_empty(),
+        drive.unwrap_or_else(|| "none detected".into()),
+        Some("attach the drive directly (not through a hub), then rescan"),
+    ));
+
+    // Burning stack
+    let burning = in_path("growisofs").or_else(|| in_path("cdrecord"));
+    r.checks.push(check(
+        "burning",
+        burning.is_some(),
+        burning
+            .as_ref()
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|| "growisofs not installed".into()),
+        Some("brew install cdrtools (and use a Blu-ray writer)"),
+    ));
+
+    // Data directory
+    let dir = crate::config_dir();
+    r.checks.push(check(
+        "data directory",
+        dir.is_dir(),
+        dir.display().to_string(),
+        None,
+    ));
+
+    // Capability matrix
+    let cap = |name: &str, ok: bool, detail: &str| Capability {
+        name: name.into(),
+        ok,
+        detail: detail.into(),
+    };
+    r.capabilities.push(cap(
+        "Blu-ray rip / remux",
+        lb_ok && aacs.is_some() && ff_version != "not found",
+        if aacs.is_some() {
+            "libbluray + libaacs + ffmpeg"
+        } else {
+            "needs libaacs"
+        },
+    ));
+    r.capabilities.push(cap(
+        "BD+ rip",
+        bdplus.is_some() && vm,
+        if bdplus.is_some() && vm {
+            "libbdplus with VM data"
+        } else {
+            "needs libbdplus and the VM data"
+        },
+    ));
+    r.capabilities.push(cap(
+        "Native key recovery",
+        true,
+        "LibreDrive drive + KEYDB device keys (no certificate, no MakeMKV)",
+    ));
+    r.capabilities.push(cap(
+        "Authoring (single or multi-title)",
+        ts.is_some(),
+        if ts.is_some() {
+            "tsMuxeR"
+        } else {
+            "needs tsMuxeR"
+        },
+    ));
+    r.capabilities.push(cap(
+        "DVD (VIDEO_TS) rip",
+        dvdvideo,
+        if dvdvideo {
+            "ffmpeg dvdvideo demuxer"
+        } else {
+            "needs an ffmpeg with libdvdread/libdvdnav"
+        },
+    ));
+    r.capabilities.push(cap(
+        "Burning to disc",
+        burning.is_some() && !drives.is_empty(),
+        if burning.is_some() && !drives.is_empty() {
+            "growisofs + an optical drive"
+        } else {
+            "needs growisofs and a writer drive"
+        },
+    ));
+    r.capabilities.push(cap(
+        "BDMV verification",
+        true,
+        "built in (keepsake-atelier verify)",
+    ));
+
+    r.ok = lb_ok && ff_version != "not found";
+    r
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reports_the_core_stack_and_capabilities() {
+        let r = run();
+        assert!(!r.version.is_empty());
+        assert!(r.checks.iter().any(|c| c.name == "libbluray"));
+        assert!(r.checks.iter().any(|c| c.name == "ffmpeg"));
+        assert!(r.capabilities.iter().any(|c| c.name.starts_with("DVD")));
+        // The capability matrix always covers the main paths.
+        for want in [
+            "Blu-ray rip",
+            "BD+ rip",
+            "Native key recovery",
+            "Authoring",
+            "DVD",
+            "Burning",
+            "BDMV verification",
+        ] {
+            assert!(
+                r.capabilities.iter().any(|c| c.name.starts_with(want)),
+                "missing capability {want}"
+            );
+        }
+    }
+}

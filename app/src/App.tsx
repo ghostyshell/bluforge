@@ -3,6 +3,7 @@ import {
   api,
   type AppConfig,
   type DiscInfo,
+  type DoctorReport,
   type EncodeSettings,
   type AudioSel,
   type CloneProgress,
@@ -108,6 +109,7 @@ export default function App() {
   const [tvBusy, setTvBusy] = useState(false);
   const [tvError, setTvError] = useState<string | null>(null);
   const [mcp, setMcp] = useState<{ enabled: boolean; port: number | null } | null>(null);
+  const [doctor, setDoctor] = useState<DoctorReport | null>(null);
   const [startEp, setStartEp] = useState<number | "">("");
   const [authorFiles, setAuthorFiles] = useState<string[]>([]);
   const [authorOut, setAuthorOut] = useState("");
@@ -212,6 +214,7 @@ export default function App() {
       }
       try { const u = await api.checkUpdate(); setUpdate(u.version); } catch { /* offline ok */ }
       try { setMcp(await api.mcpStatus()); } catch { /* offline ok */ }
+      try { setDoctor(await api.doctor()); } catch { /* offline ok */ }
     })();
     const un = api.onProgress((p) => {
       setProgress(p);
@@ -1110,8 +1113,48 @@ export default function App() {
             </label>
             <p className="hint" style={{ marginTop: 8 }}>
               Localhost only. Endpoint <span className="mono">http://127.0.0.1:{cfg?.mcp_port ?? 8848}/mcp</span> -
-              disc, TV plan, rip, ISO export, covers, keys, eject and config as tools.
+              disc, TV plan, rip, ISO export, covers, keys, menus, authoring, verify and config as tools.
             </p>
+          </section>
+
+          <section className="card" style={{ marginTop: 16 }}>
+            <div className="row between">
+              <h2>System check</h2>
+              <button className="ghost sm" onClick={async () => { try { setDoctor(await api.doctor()); } catch (e) { setError(String(e)); } }}>
+                Re-run
+              </button>
+            </div>
+            {doctor ? (
+              <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
+                {doctor.capabilities.map((c) => (
+                  <div key={c.name} className="row" style={{ gap: 8, alignItems: "flex-start" }}>
+                    <span className={`pill ${c.ok ? "good" : "warn"}`} style={{ flex: "0 0 auto" }}>
+                      <span className="dot" />{c.ok ? "ok" : "no"}
+                    </span>
+                    <div className="grow" style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 13 }}>{c.name}</div>
+                      <div className="sub">{c.detail}</div>
+                    </div>
+                  </div>
+                ))}
+                <details className="group">
+                  <summary>Installed tools</summary>
+                  <div style={{ display: "grid", gap: 6, marginTop: 8 }}>
+                    {doctor.checks.map((c) => (
+                      <div key={c.name} style={{ fontSize: 12 }}>
+                        <span className={`pill ${c.ok ? "good" : "warn"}`} style={{ marginRight: 6 }}>
+                          <span className="dot" />{c.ok ? "ok" : "missing"}
+                        </span>
+                        <b>{c.name}</b> <span className="sub mono">{c.detail}</span>
+                        {!c.ok && c.fix && <div className="sub" style={{ marginLeft: 4 }}>fix: {c.fix}</div>}
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              </div>
+            ) : (
+              <div className="sub" style={{ marginTop: 8 }}>checking…</div>
+            )}
           </section>
 
           <div style={{ marginTop: 18 }}>

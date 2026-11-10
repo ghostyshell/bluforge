@@ -188,6 +188,8 @@ enum Cmd {
         /// Mounted disc, disc root, or BDMV folder.
         path: std::path::PathBuf,
     },
+    /// Show what is installed and which capability each missing piece blocks.
+    Doctor,
     /// Show effective configuration and paths.
     Config,
     /// Parse, edit and save a disc's title menu as a reusable template.
@@ -1336,6 +1338,41 @@ fn run(cli: &Cli) -> Result<(), keepsake_core::CoreError> {
                     "{} problem(s) in the tree",
                     report.errors.len()
                 )));
+            }
+        }
+        Cmd::Doctor => {
+            let r = keepsake_core::doctor::run();
+            if cli.json {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&r)
+                        .map_err(|e| keepsake_core::CoreError::Config(e.to_string()))?
+                );
+            } else {
+                println!("version   : {}", r.version);
+                for c in &r.checks {
+                    println!(
+                        "{:<16} {:<8} {}",
+                        c.name,
+                        if c.ok { "ok" } else { "MISSING" },
+                        c.detail
+                    );
+                    if !c.ok {
+                        if let Some(fix) = &c.fix {
+                            println!("{:<16} {:<8} fix: {fix}", "", "");
+                        }
+                    }
+                }
+                println!();
+                println!("{:<30} {:<8} {}", "capability", "status", "detail");
+                for c in &r.capabilities {
+                    println!(
+                        "{:<30} {:<8} {}",
+                        c.name,
+                        if c.ok { "ok" } else { "no" },
+                        c.detail
+                    );
+                }
             }
         }
         Cmd::Config => {

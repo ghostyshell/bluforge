@@ -748,6 +748,11 @@ fn start_rip(
 }
 
 #[tauri::command]
+fn doctor() -> keepsake_core::doctor::DoctorReport {
+    keepsake_core::doctor::run()
+}
+
+#[tauri::command]
 fn verify(path: String) -> Result<keepsake_core::verify::VerifyReport, String> {
     keepsake_core::verify::run(std::path::Path::new(&path)).map_err(|e| e.to_string())
 }
@@ -948,7 +953,8 @@ pub fn run() {
             queue_clear,
             queue_resume,
             clone_start,
-            verify
+            verify,
+            doctor
         ])
         .setup(|app| {
             if let Some(st) = app.try_state::<RpState>() {

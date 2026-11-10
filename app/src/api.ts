@@ -244,6 +244,23 @@ export type StreamInfo = {
   pid: number;
 };
 
+export type DoctorCheck = {
+  name: string;
+  ok: boolean;
+  detail: string;
+  fix?: string | null;
+};
+
+export type DoctorCapability = { name: string; ok: boolean; detail: string };
+
+export type DoctorReport = {
+  version: string;
+  checks: DoctorCheck[];
+  capabilities: DoctorCapability[];
+  errors: string[];
+  ok: boolean;
+};
+
 export type VerifyTitle = {
   index: number;
   object?: number | null;
@@ -378,6 +395,7 @@ export const api = {
     invoke<NativeKeyResult>("keys_native", { source }),
   bdplusInstall: () => invoke<string>("bdplus_install"),
   verify: (path: string) => invoke<VerifyReport>("verify", { path }),
+  doctor: () => invoke<DoctorReport>("doctor"),
   discStreams: (path: string, title: number) =>
     invoke<StreamInfo[]>("disc_streams", { path, title }),
   queueAdd: (request: RipRequest) => invoke<number>("queue_add", { request }),

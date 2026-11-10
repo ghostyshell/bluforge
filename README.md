@@ -87,6 +87,7 @@ cargo build --release
 ./target/release/keepsake-atelier libs
 ./target/release/keepsake-atelier iso /Volumes/MY_DISC ~/movie.iso            # decrypted ISO
 ./target/release/keepsake-atelier verify /Volumes/MY_DISC            # check navigation/clips
+./target/release/keepsake-atelier doctor                              # what is installed
 ./target/release/keepsake-atelier clone /dev/rdisk4 ~/movie-clone.iso         # 1:1, encrypted
 ./target/release/keepsake-atelier rip /Volumes/MY_DISC                        # main title -> ~/Downloads
 ./target/release/keepsake-atelier rip /dev/rdisk5 --title 3 ~/Movies/out.mkv  # explicit title + output
@@ -312,6 +313,7 @@ Tools:
 | `iso_start` | decrypted ISO or BDMV folder export |
 | `author_start` | author one or several files, optionally split per disc |
 | `verify` | check a BDMV tree: navigation, playlists, clips |
+| `doctor` | installed tools and which capability each missing piece blocks |
 | `covers_search` / `covers_download` | cover art from hirescovers / dvdcover / TMDB |
 | `keys_update` | refresh KEYDB.cfg |
 | `keys_list` | list keyed discs (id, name) |
@@ -355,6 +357,18 @@ entry, from `keepsake-atelier keys native` (VID read from the drive, media key f
 disc's own MKB), or from a one-off MakeMKV/FindVUK pass. `keepsake-atelier aacs <device>
 --disc <mount>` reads the drive's AACS volume ID (LibreDrive vendor read, or the
 standard command if the drive serves it) and seeds libaacs's cache.
+
+## System check
+
+```sh
+keepsake-atelier doctor          # or --json
+```
+
+Lists libbluray, libaacs, libbdplus (+ BD+ VM data), ffmpeg (and whether it has
+the `dvdvideo` demuxer), tsMuxeR, KEYDB, the optical drive, the burning tools and
+the data directory, then a capability matrix: Blu-ray rip, BD+ rip, native key
+recovery, authoring, DVD, burning, verification. Each missing item names the
+command that fixes it. The app has the same list under **System check**.
 
 ## Configuration & data
 

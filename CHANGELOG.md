@@ -26,6 +26,11 @@ All notable changes to Keepsake Atelier. Newest first.
 
 ### Added
 
+- **System check:** `keepsake-atelier doctor` (and an app **System check**
+  panel, plus an MCP `doctor` tool) lists the installed stack, the ffmpeg
+  `dvdvideo` demuxer, tsMuxeR, KEYDB, drive and burning tools, then a capability
+  matrix with the fix for each missing item, so DVD/burning limits are
+  diagnosable rather than mysterious.
 - **BDMV verification:** `keepsake-atelier verify <path>` (and **Verify** in the
   app, plus an MCP `verify` tool) parses index/MovieObject and every playlist
   directly, maps each title to its playlist, checks the clip files exist, and
