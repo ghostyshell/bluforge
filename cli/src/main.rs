@@ -183,6 +183,11 @@ enum Cmd {
         /// Output .iso file.
         dest: std::path::PathBuf,
     },
+    /// DVD-Video: list titles or rip one (uses the bundled dvdvideo demuxer).
+    Dvd {
+        #[command(subcommand)]
+        action: DvdAction,
+    },
     /// Verify a BDMV tree: navigation, playlists and clip files.
     Verify {
         /// Mounted disc, disc root, or BDMV folder.
@@ -196,6 +201,29 @@ enum Cmd {
     Menu {
         #[command(subcommand)]
         action: MenuAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum DvdAction {
+    /// List the disc's titles, chapters and durations.
+    List {
+        /// Mounted DVD or a VIDEO_TS directory.
+        path: std::path::PathBuf,
+    },
+    /// Rip one title to MKV (MPEG-2 + AC-3/DTS copied).
+    Rip {
+        /// Mounted DVD or a VIDEO_TS directory.
+        path: std::path::PathBuf,
+        /// Title number, 1-based (see `dvd list`).
+        #[arg(long)]
+        title: u16,
+        /// Output .mkv (default: the configured output folder).
+        #[arg(long)]
+        out: Option<std::path::PathBuf>,
+        /// Include DVD subtitles (VobSub).
+        #[arg(long)]
+        subs: bool,
     },
 }
 
@@ -1284,6 +1312,67 @@ fn run(cli: &Cli) -> Result<(), keepsake_core::CoreError> {
             )?;
             eprintln!("\nwrote {} ({} bytes)", dest.display(), written);
         }
+        Cmd::Dvd { action } => match action {
+            DvdAction::List { path } => {
+                let info = keepsake_core::dvd::info(path)?;
+                if cli.json {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&info)
+                            .map_err(|e| keepsake_core::CoreError::Config(e.to_string()))?
+                    );
+                } else {
+                    println!("disc      : {}", info.label);
+                    println!("root      : {}", info.root);
+                    println!("titles    : {}", info.titles.len());
+                    for t in &info.titles {
+                        println!(
+                            "  #{:<2} VTS {:<2} title {:<2}  {:>8}  {:>2} chapters  {} angles",
+                            t.number,
+                            t.title_set,
+                            t.vts_title,
+                            menu_clock(t.duration_secs.unwrap_or(0.0)),
+                            t.chapters,
+                            t.angles
+                        );
+                    }
+                }
+            }
+            DvdAction::Rip {
+                path,
+                title,
+                out,
+                subs,
+            } => {
+                let info = keepsake_core::dvd::info(path)?;
+                let output = match out {
+                    Some(p) => p.clone(),
+                    None => {
+                        let cfg = AppConfig::load();
+                        let name = info.label.replace('/', "-");
+                        cfg.output_dir
+                            .join(&name)
+                            .join(format!("{name} - Title {title}.mkv"))
+                    }
+                };
+                let req = keepsake_core::dvd::DvdRipRequest {
+                    source: path.clone(),
+                    title: *title,
+                    output: output.clone(),
+                    subtitles: *subs,
+                };
+                let cancel = std::sync::atomic::AtomicBool::new(false);
+                let mut last = -1i64;
+                keepsake_core::dvd::rip(&req, &cancel, |p| {
+                    let pct = p.percent as i64;
+                    if pct != last {
+                        last = pct;
+                        eprint!("\r  {pct:>3}%  {}", p.message);
+                    }
+                })?;
+                eprintln!("\nwrote {}", output.display());
+            }
+        },
         Cmd::Verify { path } => {
             let report = keepsake_core::verify::run(path)?;
             if cli.json {

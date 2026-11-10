@@ -4,6 +4,8 @@ import {
   type AppConfig,
   type DiscInfo,
   type DoctorReport,
+  type DvdInfo,
+  type DvdProgress,
   type EncodeSettings,
   type AudioSel,
   type CloneProgress,
@@ -110,6 +112,9 @@ export default function App() {
   const [tvError, setTvError] = useState<string | null>(null);
   const [mcp, setMcp] = useState<{ enabled: boolean; port: number | null } | null>(null);
   const [doctor, setDoctor] = useState<DoctorReport | null>(null);
+  const [dvd, setDvd] = useState<DvdInfo | null>(null);
+  const [dvdTitle, setDvdTitle] = useState<number | null>(null);
+  const [dvdProgress, setDvdProgress] = useState<DvdProgress | null>(null);
   const [startEp, setStartEp] = useState<number | "">("");
   const [authorFiles, setAuthorFiles] = useState<string[]>([]);
   const [authorOut, setAuthorOut] = useState("");
@@ -241,6 +246,7 @@ export default function App() {
     try {
       const info = await api.openDisc(p);
       setDisc(info);
+      setDvd(null);
       setTitle(info.main_title ?? info.titles[0]?.index ?? null);
       setMovie(info.name || null);
       const q = info.name || "";
@@ -249,8 +255,20 @@ export default function App() {
         poster: { ...t.poster, query: q },
         disc: { ...t.disc, query: q },
       }));
-    } catch (e) { setDisc(null); setError(String(e)); }
-    finally { setBusy(null); }
+    } catch (e) {
+      // A DVD-Video disc has no BDMV; try the DVD path before failing.
+      try {
+        const d = await api.dvdInfo(p);
+        setDvd(d);
+        setDisc(null);
+        setDvdTitle(d.titles[0]?.number ?? null);
+        setToast(`DVD-Video: ${d.titles.length} titles`);
+      } catch {
+        setDisc(null);
+        setDvd(null);
+        setError(String(e));
+      }
+    } finally { setBusy(null); }
   };
 
   const mode: RipMode = lossless
@@ -496,6 +514,15 @@ export default function App() {
     return () => { us.forEach((u) => u.then((f) => f())); };
   }, []);
 
+  useEffect(() => {
+    const us = [
+      api.onDvdProgress((p) => setDvdProgress(p)),
+      api.onDvdDone((path) => { setDvdProgress(null); setToast("DVD title written"); void api.reveal(path); }),
+      api.onDvdError((e) => { setDvdProgress(null); setError(e); }),
+    ];
+    return () => { us.forEach((u) => u.then((f) => f())); };
+  }, []);
+
   const isoPath = useMemo(() => {
     if (!cfg) return "";
     const name = sanitize(disc?.name || "disc");
@@ -543,6 +570,17 @@ export default function App() {
         setError(r.errors.slice(0, 5).join("; "));
       }
     } catch (e) { setError(String(e)); }
+  };
+
+  const ripDvd = async () => {
+    if (!dvd || dvdTitle == null || !cfg) return;
+    const name = sanitize(dvd.label || "DVD");
+    const output = `${cfg.output_dir.replace(/\/$/, "")}/${name}/${name} - Title ${dvdTitle}.mkv`;
+    setError(null);
+    setDvdProgress({ percent: 0, out_time_ms: 0, total_ms: 0, message: "starting", done: false });
+    try {
+      await api.dvdRip({ source: dvd.root, title: dvdTitle, output, subtitles: false });
+    } catch (e) { setError(String(e)); setDvdProgress(null); }
   };
 
   const keys = snap?.keys;
@@ -617,6 +655,61 @@ export default function App() {
               </div>
             )}
           </section>
+
+          {/* DVD-Video */}
+          {dvd && (
+            <section className="card">
+              <div className="row between">
+                <h2>DVD-Video</h2>
+                <span className="sub">{dvd.label}</span>
+              </div>
+              <div className="sub" style={{ marginTop: 6 }}>
+                Copied as-is: MPEG-2 video, AC-3/DTS audio. No re-encode, no menus.
+              </div>
+              <div className="titles" style={{ marginTop: 10, maxHeight: 280, overflow: "auto" }}>
+                {dvd.titles.map((t) => (
+                  <div
+                    key={t.number}
+                    className={`title ${dvdTitle === t.number ? "on" : ""}`}
+                    onClick={() => setDvdTitle(t.number)}
+                  >
+                    <span className="idx">#{t.number}</span>
+                    <div className="grow">
+                      <div className="row" style={{ gap: 8 }}>
+                        <b>Title {t.number}</b>
+                        <span className="badge">VTS {t.title_set}</span>
+                        {t.angles > 1 && <span className="badge">{t.angles} angles</span>}
+                      </div>
+                      <div className="meta">
+                        {fmtDuration(t.duration_secs ?? 0)} · {t.chapters} chapters
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="row wrap" style={{ marginTop: 12, gap: 8 }}>
+                <button className="primary" disabled={dvdTitle == null || !!dvdProgress || !!runningJob}
+                  onClick={() => void ripDvd()}>
+                  {dvdProgress ? "Ripping…" : `Rip title ${dvdTitle ?? ""}`}
+                </button>
+                {dvdProgress && (
+                  <button className="ghost" onClick={() => void api.cancelRip()}>Cancel</button>
+                )}
+              </div>
+              {dvdProgress && (
+                <div style={{ marginTop: 10 }}>
+                  <div className="progress" role="progressbar" aria-label="DVD rip progress"
+                    aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(dvdProgress.percent)}>
+                    <i style={{ width: `${dvdProgress.percent}%` }} />
+                  </div>
+                  <div className="stats" style={{ marginTop: 8 }} aria-live="polite">
+                    <span>{dvdProgress.percent.toFixed(0)}%</span>
+                    <span>{dvdProgress.message}</span>
+                  </div>
+                </div>
+              )}
+            </section>
+          )}
 
           {/* Titles */}
           {disc && (

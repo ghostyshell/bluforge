@@ -914,6 +914,85 @@ struct IsoArgs {
     label: Option<String>,
 }
 
+#[derive(Deserialize)]
+struct DvdArgs {
+    source: String,
+    title: u16,
+    #[serde(default)]
+    dest: Option<String>,
+    #[serde(default)]
+    subtitles: Option<bool>,
+}
+
+fn start_dvd(args: Value) -> Result<Value, String> {
+    let a: DvdArgs = serde_json::from_value(args).map_err(|e| format!("bad dvd arguments: {e}"))?;
+    require_free_slot()?;
+    let source = resolve_source(&a.source);
+    let info = keepsake_core::dvd::info(Path::new(&source)).map_err(|e| e.to_string())?;
+    let label = info.label.clone();
+    let dest = a.dest.map(PathBuf::from).unwrap_or_else(|| {
+        let cfg = AppConfig::load();
+        cfg.output_dir
+            .join(&label)
+            .join(format!("{label} - Title {}.mkv", a.title))
+    });
+    let req = keepsake_core::dvd::DvdRipRequest {
+        source: PathBuf::from(&source),
+        title: a.title,
+        output: dest.clone(),
+        subtitles: a.subtitles.unwrap_or(false),
+    };
+
+    let id = NEXT_JOB.fetch_add(1, Ordering::SeqCst);
+    let cancel = Arc::new(AtomicBool::new(false));
+    {
+        let mut v = jobs().lock().unwrap();
+        v.push(Job {
+            id,
+            kind: "dvd".into(),
+            state: "running".into(),
+            message: "starting".into(),
+            percent: 0.0,
+            dest: Some(dest.display().to_string()),
+            error: None,
+            cancel: Some(cancel.clone()),
+        });
+    }
+
+    let cancel2 = cancel.clone();
+    std::thread::spawn(move || {
+        let res = keepsake_core::dvd::rip(&req, &cancel2, |p| {
+            job_update(id, |j| {
+                j.percent = p.percent;
+                j.message = p.message.clone();
+            });
+        });
+        match res {
+            Ok(path) => job_update(id, |j| {
+                j.state = "done".into();
+                j.percent = 100.0;
+                j.message = "done".into();
+                j.dest = Some(path.display().to_string());
+            }),
+            Err(e) => job_update(id, |j| {
+                j.state = if cancel2.load(Ordering::SeqCst) {
+                    "cancelled".into()
+                } else {
+                    "error".into()
+                };
+                j.message = e.to_string();
+                j.error = Some(e.to_string());
+            }),
+        }
+    });
+
+    Ok(json!({
+        "id": id,
+        "dest": dest.display().to_string(),
+        "titles": info.titles.len(),
+    }))
+}
+
 fn start_iso(args: Value) -> Result<Value, String> {
     let a: IsoArgs = serde_json::from_value(args).map_err(|e| format!("bad iso arguments: {e}"))?;
     require_free_slot()?;
@@ -1050,6 +1129,21 @@ fn tools() -> Vec<Value> {
                 "series": { "type": "string", "description": "Series name override for the TMDB lookup." },
                 "start": { "type": "integer", "description": "First episode number on this disc (overrides the remembered mapping)." }
             }, "required": ["source"] }
+        }),
+        json!({
+            "name": "dvd_info",
+            "description": "List a DVD-Video's titles (number, chapters, angles, duration).",
+            "inputSchema": { "type": "object", "properties": { "source": src("Mounted DVD or VIDEO_TS directory (a raw device resolves to its mount).") }, "required": ["source"] }
+        }),
+        json!({
+            "name": "dvd_start",
+            "description": "Rip one DVD-Video title to MKV (MPEG-2 and AC-3/DTS copied, no re-encode). Returns a job id.",
+            "inputSchema": { "type": "object", "properties": {
+                "source": src("Mounted DVD or VIDEO_TS directory."),
+                "title": { "type": "integer", "description": "1-based title number (dvd_info)." },
+                "dest": { "type": "string", "description": "Output .mkv; omit for the configured output folder." },
+                "subtitles": { "type": "boolean", "description": "Include VobSub subtitles." }
+            }, "required": ["source", "title"] }
         }),
         json!({
             "name": "doctor",

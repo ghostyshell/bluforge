@@ -244,6 +244,29 @@ export type StreamInfo = {
   pid: number;
 };
 
+export type DvdTitle = {
+  number: number;
+  chapters: number;
+  angles: number;
+  title_set: number;
+  vts_title: number;
+  duration_secs?: number | null;
+};
+
+export type DvdInfo = {
+  root: string;
+  label: string;
+  titles: DvdTitle[];
+};
+
+export type DvdProgress = {
+  percent: number;
+  out_time_ms: number;
+  total_ms: number;
+  message: string;
+  done: boolean;
+};
+
 export type DoctorCheck = {
   name: string;
   ok: boolean;
@@ -396,6 +419,19 @@ export const api = {
   bdplusInstall: () => invoke<string>("bdplus_install"),
   verify: (path: string) => invoke<VerifyReport>("verify", { path }),
   doctor: () => invoke<DoctorReport>("doctor"),
+  dvdInfo: (path: string) => invoke<DvdInfo>("dvd_info", { path }),
+  dvdRip: (request: {
+    source: string;
+    title: number;
+    output: string;
+    subtitles: boolean;
+  }) => invoke<void>("dvd_rip", { request }),
+  onDvdProgress: (cb: (p: DvdProgress) => void): Promise<UnlistenFn> =>
+    listen<DvdProgress>("dvd://progress", (e) => cb(e.payload)),
+  onDvdDone: (cb: (path: string) => void): Promise<UnlistenFn> =>
+    listen<string>("dvd://done", (e) => cb(e.payload)),
+  onDvdError: (cb: (msg: string) => void): Promise<UnlistenFn> =>
+    listen<string>("dvd://error", (e) => cb(e.payload)),
   discStreams: (path: string, title: number) =>
     invoke<StreamInfo[]>("disc_streams", { path, title }),
   queueAdd: (request: RipRequest) => invoke<number>("queue_add", { request }),

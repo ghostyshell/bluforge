@@ -24,6 +24,7 @@ The engine, CLI binary and crate names are still `keepsake-atelier`.
 | Cover art: search/view/download from HiResCovers, dvdcover.com, TMDB | ✅ |
 | Decrypted ISO / folder export | ✅ |
 | 1:1 encrypted disc clone | ✅ |
+| DVD-Video (`VIDEO_TS`): title list + rip | ✅ |
 | TV / anime: per-episode split, SxxExx titles, OP/ED/preview chapters | ✅ |
 | Desktop UI (Tauri v2) | ✅ |
 | MCP server (all features as tools, localhost, off by default) | ✅ |
@@ -95,6 +96,8 @@ cargo build --release
 ./target/release/keepsake-atelier libs
 ./target/release/keepsake-atelier iso /Volumes/MY_DISC ~/movie.iso            # decrypted ISO
 ./target/release/keepsake-atelier verify /Volumes/MY_DISC            # check navigation/clips
+./target/release/keepsake-atelier dvd list /Volumes/DVD              # DVD titles
+./target/release/keepsake-atelier dvd rip /Volumes/DVD --title 1 --out ~/movie.mkv
 ./target/release/keepsake-atelier doctor                              # what is installed
 ./target/release/keepsake-atelier clone /dev/rdisk4 ~/movie-clone.iso         # 1:1, encrypted
 ./target/release/keepsake-atelier rip /Volumes/MY_DISC                        # main title -> ~/Downloads
@@ -326,6 +329,7 @@ Tools:
 | `iso_start` | decrypted ISO or BDMV folder export |
 | `author_start` | author one or several files, optionally split per disc |
 | `verify` | check a BDMV tree: navigation, playlists, clips |
+| `dvd_info` / `dvd_start` | list DVD titles / rip one (MPEG-2 + AC-3/DTS copy) |
 | `doctor` | installed tools and which capability each missing piece blocks |
 | `covers_search` / `covers_download` | cover art from hirescovers / dvdcover / TMDB |
 | `keys_update` | refresh KEYDB.cfg |
@@ -370,6 +374,23 @@ entry, from `keepsake-atelier keys native` (VID read from the drive, media key f
 disc's own MKB), or from a one-off MakeMKV/FindVUK pass. `keepsake-atelier aacs <device>
 --disc <mount>` reads the drive's AACS volume ID (LibreDrive vendor read, or the
 standard command if the drive serves it) and seeds libaacs's cache.
+
+## DVD-Video
+
+The bundled ffmpeg has the `dvdvideo` demuxer, so a DVD can be read without
+libbluray or any extra install:
+
+```sh
+keepsake-atelier dvd list /Volumes/MY_DVD          # title, VTS, chapters, duration
+keepsake-atelier dvd rip /Volumes/MY_DVD --title 2 --out ~/movie.mkv
+```
+
+Titles come from the VMG `VIDEO_TS.IFO` title search pointer table. The rip
+copies MPEG-2 video and AC-3/DTS audio (no re-encode); DVD subtitles are omitted
+unless `--subs` is passed, and menus are not ripped. In the app, pointing the
+disc field at a DVD shows a **DVD-Video** card with the title list and a rip
+button; progress and cancel work like a Blu-ray rip. MCP: `dvd_info` and
+`dvd_start`.
 
 ## System check
 

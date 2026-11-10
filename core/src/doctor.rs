@@ -275,9 +275,9 @@ pub fn run() -> DoctorReport {
     ));
     r.capabilities.push(cap(
         "DVD (VIDEO_TS) rip",
-        false,
+        dvdvideo,
         if dvdvideo {
-            "toolchain ready (ffmpeg has dvdvideo); the DVD title/rip path is not implemented yet"
+            "dvdvideo; MPEG-2 and AC-3/DTS copied to MKV"
         } else {
             "needs an ffmpeg with libdvdread/libdvdnav"
         },

@@ -748,6 +748,45 @@ fn start_rip(
 }
 
 #[tauri::command]
+fn dvd_info(path: String) -> Result<keepsake_core::dvd::DvdInfo, String> {
+    keepsake_core::dvd::info(std::path::Path::new(&path)).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn dvd_rip(
+    app: AppHandle,
+    state: State<RpState>,
+    request: keepsake_core::dvd::DvdRipRequest,
+) -> Result<(), String> {
+    if state.running.load(Ordering::Relaxed) {
+        return Err("a rip, clone or DVD rip is already running".into());
+    }
+    state.cancel.store(false, Ordering::Relaxed);
+    state.running.store(true, Ordering::Relaxed);
+    let app2 = app.clone();
+    let cancel = state.cancel.clone();
+    let running = state.running.clone();
+    std::thread::spawn(move || {
+        let res = keepsake_core::dvd::rip(&request, &cancel, |p| {
+            let _ = app2.emit("dvd://progress", p);
+        });
+        running.store(false, Ordering::Relaxed);
+        match res {
+            Ok(path) => {
+                let _ = app2.emit("dvd://done", path.display().to_string());
+            }
+            Err(e) => {
+                let _ = app2.emit("dvd://error", e.to_string());
+            }
+        }
+        if let Some(st) = app2.try_state::<RpState>() {
+            pump_queue(app2.clone(), &st);
+        }
+    });
+    Ok(())
+}
+
+#[tauri::command]
 fn doctor() -> keepsake_core::doctor::DoctorReport {
     keepsake_core::doctor::run()
 }
@@ -954,7 +993,9 @@ pub fn run() {
             queue_resume,
             clone_start,
             verify,
-            doctor
+            doctor,
+            dvd_info,
+            dvd_rip
         ])
         .setup(|app| {
             if let Some(st) = app.try_state::<RpState>() {

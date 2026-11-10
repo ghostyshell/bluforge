@@ -137,6 +137,17 @@ consume a saved document directly.
 - Unit tested against generated and broken trees; also run against the authored
   two-title disc and a deliberately damaged copy.
 
+## Phase 15 - DVD-Video - done
+
+- `dvd list` reads the VMG `VIDEO_TS.IFO` title search pointer table (title,
+  VTS, chapters, angles) and probes durations with ffprobe.
+- `dvd rip` copies one title with the bundled `dvdvideo` demuxer: MPEG-2 and
+  AC-3/DTS as-is, no re-encode, optional VobSub subtitles, progress and cancel.
+- The app shows a **DVD-Video** card with the title list and a rip button when
+  the disc field points at a DVD; MCP has `dvd_info` and `dvd_start`.
+- Unit tests cover the IFO parser and the ffmpeg argument builder; the actual
+  `dvdvideo` read needs a real disc to exercise.
+
 ## Parity with DVDFab-class apps
 
 What the app covers today, against the ripping-suite feature set:
@@ -154,12 +165,12 @@ What the app covers today, against the ripping-suite feature set:
 | Disc menu parse, edit, save, apply | done |
 | Native AACS key derivation, BD+ VM | done |
 | Cover art | done |
-| DVD (`VIDEO_TS`) ripping | toolchain ready (bundled ffmpeg has `dvdvideo`); path not implemented |
+| DVD (`VIDEO_TS`) ripping | done (MPEG-2/AC-3/DTS copy, no menus) |
 | 1:1 encrypted disc clone | done |
 | BD-25 / BD-50 splitting | done (whole titles per disc) |
 | Burning to disc | not started |
 | Cinavia detection/removal | not implemented |
-| UHD/AACS2 unit-key workflow | partial (core stores unit keys, no UI) |
+| UHD/AACS2 unit-key workflow | done for import/editing (derivation still AACS1) |
 | Batch queue (one job at a time) | done |
 
 ## Phase 14 - System check - done
@@ -172,10 +183,6 @@ What the app covers today, against the ripping-suite feature set:
 
 ### What is blocked, and on what
 
-- **DVD ripping.** The ffmpeg blocker is gone: the bundled build has the
-  `dvdvideo` demuxer (`doctor` shows it). What remains is the DVD path itself -
-  enumerating titles/chapters from `VIDEO_TS.IFO` and wiring the rip - which is
-  the next stage, not a toolchain problem.
 - **Authored menus.** Needs an HDMV IG stream encoder or a BD-J application;
   neither toolchain is present and there is no player to verify against.
 - **Burning.** macOS has no open Blu-ray burning stack installed; that path also

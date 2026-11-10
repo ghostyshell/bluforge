@@ -26,6 +26,11 @@ All notable changes to Keepsake Atelier. Newest first.
 
 ### Added
 
+- **DVD-Video support:** `dvd list` reads the VMG title table from
+  `VIDEO_TS.IFO`, and `dvd rip --title N` copies MPEG-2 + AC-3/DTS with the
+  bundled `dvdvideo` demuxer (no re-encode, optional VobSub subtitles). The app
+  shows a DVD-Video card with a title list and rip button; MCP has `dvd_info`
+  and `dvd_start`. No menus are ripped.
 - **Bundled ffmpeg/ffprobe:** `scripts/build-ffmpeg.sh` builds x264 (master),
   x265 4.2, libdvdread 7.1.1, libdvdnav 7.0.0 and ffmpeg n9.0.2 into a static
   binary, then copies it into the app bundle. Adds the `dvdvideo` demuxer (DVD
