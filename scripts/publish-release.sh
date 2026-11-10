@@ -75,9 +75,9 @@ if [ -n "$ARTIFACTS" ]; then
   [ -d "$ARTIFACTS" ] || die "no artifact directory at $ARTIFACTS"
   DIST=$(cd "$ARTIFACTS" && pwd)
   FILES=()
-  while IFS= read -r f; do
-    FILES+=("$f")
-  done < <(cd "$DIST" && ls -1 *.dmg *.tar.gz *.zip 2>/dev/null)
+  for f in "$DIST"/*.dmg "$DIST"/*.tar.gz "$DIST"/*.zip; do
+    if [ -f "$f" ]; then FILES+=("$(basename "$f")"); fi
+  done
   [ ${#FILES[@]} -gt 0 ] || die "no dmg/tar.gz/zip files in $DIST"
   DMG_SRC=""
   log "using existing artifacts: ${FILES[*]}"

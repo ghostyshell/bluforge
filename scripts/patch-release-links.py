@@ -118,6 +118,14 @@ def os_arch(name):
     return "macOS", "arm64"
 
 
+def collapse(rows):
+    """One artifact per identity; later rows (a fresh upload) win."""
+    chosen = {}
+    for name, row in rows.items():
+        chosen[identity(name)] = (name, row)
+    return {name: row for name, row in chosen.values()}
+
+
 def build_manifest(rows, version, preserved=None):
     merged = dict(preserved or {})
     for name, row in rows.items():
@@ -184,7 +192,7 @@ def patch_sitemap(today):
 def main(argv):
     if len(argv) != 2:
         raise SystemExit(__doc__)
-    rows = load(argv[1])
+    rows = collapse(load(argv[1]))
     if not rows:
         raise SystemExit("no usable rows in the link manifest - run the upload first")
 
