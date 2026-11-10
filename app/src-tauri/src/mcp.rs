@@ -312,6 +312,13 @@ fn run_tool(name: &str, args: Value) -> Result<Value, String> {
             serde_json::to_value(plan).map_err(|e| e.to_string())
         }
         "rip_start" => start_rip(args),
+        "dvd_info" => {
+            let source = resolve_source(&str_arg(&args, "source")?);
+            let info = keepsake_core::dvd::info(Path::new(&source)).map_err(|e| e.to_string())?;
+            serde_json::to_value(info).map_err(|e| e.to_string())
+        }
+        "dvd_start" => start_dvd(args),
+        "clone_start" => start_clone(args),
         "doctor" => serde_json::to_value(keepsake_core::doctor::run()).map_err(|e| e.to_string()),
         "verify" => {
             let path = resolve_source(&str_arg(&args, "path")?);
