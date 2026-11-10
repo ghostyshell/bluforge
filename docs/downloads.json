@@ -1,0 +1,28 @@
+{
+  "version": "0.1.0",
+  "updated": "2026-11-11",
+  "artifacts": [
+    {
+      "label": "macOS (Apple Silicon)",
+      "name": "Keepsake-Atelier-0.1.0-arm64.dmg",
+      "version": "0.1.0",
+      "os": "macOS",
+      "arch": "arm64",
+      "gofile": "https://gofile.io/d/jpvg2eIQ",
+      "kiwi": "https://file.kiwi/190e227d#TwlU1ABD94UoblcAj25yzg",
+      "size": "32.1 MiB",
+      "sha256": "58beb5e3487ab3a0d3773fe492ba437a49a39cded464628e2c52b577f907b077"
+    },
+    {
+      "label": "Command line (Apple Silicon)",
+      "name": "keepsake-atelier-0.1.0-arm64.tar.gz",
+      "version": "0.1.0",
+      "os": "macOS",
+      "arch": "arm64",
+      "gofile": "https://gofile.io/d/vGEivkZG",
+      "kiwi": "https://file.kiwi/05d72adf#C3z0zZH3aXkfwb4QBQWQxg",
+      "size": "2.1 MiB",
+      "sha256": "f36aa2aa680c7a0e65064626ff96ca01926318785c9440fe9593c37412924f13"
+    }
+  ]
+}
