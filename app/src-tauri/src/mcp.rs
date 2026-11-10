@@ -936,7 +936,8 @@ struct CloneArgs {
 #[derive(Deserialize)]
 struct BurnArgs {
     image: String,
-    device: String,
+    #[serde(default)]
+    device: Option<String>,
     #[serde(default)]
     speed: Option<u32>,
     #[serde(default)]
@@ -953,7 +954,7 @@ fn start_burn(args: Value) -> Result<Value, String> {
     let dry_run = a.dry_run.unwrap_or(true) || a.confirm != Some(true);
     let req = keepsake_core::burn::BurnRequest {
         image: PathBuf::from(&a.image),
-        device: PathBuf::from(&a.device),
+        device: a.device.clone().map(PathBuf::from),
         speed: a.speed,
         dry_run,
     };
@@ -1284,11 +1285,11 @@ fn tools() -> Vec<Value> {
             "description": "Write a single-title Blu-ray ISO to a writer drive. Dry run unless confirm=true (erases the disc). Returns a job id.",
             "inputSchema": { "type": "object", "properties": {
                 "image": { "type": "string", "description": "The .iso to write." },
-                "device": { "type": "string", "description": "Raw device node, eg. /dev/rdisk4." },
+                "device": { "type": "string", "description": "Raw device node for growisofs, eg. /dev/rdisk4. Omit for native hdiutil burn (auto-detects the writer)." },
                 "speed": { "type": "integer" },
                 "dry_run": { "type": "boolean", "description": "Default true; print the command only." },
                 "confirm": { "type": "boolean", "description": "Must be true for dry_run=false; writing erases the disc." }
-            }, "required": ["image", "device"] }
+            }, "required": ["image"] }
         }),
         json!({
             "name": "clone_start",

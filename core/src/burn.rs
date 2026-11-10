@@ -18,8 +18,10 @@ use crate::CoreError;
 pub struct BurnRequest {
     /// The `.iso` to write (e.g. produced by `author --out disc.iso`).
     pub image: PathBuf,
-    /// Raw device node, e.g. `/dev/rdisk4`.
-    pub device: PathBuf,
+    /// Raw device node for growisofs, e.g. `/dev/rdisk4`. Omit to use the
+    /// native `hdiutil burn`, which picks the writer itself.
+    #[serde(default)]
+    pub device: Option<PathBuf>,
     /// Write speed (e.g. `4` for 4x). Omit for the drive's default.
     #[serde(default)]
     pub speed: Option<u32>,
@@ -58,11 +60,13 @@ fn check_image(req: &BurnRequest) -> Result<(), CoreError> {
     if std::fs::metadata(&req.image).map(|m| m.len()).unwrap_or(0) == 0 {
         return Err(CoreError::Disc("image is empty".into()));
     }
-    let dev = req.device.to_string_lossy();
-    if !dev.starts_with("/dev/") {
-        return Err(CoreError::Disc(format!(
-            "device must be a /dev/rdiskN node, got {dev}"
-        )));
+    if let Some(device) = &req.device {
+        let dev = device.to_string_lossy();
+        if !dev.starts_with("/dev/") {
+            return Err(CoreError::Disc(format!(
+                "device must be a /dev/rdiskN node, got {dev}"
+            )));
+        }
     }
     Ok(())
 }
@@ -70,14 +74,25 @@ fn check_image(req: &BurnRequest) -> Result<(), CoreError> {
 /// Validate everything before doing anything destructive.
 pub fn check(req: &BurnRequest) -> Result<(), CoreError> {
     check_image(req)?;
-    let dev = req.device.to_string_lossy();
-    if !Path::new(&req.device).exists() {
-        return Err(CoreError::Disc(format!("device not present: {dev}")));
-    }
-    if let Some(mp) = crate::device::mount_point_for_device(&dev) {
-        return Err(CoreError::Disc(format!(
-            "{dev} is mounted at {mp}; unmount the disc before burning"
-        )));
+    match &req.device {
+        Some(device) => {
+            let dev = device.to_string_lossy();
+            if !Path::new(device).exists() {
+                return Err(CoreError::Disc(format!("device not present: {dev}")));
+            }
+            if let Some(mp) = crate::device::mount_point_for_device(&dev) {
+                return Err(CoreError::Disc(format!(
+                    "{dev} is mounted at {mp}; unmount the disc before burning"
+                )));
+            }
+        }
+        None => {
+            if crate::device::list_optical().is_empty() {
+                return Err(CoreError::Disc(
+                    "no optical drive detected; connect the writer (or pass --device)".into(),
+                ));
+            }
+        }
     }
     Ok(())
 }
@@ -85,12 +100,29 @@ pub fn check(req: &BurnRequest) -> Result<(), CoreError> {
 fn command_with(
     growisofs: Option<&Path>,
     cdrecord: Option<&Path>,
+    hdiutil: Option<&Path>,
     req: &BurnRequest,
 ) -> Result<(PathBuf, Vec<String>), CoreError> {
+    if req.device.is_none() {
+        let h = hdiutil.ok_or_else(|| CoreError::Disc("hdiutil not found".into()))?;
+        let mut args = vec!["burn".to_string(), req.image.display().to_string()];
+        if let Some(s) = req.speed {
+            args.push("-speed".to_string());
+            args.push(s.to_string());
+        }
+        return Ok((h.to_path_buf(), args));
+    }
     if let Some(g) = growisofs {
         let mut args = vec![
             "-Z".to_string(),
-            format!("{}={}", req.device.display(), req.image.display()),
+            format!(
+                "{}={}",
+                req.device
+                    .as_ref()
+                    .map(|d| d.display().to_string())
+                    .unwrap_or_default(),
+                req.image.display()
+            ),
         ];
         if let Some(s) = req.speed {
             args.push(format!("-speed={s}"));
@@ -98,7 +130,16 @@ fn command_with(
         return Ok((g.to_path_buf(), args));
     }
     if let Some(c) = cdrecord {
-        let mut args = vec!["-v".to_string(), format!("dev={}", req.device.display())];
+        let mut args = vec![
+            "-v".to_string(),
+            format!(
+                "dev={}",
+                req.device
+                    .as_ref()
+                    .map(|d| d.display().to_string())
+                    .unwrap_or_default()
+            ),
+        ];
         if let Some(s) = req.speed {
             args.push(format!("speed={s}"));
         }
@@ -115,6 +156,7 @@ pub fn command(req: &BurnRequest) -> Result<(PathBuf, Vec<String>), CoreError> {
     command_with(
         in_path("growisofs").as_deref(),
         in_path("cdrecord").as_deref(),
+        Some(Path::new("/usr/bin/hdiutil")).filter(|p| p.is_file()),
         req,
     )
 }
@@ -148,20 +190,37 @@ where
         return Ok(());
     }
 
-    let mut child = Command::new(&bin)
-        .args(&args)
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
+    let native = req.device.is_none();
+    let mut command = Command::new(&bin);
+    command.args(&args);
+    // growisofs reports progress on stderr, hdiutil on stdout.
+    if native {
+        command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    } else {
+        command.stdout(Stdio::null()).stderr(Stdio::piped());
+    }
+    let mut child = command
         .spawn()
         .map_err(|e| CoreError::Disc(format!("{}: {e}", bin.display())))?;
-    let stderr = child
-        .stderr
-        .take()
-        .ok_or_else(|| CoreError::Disc("writer stderr".into()))?;
+    let stream: Box<dyn std::io::Read> = if native {
+        Box::new(
+            child
+                .stdout
+                .take()
+                .ok_or_else(|| CoreError::Disc("writer stdout".into()))?,
+        )
+    } else {
+        Box::new(
+            child
+                .stderr
+                .take()
+                .ok_or_else(|| CoreError::Disc("writer stderr".into()))?,
+        )
+    };
 
     let mut last = -1.0f64;
     let mut tail: Vec<String> = Vec::new();
-    for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+    for line in BufReader::new(stream).lines().map_while(Result::ok) {
         if cancel.load(Ordering::Relaxed) {
             let _ = child.kill();
         }
@@ -209,7 +268,7 @@ mod tests {
     fn req() -> BurnRequest {
         BurnRequest {
             image: PathBuf::from("/tmp/disc.iso"),
-            device: PathBuf::from("/dev/rdisk9"),
+            device: Some(PathBuf::from("/dev/rdisk9")),
             speed: Some(4),
             dry_run: true,
         }
@@ -217,18 +276,42 @@ mod tests {
 
     #[test]
     fn builds_growisofs_and_cdrecord_commands() {
-        let (bin, args) = command_with(Some(Path::new("/bin/growisofs")), None, &req()).unwrap();
+        let (bin, args) = command_with(
+            Some(Path::new("/bin/growisofs")),
+            None,
+            Some(Path::new("/usr/bin/hdiutil")),
+            &req(),
+        )
+        .unwrap();
         assert_eq!(bin, PathBuf::from("/bin/growisofs"));
         assert_eq!(args, vec!["-Z", "/dev/rdisk9=/tmp/disc.iso", "-speed=4"]);
 
-        let (bin, args) = command_with(None, Some(Path::new("/bin/cdrecord")), &req()).unwrap();
+        let (bin, args) = command_with(
+            None,
+            Some(Path::new("/bin/cdrecord")),
+            Some(Path::new("/usr/bin/hdiutil")),
+            &req(),
+        )
+        .unwrap();
         assert_eq!(bin, PathBuf::from("/bin/cdrecord"));
         assert_eq!(
             args,
             vec!["-v", "dev=/dev/rdisk9", "speed=4", "/tmp/disc.iso"]
         );
 
-        assert!(command_with(None, None, &req()).is_err());
+        assert!(command_with(None, None, None, &req()).is_err());
+
+        let mut native = req();
+        native.device = None;
+        let (bin, args) = command_with(
+            Some(Path::new("/bin/growisofs")),
+            None,
+            Some(Path::new("/usr/bin/hdiutil")),
+            &native,
+        )
+        .unwrap();
+        assert_eq!(bin, PathBuf::from("/usr/bin/hdiutil"));
+        assert_eq!(args, vec!["burn", "/tmp/disc.iso", "-speed", "4"]);
     }
 
     #[test]

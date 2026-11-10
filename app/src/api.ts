@@ -431,7 +431,7 @@ export const api = {
   doctor: () => invoke<DoctorReport>("doctor"),
   burnStart: (request: {
     image: string;
-    device: string;
+    device: string | null;
     speed: number | null;
     dry_run: boolean;
   }) => invoke<void>("burn_start", { request }),

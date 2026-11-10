@@ -314,12 +314,13 @@ where
     if req.inputs.len() == 1 {
         return author_one(req, bin, dest, on_progress);
     }
-    if dest
+    let want_iso = dest
         .extension()
-        .is_some_and(|e| e.eq_ignore_ascii_case("iso"))
-    {
+        .is_some_and(|e| e.eq_ignore_ascii_case("iso"));
+    if want_iso && !crate::udf::available() {
         return Err(CoreError::Disc(
-            "multi-title authoring writes a BDMV folder; pass a directory without .iso".into(),
+            "multi-title ISO needs macOS newfs_udf/hdiutil (UDF 2.50); pass a folder instead"
+                .into(),
         ));
     }
 
@@ -337,8 +338,8 @@ where
             auto_chapter_minutes: req.auto_chapter_minutes,
             split_gb: None,
         };
-        let base = 80.0 * i as f64 / n as f64;
-        let span = 80.0 / n as f64;
+        let base = 70.0 * i as f64 / n as f64;
+        let span = 70.0 / n as f64;
         let mut progress = |p: AuthorProgress| {
             on_progress(AuthorProgress {
                 percent: base + p.percent * span / 100.0,
@@ -350,13 +351,38 @@ where
         parts.push(temp);
     }
 
-    crate::bdmv::merge(&parts, dest, |pct| {
+    if want_iso {
+        // tsMuxeR writes only one playlist per image, so build the merged BDMV
+        // inside a native UDF 2.50 image instead.
+        let payload: u64 = parts
+            .iter()
+            .map(|p| crate::udf::tree_size(&p.join("BDMV")))
+            .sum();
+        let size = crate::udf::image_size(payload);
+        let label = req.label.clone().unwrap_or_else(|| "KEEPSAKE".into());
         on_progress(AuthorProgress {
-            percent: 80.0 + pct * 0.2,
-            message: "merging titles".into(),
+            percent: 71.0,
+            message: format!("creating UDF 2.50 image ({} MiB)", size / (1024 * 1024)),
             done: false,
         });
-    })?;
+        crate::udf::with_image(dest, size, &label, |mount| {
+            crate::bdmv::merge(&parts, mount, |pct| {
+                on_progress(AuthorProgress {
+                    percent: 74.0 + pct * 0.24,
+                    message: "writing titles".into(),
+                    done: false,
+                });
+            })
+        })?;
+    } else {
+        crate::bdmv::merge(&parts, dest, |pct| {
+            on_progress(AuthorProgress {
+                percent: 70.0 + pct * 0.3,
+                message: "merging titles".into(),
+                done: false,
+            });
+        })?;
+    }
     for p in &parts {
         let _ = std::fs::remove_dir_all(p);
     }
@@ -392,15 +418,6 @@ fn author_split<F>(
 where
     F: FnMut(AuthorProgress),
 {
-    if req
-        .dest
-        .extension()
-        .is_some_and(|e| e.eq_ignore_ascii_case("iso"))
-    {
-        return Err(CoreError::Disc(
-            "splitting writes one folder per disc; pass a directory without .iso".into(),
-        ));
-    }
     // Whole inputs stay together: an episode cannot span two discs without
     // re-encoding, so measure the files and pack them greedily.
     let sizes: Vec<u64> = req
@@ -411,11 +428,24 @@ where
     let limit = (limit_gb * 1_000_000_000.0) as u64;
     let groups = group_sizes(&sizes, limit);
     let n = groups.len().max(1);
-    std::fs::create_dir_all(&req.dest)?;
+    let want_iso = req
+        .dest
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("iso"));
+    let base_dir = if want_iso {
+        req.dest.with_extension("")
+    } else {
+        req.dest.clone()
+    };
+    std::fs::create_dir_all(&base_dir)?;
 
     for (gi, group) in groups.iter().enumerate() {
         let inputs: Vec<PathBuf> = group.iter().map(|i| req.inputs[*i].clone()).collect();
-        let dest = req.dest.join(format!("Disc{}", gi + 1));
+        let dest = if want_iso {
+            base_dir.join(format!("Disc{}.iso", gi + 1))
+        } else {
+            base_dir.join(format!("Disc{}", gi + 1))
+        };
         let sub = AuthorRequest {
             inputs,
             dest: dest.clone(),
@@ -437,10 +467,10 @@ where
     }
     on_progress(AuthorProgress {
         percent: 100.0,
-        message: format!("authored {n} discs under {}", req.dest.display()),
+        message: format!("authored {n} discs under {}", base_dir.display()),
         done: true,
     });
-    Ok(req.dest.clone())
+    Ok(base_dir)
 }
 
 /// Run tsMuxeR for one title into `dest`.

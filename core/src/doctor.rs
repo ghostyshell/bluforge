@@ -2,7 +2,7 @@
 //! blocks. Every "missing" line names the command that fixes it, so the
 //! DVD/burning/menu limits are diagnosable instead of mysterious.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
@@ -206,15 +206,30 @@ pub fn run() -> DoctorReport {
     ));
 
     // Burning stack
-    let burning = in_path("growisofs").or_else(|| in_path("cdrecord"));
+    let native_burn = Path::new("/usr/bin/hdiutil").is_file();
+    let growisofs = in_path("growisofs");
+    let cdrecord = in_path("cdrecord");
+    let burning = native_burn || growisofs.is_some();
     r.checks.push(check(
         "burning",
-        burning.is_some(),
-        burning
-            .as_ref()
-            .map(|p| p.display().to_string())
-            .unwrap_or_else(|| "growisofs not installed".into()),
-        Some("brew install dvd+rw-tools (and use a Blu-ray writer)"),
+        burning,
+        if native_burn {
+            format!(
+                "hdiutil burn (native){}",
+                if growisofs.is_some() {
+                    "; growisofs fallback"
+                } else {
+                    ""
+                }
+            )
+        } else if let Some(g) = &growisofs {
+            g.display().to_string()
+        } else if let Some(c) = &cdrecord {
+            c.display().to_string()
+        } else {
+            "no writer front-end".into()
+        },
+        Some("macOS hdiutil (built in), or brew install dvd+rw-tools"),
     ));
 
     // Data directory
@@ -284,11 +299,13 @@ pub fn run() -> DoctorReport {
     ));
     r.capabilities.push(cap(
         "Burning to disc",
-        burning.is_some() && !drives.is_empty(),
-        if burning.is_some() && !drives.is_empty() {
-            "growisofs + an optical drive"
+        burning && !drives.is_empty(),
+        if burning && !drives.is_empty() {
+            "hdiutil burn + an optical drive"
+        } else if burning {
+            "writer front-end ready; connect a writer drive"
         } else {
-            "needs growisofs and a writer drive"
+            "needs a writer front-end and a writer drive"
         },
     ));
     r.capabilities.push(cap(

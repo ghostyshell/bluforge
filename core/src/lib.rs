@@ -24,6 +24,7 @@ pub mod native;
 pub mod rip;
 pub mod template;
 pub mod tv;
+pub mod udf;
 pub mod verify;
 
 pub use clone::{CloneProgress, CloneRequest};

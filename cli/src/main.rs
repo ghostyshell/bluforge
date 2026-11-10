@@ -187,9 +187,10 @@ enum Cmd {
     Burn {
         /// The .iso to write.
         image: std::path::PathBuf,
-        /// Raw device node, eg. /dev/rdisk4 (see `devices`).
+        /// Raw device node for growisofs, eg. /dev/rdisk4. Omit to use the
+        /// native `hdiutil burn`, which picks the writer itself.
         #[arg(long)]
-        device: std::path::PathBuf,
+        device: Option<std::path::PathBuf>,
         /// Write speed, eg. 4 for 4x.
         #[arg(long)]
         speed: Option<u32>,

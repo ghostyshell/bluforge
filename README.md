@@ -24,7 +24,8 @@ The engine, CLI binary and crate names are still `keepsake-atelier`.
 | Cover art: search/view/download from HiResCovers, dvdcover.com, TMDB | ✅ |
 | Decrypted ISO / folder export | ✅ |
 | 1:1 encrypted disc clone | ✅ |
-| Burn a single-title ISO to disc | ✅ (growisofs; untested without a writer) |
+| Multi-title ISO (UDF 2.50, native newfs_udf) | ✅ |
+| Burn an ISO to disc (native hdiutil burn) | ✅ (untested without a writer) |
 | DVD-Video (`VIDEO_TS`): title list + rip | ✅ |
 | TV / anime: per-episode split, SxxExx titles, OP/ED/preview chapters | ✅ |
 | Desktop UI (Tauri v2) | ✅ |
@@ -265,9 +266,10 @@ keepsake-atelier author ep*.mkv --out "/path/Set" --split 25      # BD-25 per di
   `~/Library/Application Support/keepsake-atelier/bin/tsMuxeR` (override with
   `KEEPSAKE_TSMUXER`).
 * One input writes a UDF 2.50 ISO with a complete BDMV tree. Several inputs
-  are authored one title each into a BDMV folder (`--out` a directory): each
-  input gets its own playlist, tsMuxeR's clips are renumbered, and
-  `index.bdmv` / `MovieObject.bdmv` are written with one `PlayPL` object per
+  are authored one title each: into a BDMV folder (`--out` a directory) or
+  straight into a UDF 2.50 image (`--out disc.iso`, via macOS `newfs_udf` +
+  `hdiutil`). Each input gets its own playlist, tsMuxeR's clips are renumbered,
+  and `index.bdmv` / `MovieObject.bdmv` are written with one `PlayPL` object per
   title plus first-play and top-menu entries.
 * `--split <GB>` packs whole inputs onto discs of at most that size (25 or 50)
   under `<out>/Disc1`, `Disc2`, ... A title is never cut across discs; an input
@@ -403,21 +405,23 @@ button; progress and cancel work like a Blu-ray rip. MCP: `dvd_info` and
 
 ## Burning
 
-A single-title Blu-ray ISO (from `author --out disc.iso`) can be written to a
-writer drive:
+A Blu-ray ISO (from `author --out disc.iso`, single or multi-title) can be
+written to a writer drive:
 
 ```sh
-keepsake-atelier burn ~/movie.iso --device /dev/rdisk4          # prints the command
-keepsake-atelier burn ~/movie.iso --device /dev/rdisk4 --yes    # actually writes
+keepsake-atelier burn ~/movie.iso          # native hdiutil burn, prints the command
+keepsake-atelier burn ~/movie.iso --yes    # actually writes
+keepsake-atelier burn ~/movie.iso --device /dev/rdisk4 --yes   # explicit growisofs
 ```
 
-`growisofs` (dvd+rw-tools) is used, falling back to `cdrecord`. The device must
-be an unmounted `/dev/rdiskN`; the disc is erased and there is no undo, so the
-CLI requires `--yes` and the app asks for confirmation. The app has a **Burn ISO
-to disc** button in the Decrypted ISO panel.
+Without `--device` it uses macOS's own `hdiutil burn`, which picks the writer;
+`--device /dev/rdiskN` selects growisofs (cdrecord fallback). The disc is erased
+and there is no undo, so the CLI requires `--yes` and the app asks for
+confirmation. The app has a **Burn ISO to disc** button in the Decrypted ISO
+panel.
 
-Multi-title discs are authored as a BDMV *folder* (there is no UDF 2.50 image
-writer on macOS for it), so they cannot be burned from this build yet.
+Multi-title discs are authored straight into a native UDF 2.50 image
+(`newfs_udf` + `hdiutil`), so they can be burned too.
 
 ## System check
 

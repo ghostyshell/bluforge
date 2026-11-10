@@ -65,6 +65,13 @@ All notable changes to Keepsake Atelier. Newest first.
   source, the selected title's name becomes `{title}` (a trailing `(1967)` is
   split off as `{year}`), and its chapter labels replace the ChapterDB names
   when the counts match. Editing a template now changes the next rip.
+- **Multi-title ISOs, natively:** macOS's `newfs_udf` writes a UDF 2.50 image
+  with a metadata partition, and `author` lays the merged multi-title BDMV into
+  it via `hdiutil`, so `--out disc.iso` works for several inputs (and `--split`
+  writes `set/DiscN.iso`). Verified with two titles (mount, `verify`, libbluray).
+- **Native burning:** `burn` now prefers macOS's `hdiutil burn` (auto-detects the
+  writer); `--device /dev/rdiskN` selects growisofs. **Burn ISO to disc** in the
+  app and `burn_start` over MCP use the native path.
 - **Burning (single-title ISOs):** `burn <image.iso> --device /dev/rdiskN
   [--yes]` writes with growisofs (cdrecord fallback), refusing a mounted device
   or missing image and requiring an explicit `--yes` (dry run by default). The

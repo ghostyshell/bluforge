@@ -492,8 +492,7 @@ export default function App() {
       setAuthorFiles(files);
       const stem = files[0].split("/").pop()?.replace(/\.[^.]+$/, "") ?? "disc";
       const base = `${(cfg?.output_dir ?? "").replace(/\/$/, "")}/${stem}/${stem}`;
-      // Several inputs become one title each in a BDMV folder; one input can be an ISO.
-      setAuthorOut(files.length > 1 ? base : `${base}.iso`);
+      setAuthorOut(`${base}.iso`);
     } catch (e) { setError(String(e)); }
   };
 
@@ -652,12 +651,12 @@ export default function App() {
       setError("need a writer drive and a configured output folder");
       return;
     }
-    const device = `/dev/r${dev.bsd_name}`;
-    if (!window.confirm(`Write\n${isoPath}\nto ${device}?\n\nThis erases the disc and cannot be undone.`)) return;
+    if (!window.confirm(`Write\n${isoPath}\nto the drive (${dev.bsd_name})?\n\nThis erases the disc and cannot be undone.`)) return;
     setError(null);
     setBurnProgress({ percent: 0, message: "starting", done: false });
     try {
-      await api.burnStart({ image: isoPath, device, speed: null, dry_run: false });
+      // Native hdiutil burn: it picks the writer itself.
+      await api.burnStart({ image: isoPath, device: null, speed: null, dry_run: false });
     } catch (e) { setError(String(e)); setBurnProgress(null); }
   };
 
@@ -1022,9 +1021,9 @@ export default function App() {
             </div>
             <div className="row between" style={{ marginTop: 12, alignItems: "flex-end" }}>
               <p className="hint" style={{ margin: 0, maxWidth: 420 }}>
-                One input writes a UDF 2.50 ISO. Several inputs become one title each in a BDMV
-                folder (choose a destination without .iso), with generated index and navigation.
-                Chapter marks are kept.
+                One or several inputs write a UDF 2.50 ISO with macOS's native newfs_udf; drop
+                the .iso for a BDMV folder. Several inputs become one title each, with generated
+                index and navigation. Chapter marks are kept.
               </p>
               <div className="row" style={{ gap: 8 }}>
                 <button className="ghost" disabled={!authorOut || authorBusy}
@@ -1497,10 +1496,9 @@ export default function App() {
               Burn ISO to disc
             </button>
             <p className="hint" style={{ marginTop: 6 }}>
-              Writes {isoPath.split("/").pop() || "the ISO"} to{" "}
-              {optical[0] ? `/dev/r${optical[0].bsd_name}` : "a writer drive"}. Erases the disc;
-              no undo. Multi-title discs must be burned from their BDMV folder with another
-              tool for now.
+              Writes {isoPath.split("/").pop() || "the ISO"} with macOS's native{" "}
+              <span className="mono">hdiutil burn</span> (it picks the writer). Erases the disc;
+              no undo.
             </p>
             {burnProgress && (
               <div style={{ marginTop: 12 }}>

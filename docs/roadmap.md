@@ -161,6 +161,19 @@ consume a saved document directly.
   discs: macOS has no UDF 2.50 image writer (`hdiutil` caps at 1.50, `mkisofs`
   rejects `-udf-version 2.50`), so those stay folder-only.
 
+## Phase 17 - Multi-title ISO (native UDF 2.50) - done
+
+- macOS's `newfs_udf` creates a UDF 2.50 image with a metadata partition in a
+  plain (sparse) file, and `hdiutil` mounts it read-write. `author` now lays the
+  merged multi-title BDMV straight into that mount, so `--out disc.iso` works
+  for several inputs. `--split ... --out set.iso` writes `set/Disc1.iso`, ...
+- Verified with two test titles: the image mounts, `verify` reports two titles
+  and passes, and libbluray lists both.
+- Burning now prefers macOS's native `hdiutil burn`; an explicit `--device
+  /dev/rdiskN` selects growisofs instead.
+- What remains blocked is only authored menus (no Java runtime, no IG muxer or
+  player) and Cinavia (proprietary).
+
 ## Parity with DVDFab-class apps
 
 What the app covers today, against the ripping-suite feature set:
@@ -174,14 +187,14 @@ What the app covers today, against the ripping-suite feature set:
 | Rip: x264/x265/VideoToolbox encode | done |
 | TV/anime episode split with TMDB naming | done |
 | Decrypted ISO / folder export (`Copy`) | done |
-| Authoring: BDMV/ISO from finished files | done (single or multi-title) |
+| Authoring: BDMV/ISO from finished files | done (single or multi-title, native UDF 2.50) |
 | Disc menu parse, edit, save, apply | done |
 | Native AACS key derivation, BD+ VM | done |
 | Cover art | done |
 | DVD (`VIDEO_TS`) ripping | done (MPEG-2/AC-3/DTS copy, no menus) |
 | 1:1 encrypted disc clone | done |
 | BD-25 / BD-50 splitting | done (whole titles per disc) |
-| Burning to disc | partial: single-title ISO via growisofs (untested without a writer) |
+| Burning to disc | done (native hdiutil burn; untested without a writer) |
 | Cinavia detection/removal | not implemented |
 | UHD/AACS2 unit-key workflow | done (derived from Unit_Key_RO.inf with the VUK) |
 | Batch queue (one job at a time) | done |
@@ -205,10 +218,9 @@ remaining gaps, and each is blocked on something outside the codebase:
   BD-J API stubs plus a player to verify. There is no player here that renders
   HDMV IG, so this would ship unverified. The menu *documents* (parse/edit/save/
   apply) and multi-title authoring are the parts that are ready for it.
-- **Burning.** Single-title ISOs can be written (growisofs), but the write is
-  untested here because no writer drive is attached. Multi-title discs remain
-  folder-only: macOS has no Blu-ray-spec UDF 2.50 image writer (`hdiutil
-  makehybrid -udf` caps at 1.50; `mkisofs` rejects `-udf-version 2.50`).
+- **Burning.** Implemented with native `hdiutil burn` (growisofs when an
+  explicit device is given), but the write is untested here because no writer
+  drive is attached. Multi-title ISOs work via native UDF 2.50 (`newfs_udf`).
 - **Cinavia.** A proprietary audio watermark. There is no open detector or
   remover; "removal" would need the secret pattern and is legally fraught.
 - **Multi-title ISO.** The folder output is complete and verified; packaging it
