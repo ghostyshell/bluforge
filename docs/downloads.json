@@ -8,10 +8,10 @@
       "version": "0.1.0",
       "os": "macOS",
       "arch": "arm64",
-      "gofile": "https://gofile.io/d/jpvg2eIQ",
-      "kiwi": "https://file.kiwi/190e227d#TwlU1ABD94UoblcAj25yzg",
-      "size": "32.1 MiB",
-      "sha256": "58beb5e3487ab3a0d3773fe492ba437a49a39cded464628e2c52b577f907b077"
+      "gofile": "https://gofile.io/d/KEHf5oc4",
+      "kiwi": "https://file.kiwi/e3e4e955#_a1eillGrCT4YrPr6oBi6g",
+      "size": "34.7 MiB",
+      "sha256": "7c4023a801b542550c6e76ffe4abe8306a4b85b28908e424e1df42ea01fe055c"
     },
     {
       "label": "macOS (Intel)",
@@ -26,14 +26,14 @@
     },
     {
       "label": "macOS (Apple Silicon, CLI)",
-      "name": "keepsake-atelier-0.1.0-arm64.tar.gz",
+      "name": "keepsake-atelier-0.1.0-macos-arm64.tar.gz",
       "version": "0.1.0",
       "os": "macOS",
       "arch": "arm64",
-      "gofile": "https://gofile.io/d/vGEivkZG",
-      "kiwi": "https://file.kiwi/05d72adf#C3z0zZH3aXkfwb4QBQWQxg",
+      "gofile": "https://gofile.io/d/pt4ULjQ0",
+      "kiwi": "https://file.kiwi/036c919d#m2zJsHcGrZekARPlVIqtTQ",
       "size": "2.1 MiB",
-      "sha256": "f36aa2aa680c7a0e65064626ff96ca01926318785c9440fe9593c37412924f13"
+      "sha256": "b213213d5579415b472724bf036515a21f12308cc0616ffca863caedbecbc2eb"
     },
     {
       "label": "macOS (Intel, CLI)",
