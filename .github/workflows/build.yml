@@ -126,6 +126,7 @@ jobs:
           update: true
           install: >-
             mingw-w64-x86_64-gcc
+            zip
             mingw-w64-x86_64-libbluray
             mingw-w64-x86_64-libaacs
             mingw-w64-x86_64-libbdplus
