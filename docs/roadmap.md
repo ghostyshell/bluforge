@@ -1,0 +1,83 @@
+# Roadmap
+
+Where BluForge is, and what comes next. Status is honest: "done" means built,
+tested and used on a real disc.
+
+## Phase 1 - Disc access and inspection - done
+
+- Optical device discovery, mount handling, hot-plug recovery.
+- libbluray-backed inspection: titles, playlists, durations, chapters, streams,
+  clip boundaries (episode splits on TV discs).
+- Works against a mounted volume, a `BDMV` folder, an ISO, or `/dev/rdiskN`.
+
+## Phase 2 - Rip, remux, encode - done
+
+- Lossless remux (`-c copy`) or re-encode (x264/x265/videotoolbox).
+- MKV/MP4, audio/subtitle selection, chapter names from ChapterDB.
+- TV/anime mode: one file per episode, SxxExx naming, per-disc episode memory.
+- Output templates and metadata (TMDB, ChapterDB, posters, covers).
+
+## Phase 3 - Native AACS and BD+ - done
+
+- Disc key from `KEYDB.cfg`, unit keys, and a fully native key recovery path:
+  drive VID -> media key from the disc's own MKB with the KEYDB device keys ->
+  VUK.
+- Native VID acquisition over the drive's LibreDrive vendor `READ BUFFER`,
+  with no host certificate and no MakeMKV. Host-certificate auth remains as the
+  fallback for a non-LibreDrive drive.
+- BD+ VM data installation, so BD+ discs also decrypt without MakeMKV.
+- See `docs/decryption.md`.
+
+## Phase 4 - Export and authoring - done
+
+- Decrypted ISO or folder export.
+- Author a `BDMV`/ISO from finished MKV/MP4 files with chapters.
+
+## Phase 5 - Surfaces - partial
+
+- CLI for everything (`bluforge ...`).
+- Tauri desktop app for devices, disc inspection, rips, covers, settings.
+- MCP server exposing the core to agents.
+- Not done: the desktop app does not yet surface key recovery, ISO export,
+  authoring, or menu templates.
+
+## Phase 6 - Disc menu documents and templates - done (this change)
+
+Parse a disc's menu, edit it, save it as a template, apply it to another disc.
+
+- `BDMV/index.bdmv` navigation: first playback, top menu, and every title entry
+  (HDMV movie object or BD-J object name), with a self-validating entry stride
+  so both 12-byte and legacy layouts parse.
+- Playable titles from libbluray, joined with editable names, the main-feature
+  flag and chapter labels.
+- Templates under `~/Library/Application Support/bluforge/menus/`, applied to a
+  different disc by playlist id, then duration, then position.
+- CLI: `bluforge menu parse|list|show|edit|apply|remove`.
+- See `docs/menu-templates.md`.
+
+## Phase 7 - Menu documents in the desktop app - next
+
+- Browse a disc's menu in the UI, rename titles, flag the main feature, edit
+  chapter labels, and preview the applied result before saving.
+- Pick a saved template when starting a rip, so naming and episode mapping come
+  from the template instead of a re-lookup.
+
+## Phase 8 - Authored menus - future
+
+- Generate an HDMV menu (or a minimal BD-J menu) for discs built by
+  `bluforge author`: top menu, title selection, chapter selection, playback
+  commands.
+- Reuse a saved menu document as the input for that generator, so a menu
+  designed once can be emitted onto a new disc rather than only mapped onto it.
+
+## Phase 9 - AACS2 / UHD unit keys - future
+
+- Current native recovery derives the AACS1 media key and VUK. AACS2 discs need
+  the unit-key table; `bluforge keys` already stores and uses one when present.
+
+## Deliberately out of scope
+
+- BD-J Java parsing beyond object names. The JAR bytecode is a full Java
+  application; the menu *document* is the navigation table and the title list,
+  not the Java UI.
+- Writing to an original disc.

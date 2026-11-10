@@ -24,9 +24,13 @@ authoring with custom menus and burning.
 | TV / anime: per-episode split, SxxExx titles, OP/ED/preview chapters | ✅ |
 | Desktop UI (Tauri v2) | ✅ |
 | MCP server (all features as tools, localhost, off by default) | ✅ |
-| Blu-ray authoring + menus + burning | 🚧 |
+| Blu-ray authoring + burning | ✅ |
+| Disc menu documents (parse, edit, save, apply to another disc) | ✅ |
+| Authored menus (generate a menu for a disc you author) | 🚧 |
 | Self-update wiring (Tauri updater) | ✅ (needs a signed release) |
 | Windows / Linux | 🚧 (macOS first; non-macOS device layer stubbed) |
+
+Phases and what is next: [`docs/roadmap.md`](docs/roadmap.md).
 
 ## Architecture
 
@@ -35,6 +39,7 @@ core/           bluforge-core - framework-agnostic engine (Rust)
   device.rs       IOKit device enumeration, optical detection
   keys.rs         KEYDB.cfg fetch + store + validation
   disc.rs         libbluray FFI (titles, decrypted title streaming)
+  menu.rs         disc menu documents: index.bdmv navigation + editable templates
   bluray_shim.c   small C shim so Rust avoids libbluray struct layout churn
   rip.rs          ffmpeg orchestration (remux / encode) with progress
   iso.rs          decrypted ISO / backup-folder export
@@ -140,6 +145,26 @@ comes from TMDB; the rest comes from the disc (`{resolution}`, `{hdr}`,
 typo is visible, and empty ones collapse cleanly (`Title ()` -> `Title`). The UI
 lists every placeholder and previews the rendered path live, using the same
 renderer as the ripper.
+
+## Disc menus
+
+A disc's menu is parsed into a *menu document*: the navigation table from
+`BDMV/index.bdmv` (first playback, top menu, and each title's HDMV movie object
+or BD-J object name) plus the playable titles with their playlists, durations
+and chapters.
+
+```sh
+bluforge menu parse /Volumes/MY_DISC --save my-disc   # parse + save a template
+bluforge menu list                                     # saved templates
+bluforge menu edit my-disc --title 51 --name "Feature" --main
+bluforge menu apply my-disc /Volumes/OTHER_DISC        # reuse it elsewhere
+```
+
+Documents are JSON under `~/Library/Application Support/bluforge/menus/`, so
+they can also be edited by hand. Applying a template matches titles by playlist
+id, then duration, then position, and carries over the title names, the
+main-feature flag and chapter labels. The target disc keeps its own navigation
+objects. See [`docs/menu-templates.md`](docs/menu-templates.md).
 
 ## Cover art
 

@@ -312,6 +312,87 @@ fn run_tool(name: &str, args: Value) -> Result<Value, String> {
             serde_json::to_value(plan).map_err(|e| e.to_string())
         }
         "rip_start" => start_rip(args),
+        "menu_parse" => {
+            let source = resolve_source(&str_arg(&args, "source")?);
+            let doc = bluforge_core::menu::parse(Path::new(&source), Some(&keys::keydb_path()))
+                .map_err(|e| e.to_string())?;
+            if let Some(name) = args.get("save").and_then(|v| v.as_str()) {
+                bluforge_core::menu::save(&bluforge_core::menu::store_dir(), name, &doc)
+                    .map_err(|e| e.to_string())?;
+            }
+            serde_json::to_value(doc).map_err(|e| e.to_string())
+        }
+        "menu_list" => {
+            let dir = bluforge_core::menu::store_dir();
+            let menus: Vec<Value> = bluforge_core::menu::list(&dir)
+                .into_iter()
+                .map(|(name, path)| {
+                    let doc = bluforge_core::menu::load(&dir, &name).ok();
+                    json!({
+                        "name": name,
+                        "path": path.display().to_string(),
+                        "label": doc.as_ref().map(|d| d.label.clone()).unwrap_or_default(),
+                        "titles": doc.as_ref().map(|d| d.titles.len()).unwrap_or(0),
+                    })
+                })
+                .collect();
+            Ok(json!({ "dir": dir.display().to_string(), "menus": menus }))
+        }
+        "menu_show" => {
+            let name = str_arg(&args, "template")?;
+            let doc = bluforge_core::menu::load(&bluforge_core::menu::store_dir(), &name)
+                .map_err(|e| e.to_string())?;
+            serde_json::to_value(doc).map_err(|e| e.to_string())
+        }
+        "menu_edit" => {
+            let name = str_arg(&args, "template")?;
+            let dir = bluforge_core::menu::store_dir();
+            let mut doc = bluforge_core::menu::load(&dir, &name).map_err(|e| e.to_string())?;
+            let title = args
+                .get("title")
+                .and_then(|v| v.as_u64())
+                .ok_or("missing integer argument `title`")? as u32;
+            if args.get("main").and_then(|v| v.as_bool()).unwrap_or(false) {
+                doc.set_main(title).map_err(|e| e.to_string())?;
+            }
+            if let Some(new_name) = args.get("name").and_then(|v| v.as_str()) {
+                doc.set_name(title, new_name).map_err(|e| e.to_string())?;
+            }
+            if let Some(chapters) = args.get("chapters").and_then(|v| v.as_array()) {
+                for c in chapters {
+                    let spec = c
+                        .as_str()
+                        .ok_or("`chapters` entries must be strings like \"2:Name\"")?;
+                    let (n, text) =
+                        bluforge_core::menu::parse_chapter_spec(spec).map_err(|e| e.to_string())?;
+                    doc.set_chapter(title, n, &text)
+                        .map_err(|e| e.to_string())?;
+                }
+            }
+            bluforge_core::menu::save(&dir, &name, &doc).map_err(|e| e.to_string())?;
+            serde_json::to_value(doc).map_err(|e| e.to_string())
+        }
+        "menu_apply" => {
+            let name = str_arg(&args, "template")?;
+            let target = resolve_source(&str_arg(&args, "target")?);
+            let dir = bluforge_core::menu::store_dir();
+            let tpl = bluforge_core::menu::load(&dir, &name).map_err(|e| e.to_string())?;
+            let target_doc =
+                bluforge_core::menu::parse(Path::new(&target), Some(&keys::keydb_path()))
+                    .map_err(|e| e.to_string())?;
+            let save = args.get("save").and_then(|v| v.as_str());
+            let doc = bluforge_core::menu::apply(&tpl, &target_doc, save.unwrap_or(&name));
+            if let Some(save) = save {
+                bluforge_core::menu::save(&dir, save, &doc).map_err(|e| e.to_string())?;
+            }
+            serde_json::to_value(doc).map_err(|e| e.to_string())
+        }
+        "menu_remove" => {
+            let name = str_arg(&args, "template")?;
+            let path = bluforge_core::menu::remove(&bluforge_core::menu::store_dir(), &name)
+                .map_err(|e| e.to_string())?;
+            Ok(json!({ "removed": path.display().to_string() }))
+        }
         "author_start" => start_author(args),
         "iso_start" => start_iso(args),
         "job_status" => {
@@ -900,6 +981,53 @@ fn tools() -> Vec<Value> {
                 "series": { "type": "string", "description": "Series name override for the TMDB lookup." },
                 "start": { "type": "integer", "description": "First episode number on this disc (overrides the remembered mapping)." }
             }, "required": ["source"] }
+        }),
+        json!({
+            "name": "menu_parse",
+            "description": "Parse a disc's menu (index.bdmv navigation + titles) into an editable document. Optionally save it as a template.",
+            "inputSchema": { "type": "object", "properties": {
+                "source": src("Disc to parse."),
+                "save": { "type": "string", "description": "Save the document as a template with this name." }
+            }, "required": ["source"] }
+        }),
+        json!({
+            "name": "menu_list",
+            "description": "List saved disc-menu templates.",
+            "inputSchema": { "type": "object", "properties": {} }
+        }),
+        json!({
+            "name": "menu_show",
+            "description": "Show one saved menu template (or a JSON document path).",
+            "inputSchema": { "type": "object", "properties": {
+                "template": { "type": "string", "description": "Template name or .json path." }
+            }, "required": ["template"] }
+        }),
+        json!({
+            "name": "menu_edit",
+            "description": "Edit a saved menu template in place: rename a title, mark it as the main feature, or set chapter labels.",
+            "inputSchema": { "type": "object", "properties": {
+                "template": { "type": "string" },
+                "title": { "type": "integer", "description": "Title index." },
+                "name": { "type": "string", "description": "New display name." },
+                "main": { "type": "boolean", "description": "Make this the single main feature." },
+                "chapters": { "type": "array", "items": { "type": "string" }, "description": "Chapter labels as \"N:Text\", 1-based." }
+            }, "required": ["template", "title"] }
+        }),
+        json!({
+            "name": "menu_apply",
+            "description": "Apply a saved menu template to a different disc, matching titles by playlist then duration. Optionally save the result.",
+            "inputSchema": { "type": "object", "properties": {
+                "template": { "type": "string" },
+                "target": src("Disc to apply it to."),
+                "save": { "type": "string", "description": "Save the result as a template with this name." }
+            }, "required": ["template", "target"] }
+        }),
+        json!({
+            "name": "menu_remove",
+            "description": "Delete a saved menu template.",
+            "inputSchema": { "type": "object", "properties": {
+                "template": { "type": "string" }
+            }, "required": ["template"] }
         }),
         json!({
             "name": "rip_start",

@@ -174,6 +174,62 @@ enum Cmd {
     },
     /// Show effective configuration and paths.
     Config,
+    /// Parse, edit and save a disc's title menu as a reusable template.
+    Menu {
+        #[command(subcommand)]
+        action: MenuAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum MenuAction {
+    /// Parse a disc menu: index.bdmv navigation plus the playable titles.
+    Parse {
+        /// Mounted volume or BDMV folder (an ISO must be mounted first).
+        source: std::path::PathBuf,
+        /// Save the parsed document as a template with this name.
+        #[arg(long)]
+        save: Option<String>,
+    },
+    /// List saved menu templates.
+    List,
+    /// Show a saved menu template (or a JSON document path).
+    Show {
+        /// Template name, or a path to a `.json` document.
+        template: String,
+    },
+    /// Edit a saved template in place.
+    Edit {
+        /// Template name, or a path to a `.json` document.
+        template: String,
+        /// Title index to edit (as shown by `menu show`).
+        #[arg(long)]
+        title: u32,
+        /// New display name for that title.
+        #[arg(long)]
+        name: Option<String>,
+        /// Mark that title as the main feature (clears the flag on the others).
+        #[arg(long)]
+        main: bool,
+        /// Chapter label as `N:Text`, 1-based, repeatable.
+        #[arg(long = "chapter")]
+        chapters: Vec<String>,
+    },
+    /// Apply a saved template to a different disc.
+    Apply {
+        /// Template name, or a path to a `.json` document.
+        template: String,
+        /// Mounted volume or BDMV folder of the target disc.
+        target: std::path::PathBuf,
+        /// Save the result as a new template.
+        #[arg(long)]
+        save: Option<String>,
+    },
+    /// Delete a saved template.
+    Remove {
+        /// Template name.
+        template: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -322,6 +378,62 @@ fn resolve_source(p: &std::path::Path) -> std::path::PathBuf {
         }
     }
     p.to_path_buf()
+}
+
+fn nav_label(t: &bluforge_core::menu::NavTarget) -> String {
+    use bluforge_core::menu::NavType;
+    let kind = match t.kind {
+        NavType::Hdmv => "HDMV",
+        NavType::Bdj => "BD-J",
+        NavType::None => "none",
+        NavType::Unknown => "unknown",
+    };
+    match (&t.name, t.object) {
+        (Some(name), _) => format!("{kind} {name}"),
+        (_, Some(object)) => format!("{kind} object {object}"),
+        _ => kind.to_string(),
+    }
+}
+
+fn menu_clock(secs: f64) -> String {
+    let s = secs.max(0.0).round() as u64;
+    format!("{:02}:{:02}:{:02}", s / 3600, (s % 3600) / 60, s % 60)
+}
+
+fn print_menu(doc: &bluforge_core::menu::DiscMenu) {
+    println!("disc      : {}", doc.label);
+    if let Some(id) = &doc.disc_id {
+        println!("disc id   : 0x{id}");
+    }
+    if let Some(src) = &doc.source {
+        println!("source    : {src}");
+    }
+    if let Some(applied) = &doc.applied_from {
+        println!("applied   : {applied}");
+    }
+    if let Some(nav) = &doc.navigation {
+        println!(
+            "first play: {}   top menu: {}   nav titles: {}",
+            nav_label(&nav.first_playback),
+            nav_label(&nav.top_menu),
+            nav.titles.len()
+        );
+    }
+    if let Some(note) = &doc.note {
+        println!("note      : {note}");
+    }
+    println!("titles    : {}", doc.titles.len());
+    for t in &doc.titles {
+        println!(
+            "  #{:<3} playlist {:05}  {:>8}  {:>2} ch  {}{}",
+            t.index,
+            t.playlist,
+            menu_clock(t.duration_secs),
+            t.chapters,
+            if t.main { "[main] " } else { "" },
+            t.name.as_deref().unwrap_or("")
+        );
+    }
 }
 
 fn main() {
@@ -1105,6 +1217,143 @@ fn run(cli: &Cli) -> Result<(), bluforge_core::CoreError> {
                 println!("auto update: {}", cfg.auto_check_updates);
             }
         }
+        Cmd::Menu { action } => match action {
+            MenuAction::Parse { source, save } => {
+                let doc = bluforge_core::menu::parse(source, Some(&keys::keydb_path()))?;
+                if let Some(name) = save {
+                    let path =
+                        bluforge_core::menu::save(&bluforge_core::menu::store_dir(), name, &doc)?;
+                    eprintln!("saved template {}", path.display());
+                }
+                if cli.json {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&doc)
+                            .map_err(|e| bluforge_core::CoreError::Config(e.to_string()))?
+                    );
+                } else {
+                    print_menu(&doc);
+                }
+            }
+            MenuAction::List => {
+                let entries = bluforge_core::menu::list(&bluforge_core::menu::store_dir());
+                if cli.json {
+                    let rows: Vec<_> = entries
+                        .iter()
+                        .map(|(name, path)| {
+                            let doc =
+                                bluforge_core::menu::load(&bluforge_core::menu::store_dir(), name)
+                                    .ok();
+                            serde_json::json!({
+                                "name": name,
+                                "path": path.display().to_string(),
+                                "label": doc.as_ref().map(|d| d.label.clone()).unwrap_or_default(),
+                                "titles": doc.as_ref().map(|d| d.titles.len()).unwrap_or(0),
+                            })
+                        })
+                        .collect();
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&rows)
+                            .map_err(|e| bluforge_core::CoreError::Config(e.to_string()))?
+                    );
+                } else if entries.is_empty() {
+                    println!(
+                        "no saved menus in {}",
+                        bluforge_core::menu::store_dir().display()
+                    );
+                } else {
+                    for (name, path) in entries {
+                        match bluforge_core::menu::load(&bluforge_core::menu::store_dir(), &name) {
+                            Ok(doc) => println!(
+                                "{:<28} {:>3} titles  {}  ({})",
+                                name,
+                                doc.titles.len(),
+                                doc.label,
+                                path.display()
+                            ),
+                            Err(e) => println!("{name:<28} (unreadable: {e})"),
+                        }
+                    }
+                }
+            }
+            MenuAction::Show { template } => {
+                let dir = bluforge_core::menu::store_dir();
+                let doc = bluforge_core::menu::load(&dir, template)?;
+                if cli.json {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&doc)
+                            .map_err(|e| bluforge_core::CoreError::Config(e.to_string()))?
+                    );
+                } else {
+                    print_menu(&doc);
+                }
+            }
+            MenuAction::Edit {
+                template,
+                title,
+                name,
+                main,
+                chapters,
+            } => {
+                let dir = bluforge_core::menu::store_dir();
+                let mut doc = bluforge_core::menu::load(&dir, template)?;
+                let idx = *title;
+                if *main {
+                    doc.set_main(idx)?;
+                }
+                if let Some(name) = name {
+                    doc.set_name(idx, name)?;
+                }
+                for spec in chapters {
+                    let (n, text) = bluforge_core::menu::parse_chapter_spec(spec)?;
+                    doc.set_chapter(idx, n, &text)?;
+                }
+                let path = bluforge_core::menu::save(&dir, template, &doc)?;
+                if cli.json {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&doc)
+                            .map_err(|e| bluforge_core::CoreError::Config(e.to_string()))?
+                    );
+                } else {
+                    eprintln!("updated {}", path.display());
+                    print_menu(&doc);
+                }
+            }
+            MenuAction::Apply {
+                template,
+                target,
+                save,
+            } => {
+                let dir = bluforge_core::menu::store_dir();
+                let tpl = bluforge_core::menu::load(&dir, template)?;
+                let target_doc = bluforge_core::menu::parse(target, Some(&keys::keydb_path()))?;
+                let name = save
+                    .clone()
+                    .unwrap_or_else(|| format!("{template} on target"));
+                let doc = bluforge_core::menu::apply(&tpl, &target_doc, &name);
+                if let Some(save) = save {
+                    let path = bluforge_core::menu::save(&dir, save, &doc)?;
+                    eprintln!("saved template {}", path.display());
+                }
+                if cli.json {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&doc)
+                            .map_err(|e| bluforge_core::CoreError::Config(e.to_string()))?
+                    );
+                } else {
+                    print_menu(&doc);
+                }
+            }
+            MenuAction::Remove { template } => {
+                let path =
+                    bluforge_core::menu::remove(&bluforge_core::menu::store_dir(), template)?;
+                println!("removed {}", path.display());
+            }
+        },
     }
     Ok(())
 }

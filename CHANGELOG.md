@@ -13,6 +13,13 @@ All notable changes to BluForge. Newest first.
 
 ### Added
 
+- **Disc menu documents** (`bluforge menu`): parse a disc's menu into an
+  editable JSON document, save it as a named template, and apply it to a
+  different disc. The document holds the `BDMV/index.bdmv` navigation table
+  (first playback, top menu, HDMV movie objects and BD-J object names) and the
+  playable titles with editable names, main-feature flag and chapter labels.
+  `apply` matches by playlist id, then duration, then position. See
+  `docs/menu-templates.md`; the roadmap is in `docs/roadmap.md`.
 - **Native VID acquisition, no certificate and no MakeMKV.** A LibreDrive drive
   (this BU40N) decrypts the AACS volume id in its own firmware and serves it over
   vendor `READ BUFFER (0x3c)` buffer id `0x4410`: a 36-byte record
