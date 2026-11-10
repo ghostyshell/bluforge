@@ -82,25 +82,31 @@ if [ -n "$ARTIFACTS" ]; then
   DMG_SRC=""
   log "using existing artifacts: ${FILES[*]}"
 else
-  log "building the DMG"
+  log "building the app"
   rm -f "$DIST"/*.dmg "$DIST"/*.tar.gz
-  ( cd app && npx tauri build --bundles dmg \
+  ( cd app && npx tauri build --bundles app \
       --config '{"bundle":{"createUpdaterArtifacts":false}}' ) \
     >> "$RUN/build.log" 2>&1 || die "tauri build failed - see $RUN/build.log"
+
+  APP=$(ls -d "$REPO"/target/release/bundle/macos/*.app 2>/dev/null | head -1)
+  [ -n "$APP" ] || die "the build did not produce an app bundle"
+  "$REPO/scripts/bundle-app.sh" "$APP" >> "$RUN/build.log" 2>&1 \
+    || die "dylib bundling failed - see $RUN/build.log"
 
   log "building the CLI"
   cargo build --release -p keepsake-atelier >> "$RUN/build.log" 2>&1 \
     || die "cargo build failed - see $RUN/build.log"
 
-  DMG_SRC=$(ls "$REPO"/target/release/bundle/dmg/*.dmg 2>/dev/null | head -1)
-  [ -n "$DMG_SRC" ] || die "the build did not produce a DMG"
   DMG_NAME="Keepsake-Atelier-${V}-arm64.dmg"
   CLI_NAME="keepsake-atelier-${V}-macos-arm64.tar.gz"
 
-  cp "$DMG_SRC" "$DIST/$DMG_NAME"
+  hdiutil create -volname "Keepsake Atelier" -srcfolder "$APP" \
+    -ov -format UDZO "$DIST/$DMG_NAME" >> "$RUN/build.log" 2>&1 \
+    || die "hdiutil create failed - see $RUN/build.log"
   tar -czf "$DIST/$CLI_NAME" -C "$REPO/target/release" keepsake-atelier
 
   FILES=("$DMG_NAME" "$CLI_NAME")
+  DMG_SRC=""
   log "built: ${FILES[*]}"
 fi
 
