@@ -399,6 +399,18 @@ pub fn load(dir: &Path, name_or_path: &str) -> Result<DiscMenu, CoreError> {
     serde_json::from_str(&text).map_err(|e| CoreError::Config(format!("{}: {e}", path.display())))
 }
 
+/// The saved template whose document was parsed from this disc id.
+pub fn find_by_disc_id(dir: &Path, disc_id: &str) -> Option<(String, DiscMenu)> {
+    for (name, _) in list(dir) {
+        if let Ok(doc) = load(dir, &name) {
+            if doc.disc_id.as_deref() == Some(disc_id) {
+                return Some((name, doc));
+            }
+        }
+    }
+    None
+}
+
 /// Saved templates as `(name, path)`, sorted by name.
 pub fn list(dir: &Path) -> Vec<(String, PathBuf)> {
     let Ok(rd) = std::fs::read_dir(dir) else {
@@ -620,6 +632,22 @@ mod tests {
         assert!(parse_chapter_spec("0:x").is_err());
         assert!(parse_chapter_spec("nope").is_err());
         assert!(d.set_main(9).is_err());
+    }
+
+    #[test]
+    fn finds_a_template_by_disc_id() {
+        let dir = std::env::temp_dir().join(format!("keepsake-menu-find-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut one = doc("A", &[(800, 10.0)]);
+        one.disc_id = Some("abc".into());
+        save(&dir, "one", &one).unwrap();
+        let mut two = doc("B", &[]);
+        two.disc_id = Some("def".into());
+        save(&dir, "two", &two).unwrap();
+
+        assert_eq!(find_by_disc_id(&dir, "abc").expect("found").0, "one");
+        assert!(find_by_disc_id(&dir, "zzz").is_none());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

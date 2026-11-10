@@ -1395,6 +1395,22 @@ fn parse_progress(line: &str, p: &mut RipProgress) {
 }
 
 /// Tidy a disc name into something a metadata site will match.
+/// Split a trailing `(1967)` or `[1967]` from a menu title.
+fn split_year(s: &str) -> (&str, Option<String>) {
+    let t = s.trim();
+    for (open, close) in [('(', ')'), ('[', ']')] {
+        if t.ends_with(close) {
+            if let Some(i) = t.rfind(open) {
+                let inner = &t[i + 1..t.len() - 1];
+                if inner.len() == 4 && inner.chars().all(|c| c.is_ascii_digit()) {
+                    return (t[..i].trim(), Some(inner.to_string()));
+                }
+            }
+        }
+    }
+    (t, None)
+}
+
 fn clean_movie_name(s: &str, fallback: &str) -> String {
     let mut t = s.replace('_', " ").trim().to_string();
     for suf in [" - Blu-ray", " (Blu-ray)", " Blu-ray", " - BluRay"] {
@@ -1536,7 +1552,35 @@ where
         }
     };
     let disc_name = clean_movie_name(&info.name, "Blu-ray");
-    let movie_query = clean_movie_name(req.movie.as_deref().unwrap_or(&info.name), "Blu-ray");
+    // A saved menu document for this disc supplies the title name and chapter
+    // labels, so editing a template actually changes the next rip.
+    let menu_doc = disc_id
+        .as_deref()
+        .and_then(|id| crate::menu::find_by_disc_id(&crate::menu::store_dir(), id))
+        .map(|(_, doc)| doc);
+    let menu_title = menu_doc
+        .as_ref()
+        .and_then(|d| d.titles.iter().find(|t| t.index == title));
+    let menu_name = menu_title
+        .and_then(|t| t.name.as_deref())
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    let (menu_base, menu_year) = match menu_name {
+        Some(n) => {
+            let (base, year) = split_year(n);
+            (base.to_string(), year)
+        }
+        None => (String::new(), None),
+    };
+    if menu_doc.is_some() {
+        tracing::info!(title, name = ?menu_name, "using saved menu template");
+    }
+    let query_src = req
+        .movie
+        .as_deref()
+        .or((!menu_base.is_empty()).then_some(menu_base.as_str()))
+        .unwrap_or(&info.name);
+    let movie_query = clean_movie_name(query_src, "Blu-ray");
 
     let mut ctx = TrackCtx {
         streams: disc.streams(title).unwrap_or_default(),
@@ -1564,7 +1608,10 @@ where
     let movie = tmdb
         .as_ref()
         .map(|m| m.title.clone())
+        .or_else(|| req.movie.clone())
+        .or_else(|| (!menu_base.is_empty()).then(|| menu_base.clone()))
         .unwrap_or_else(|| movie_query.clone());
+    let year = tmdb.as_ref().and_then(|m| m.year.clone()).or(menu_year);
 
     let marks = disc.chapters(title).unwrap_or_default();
     let audio_stream = ctx
@@ -1574,7 +1621,7 @@ where
     let vars = template::Vars::build(
         &disc_name,
         &movie,
-        tmdb.as_ref().and_then(|m| m.year.as_deref()),
+        year.as_deref(),
         tmdb.as_ref().map(|m| m.tmdb_id),
         title_info.and_then(|t| t.resolution.as_deref()),
         title_info.and_then(|t| t.dynamic_range.as_deref()),
@@ -1631,9 +1678,14 @@ where
 
     let marker = ctx.dest.with_extension("chapters.ffmeta");
     if req.chapters && !marks.is_empty() {
-        let names = metadata::chapter_names(&movie, runtime_secs, marks.len())
-            .unwrap_or(None)
-            .unwrap_or_default();
+        let names = match menu_title
+            .filter(|t| !t.chapter_names.is_empty() && t.chapter_names.len() == marks.len())
+        {
+            Some(t) => t.chapter_names.clone(),
+            None => metadata::chapter_names(&movie, runtime_secs, marks.len())
+                .unwrap_or(None)
+                .unwrap_or_default(),
+        };
         tracing::info!(marks = marks.len(), names = names.len(), %movie, "chapters");
         write_chapters(&marks, &names, total_ms, &marker)?;
         ctx.chapters_file = Some(marker.clone());
@@ -1824,6 +1876,21 @@ mod tests {
     fn dispo<'a>(meta: &'a [String], spec: &str) -> &'a str {
         let i = meta.iter().position(|m| m == spec).expect("spec present");
         &meta[i + 1]
+    }
+
+    #[test]
+    fn splits_a_trailing_year_from_a_menu_title() {
+        assert_eq!(
+            split_year("The Jungle Book (1967)"),
+            ("The Jungle Book", Some("1967".into()))
+        );
+        assert_eq!(split_year("Movie [2001]"), ("Movie", Some("2001".into())));
+        assert_eq!(split_year("No Year"), ("No Year", None));
+        assert_eq!(
+            split_year("  Se7en (1995)  "),
+            ("Se7en", Some("1995".into()))
+        );
+        assert_eq!(split_year("Year (99)"), ("Year (99)", None));
     }
 
     #[test]

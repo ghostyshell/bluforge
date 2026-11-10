@@ -26,6 +26,10 @@ All notable changes to Keepsake Atelier. Newest first.
 
 ### Added
 
+- **Menu templates feed the rip:** when a saved template's disc id matches the
+  source, the selected title's name becomes `{title}` (a trailing `(1967)` is
+  split off as `{year}`), and its chapter labels replace the ChapterDB names
+  when the counts match. Editing a template now changes the next rip.
 - **AACS2/UHD unit-key workflow:** `keepsake-atelier keys show [--disc|--from]
   [--json]` prints a disc's KEYDB entry including unit keys, and the app's keys
   panel shows the VUK/unit-key state with an editor that saves the `U` table.

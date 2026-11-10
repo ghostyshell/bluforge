@@ -62,6 +62,8 @@ Parse a disc's menu, edit it, save it as a template, apply it to another disc.
 - The same panel lists saved templates and shows what a parse could not read.
 - Also surfaced alongside it: native key derivation for the inserted disc, BD+
   VM installation, and the per-title stream list.
+- A saved template whose disc id matches the rip source now supplies the title
+  name, year and chapter labels for that rip.
 
 ## Phase 8 - Batch queue - done
 

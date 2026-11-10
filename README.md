@@ -173,7 +173,12 @@ Documents are JSON under `~/Library/Application Support/keepsake-atelier/menus/`
 they can also be edited by hand. Applying a template matches titles by playlist
 id, then duration, then position, and carries over the title names, the
 main-feature flag and chapter labels. The target disc keeps its own navigation
-objects. See [`docs/menu-templates.md`](docs/menu-templates.md).
+objects.
+
+A saved template whose disc id matches the inserted disc is used when ripping:
+the selected title's name feeds `{title}` (and the TMDB query, with a trailing
+`(1967)` split off as the year), and its chapter labels replace the ChapterDB
+ones when the counts agree. See [`docs/menu-templates.md`](docs/menu-templates.md).
 
 ## Cover art
 

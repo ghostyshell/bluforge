@@ -94,6 +94,20 @@ keepsake-atelier menu remove my-disc
 `show`, `edit` and `apply` accept either a template name or a path to a `.json`
 document, so a hand-authored or exported document works the same way.
 
+## Templates drive the rip
+
+When a saved template's `disc_id` matches the disc being ripped, `rip` uses it
+automatically:
+
+- the selected title's `name` becomes `{title}` in the output path, even when
+  TMDB has no match; a trailing `(1967)` or `[1967]` is split off and used as
+  `{year}` (TMDB's year wins when it has one);
+- its `chapter_names` replace the ChapterDB names when the count matches the
+  disc's chapter marks.
+
+So renaming a title in the menu panel changes the next rip's filename and
+metadata, no re-parse needed.
+
 ## How `apply` matches titles
 
 For each template title, in order:
