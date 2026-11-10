@@ -34,7 +34,7 @@ jobs:
           cache-dependency-path: app/package-lock.json
       - name: Build ffmpeg
         run: |
-          brew install nasm meson
+          brew install nasm meson libbluray libaacs libbdplus
           scripts/build-ffmpeg.sh
       - name: Build app
         working-directory: app
@@ -70,7 +70,7 @@ jobs:
           cache-dependency-path: app/package-lock.json
       - name: Build ffmpeg
         run: |
-          brew install nasm meson
+          brew install nasm meson libbluray libaacs libbdplus
           scripts/build-ffmpeg.sh
       - name: Build app
         working-directory: app

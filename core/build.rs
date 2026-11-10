@@ -1,4 +1,5 @@
 use std::env;
+use std::path::Path;
 
 fn main() {
     println!("cargo:rerun-if-changed=src/bluray_shim.c");
@@ -10,7 +11,13 @@ fn main() {
 
     // Try to locate libbluray (with libaacs/libbdplus as its runtime deps).
     let probe = if target_os == "macos" {
-        let prefix = env::var("BLURAY_PREFIX").unwrap_or_else(|_| "/opt/homebrew".into());
+        let prefix = env::var("BLURAY_PREFIX").unwrap_or_else(|_| {
+            if Path::new("/opt/homebrew/include/libbluray").is_dir() {
+                "/opt/homebrew".into()
+            } else {
+                "/usr/local".into()
+            }
+        });
         Ok::<(Vec<String>, Vec<String>, Vec<String>), std::io::Error>((
             vec![format!("{prefix}/include")],
             vec![format!("{prefix}/lib")],
