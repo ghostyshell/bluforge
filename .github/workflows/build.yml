@@ -150,13 +150,16 @@ jobs:
           mkdir -p dist
           cp target/x86_64-pc-windows-gnu/release/keepsake-atelier.exe dist/
           if command -v ntldd >/dev/null 2>&1; then
-            ntldd -R target/x86_64-pc-windows-gnu/release/keepsake-atelier.exe \
-              | awk '{print $3}' | while read -r dll; do
-                  case "$dll" in
-                    *mingw64/bin/*|*mingw64\\bin\\*)
-                      [ -f "$dll" ] && cp -n "$dll" dist/ ;;
-                  esac
-                done
+            ntldd -R target/x86_64-pc-windows-gnu/release/keepsake-atelier.exe > /tmp/ntldd.txt 2>&1 || true
+            head -20 /tmp/ntldd.txt
+            awk '{ if ($2 == "=>") print $3; else if ($1 ~ /mingw64/) print $1 }' /tmp/ntldd.txt |
+            while read -r dll; do
+              unix=$(cygpath -u "$dll" 2>/dev/null || true)
+              case "$unix" in
+                *mingw64*)
+                  [ -f "$unix" ] && cp -n "$unix" dist/ ;;
+              esac
+            done
           fi
           cd dist && zip -9 "keepsake-atelier-${V}-windows-x64.zip" *
           ls -lh
