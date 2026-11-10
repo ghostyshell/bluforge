@@ -180,6 +180,70 @@ export type IsoProgress = {
   message: string;
 };
 
+export type NavKind = "none" | "hdmv" | "bdj" | "unknown";
+
+export type NavTarget = {
+  kind: NavKind;
+  object?: number;
+  name?: string;
+};
+
+export type NavIndex = {
+  first_playback: NavTarget;
+  top_menu: NavTarget;
+  titles: NavTarget[];
+};
+
+export type MenuTitle = {
+  index: number;
+  playlist: number;
+  duration_secs: number;
+  chapters: number;
+  name?: string;
+  main: boolean;
+  chapter_names?: string[];
+  resolution?: string | null;
+  audio_streams?: number | null;
+};
+
+export type DiscMenu = {
+  version: number;
+  label: string;
+  disc_id?: string | null;
+  source?: string | null;
+  applied_from?: string | null;
+  note?: string | null;
+  navigation?: NavIndex | null;
+  titles: MenuTitle[];
+};
+
+export type MenuEntry = {
+  name: string;
+  path: string;
+  label: string;
+  titles: number;
+};
+
+export type NativeKeyResult = {
+  key: {
+    id: string;
+    name: string;
+    vid: string;
+    media_key: string;
+    vuk: string;
+  };
+  added: boolean;
+};
+
+export type StreamInfo = {
+  kind: string;
+  lang: string | null;
+  coding_type: number;
+  format: number;
+  rate: number;
+  pid: number;
+};
+
 export const api = {
   snapshot: () => invoke<Snapshot>("snapshot"),
   keysStatus: () => invoke<KeyDbStatus>("keys_status"),
@@ -248,4 +312,17 @@ export const api = {
     >("save_covers", { destDir, stem, items }),
   tmdbLookup: (movie: string, runtimeSecs: number) =>
     invoke<MovieHit | null>("tmdb_lookup", { movie, runtimeSecs }),
+  menuParse: (source: string) => invoke<DiscMenu>("menu_parse", { source }),
+  menuList: () => invoke<MenuEntry[]>("menu_list"),
+  menuLoad: (template: string) => invoke<DiscMenu>("menu_load", { template }),
+  menuSave: (template: string, doc: DiscMenu) =>
+    invoke<string>("menu_save", { template, doc }),
+  menuApply: (template: string, target: string, save: string | null) =>
+    invoke<DiscMenu>("menu_apply", { template, target, save }),
+  menuRemove: (template: string) => invoke<string>("menu_remove", { template }),
+  keysNative: (source: string | null) =>
+    invoke<NativeKeyResult>("keys_native", { source }),
+  bdplusInstall: () => invoke<string>("bdplus_install"),
+  discStreams: (path: string, title: number) =>
+    invoke<StreamInfo[]>("disc_streams", { path, title }),
 };

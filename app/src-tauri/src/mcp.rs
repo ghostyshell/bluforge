@@ -236,7 +236,7 @@ fn dispatch(body: &[u8]) -> Option<Value> {
             "protocolVersion": PROTOCOL,
             "capabilities": { "tools": { "listChanged": false } },
             "serverInfo": { "name": SERVER_NAME, "version": SERVER_VERSION },
-            "instructions": "BluForge: inspect a Blu-ray, plan TV episodes, rip, export a decrypted ISO, fetch covers. Long jobs return an id; poll job_status."
+            "instructions": "Keepsake Atelier: inspect a Blu-ray, plan TV episodes, rip, export a decrypted ISO, fetch covers. Long jobs return an id; poll job_status."
         })),
         "ping" => Ok(json!({})),
         "tools/list" => Ok(json!({ "tools": tools() })),

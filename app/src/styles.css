@@ -58,9 +58,8 @@ html[data-os="mac"] .header { padding-top: 34px; padding-bottom: 10px; }
 .header .brand { display: flex; align-items: center; gap: 10px; font-weight: 650; letter-spacing: .2px; }
 .header .logo {
   width: 26px; height: 26px; border-radius: 7px;
-  background: linear-gradient(145deg, #8aa2ff, #5566ff);
-  box-shadow: 0 4px 14px rgba(109,139,255,.45), inset 0 1px 0 rgba(255,255,255,.3);
-  display: grid; place-items: center; font-size: 14px;
+  object-fit: cover; display: block;
+  box-shadow: 0 4px 14px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.18);
 }
 .header .spacer { flex: 1; }
 .header .ver { color: var(--text-faint); font-size: 12px; }

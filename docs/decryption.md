@@ -1,6 +1,6 @@
 # Decryption notes (AACS / BD+)
 
-How BluForge decrypts, what is still not built, and the traps seen in practice.
+How Keepsake Atelier decrypts, what is still not built, and the traps seen in practice.
 Keep this in sync with `core/src/disc.rs` and `core/src/keys.rs`.
 
 ## The problem splits in two
@@ -14,14 +14,14 @@ AACS has two independent halves:
    The VUK yields unit/title keys that drive AES-128-CBC over 6144-byte units
    (first 16 bytes clear, address-derived IV). Standard published math.
 
-BluForge does both:
+Keepsake Atelier does both:
 1. through the drive's **LibreDrive vendor read**, which returns the already
    decrypted VID with no certificate and no `SEND KEY`/`REPORT KEY`
    (see "The VID, solved natively" below), with host-certificate
    authentication as the fallback for a drive that is not LibreDrive-enabled;
 2. through libaacs, driven by the local `KEYDB.cfg`.
 
-## How BluForge decrypts today
+## How Keepsake Atelier decrypts today
 
 - **Native libaacs is the default** backend. It reads the disc's VUK and unit
   key from `KEYDB.cfg` and never touches the drive's MMC, so role 1 is moot for a

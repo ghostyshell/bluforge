@@ -1,8 +1,10 @@
-# BluForge
+# Keepsake Atelier
 
 A cross-platform desktop app for **ripping Blu-rays** and everything around them:
 decrypted ISOs, MKV/MP4 remuxes, CPU- and GPU-encoded output, plus (later) Blu-ray
 authoring with custom menus and burning.
+
+The engine, CLI binary and crate names are still `bluforge`.
 
 > **Iteration 1 (this)**: ripping first. Decrypted title streaming, lossless remux
 > and re-encode, automatic AACS key refresh, and a desktop UI.

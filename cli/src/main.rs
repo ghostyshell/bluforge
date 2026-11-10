@@ -6,7 +6,7 @@ use bluforge_core::{device, keys, AppConfig};
 #[command(
     name = "bluforge",
     version,
-    about = "BluForge — Blu-ray ripping & authoring"
+    about = "Keepsake Atelier - Blu-ray ripping & authoring"
 )]
 struct Cli {
     /// Emit machine-readable JSON.

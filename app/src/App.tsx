@@ -11,9 +11,12 @@ import {
   type RipMode,
   type RipProgress,
   type Snapshot,
+  type StreamInfo,
   type SubSel,
   type Title,
 } from "./api";
+import { Menus } from "./Menus";
+import logo from "./assets/logo.png";
 
 type CoverRole = "cover" | "poster" | "disc";
 
@@ -58,6 +61,16 @@ function fmtBytes(n: number): string {
   while (v >= 1000 && i < u.length - 1) { v /= 1000; i++; }
   return `${v.toFixed(i === 0 ? 0 : 2)} ${u[i]}`;
 }
+function streamCodec(s: StreamInfo): string {
+  const t = s.coding_type;
+  const map: Record<number, string> =
+    s.kind === "video"
+      ? { 0x01: "MPEG-1", 0x02: "MPEG-2", 0x1b: "H.264", 0x24: "HEVC", 0xea: "VC-1" }
+      : s.kind === "audio"
+        ? { 0x80: "LPCM", 0x81: "AC3", 0x82: "DTS", 0x83: "TrueHD", 0x84: "E-AC3", 0x85: "DTS-HD", 0x86: "DTS-HD MA", 0xa1: "E-AC3", 0xa2: "DTS Express" }
+        : { 0x90: "PGS" };
+  return map[t] ?? s.kind;
+}
 function sanitize(s: string): string {
   return s.replace(/[\/\\:*?"<>|]+/g, " ").replace(/\s+/g, " ").trim() || "disc";
 }
@@ -68,6 +81,7 @@ export default function App() {
   const [disc, setDisc] = useState<DiscInfo | null>(null);
   const [discPath, setDiscPath] = useState("");
   const [title, setTitle] = useState<number | null>(null);
+  const [streams, setStreams] = useState<StreamInfo[]>([]);
   const [container, setContainer] = useState<"mkv" | "mp4">("mkv");
   const [lossless, setLossless] = useState(true);
   const [enc, setEnc] = useState<EncodeSettings>({
@@ -114,6 +128,19 @@ export default function App() {
     const t = setTimeout(() => setToast(null), 2600);
     return () => clearTimeout(t);
   }, [toast]);
+
+  // Track list for the selected title (codec + language per stream).
+  useEffect(() => {
+    let live = true;
+    if (title == null || !discPath) {
+      setStreams([]);
+      return;
+    }
+    api.discStreams(discPath, title)
+      .then((s) => { if (live) setStreams(s); })
+      .catch(() => { if (live) setStreams([]); });
+    return () => { live = false; };
+  }, [title, discPath]);
 
   const refresh = useCallback(async () => {
     try {
@@ -428,7 +455,7 @@ export default function App() {
   return (
     <div className="app">
       <header className="header">
-        <div className="brand"><span className="logo">◲</span> BluForge</div>
+        <div className="brand"><img className="logo" src={logo} alt="" /> Keepsake Atelier</div>
         <span className="ver">v{snap?.version ?? "…"}</span>
         <div className="spacer" />
         {update && <span className="pill warn"><span className="dot" /> update {update}</span>}
@@ -468,7 +495,7 @@ export default function App() {
             {optical.length === 0 && (
               <p className="hint" style={{ marginTop: 10 }}>
                 Attach a Blu-ray drive (ideally directly to a USB port, not a hub) and press <b>Rescan</b>.
-                You can also point BluForge at a folder or ISO below.
+                You can also point Keepsake Atelier at a folder or ISO below.
               </p>
             )}
 
@@ -511,8 +538,26 @@ export default function App() {
                   </div>
                 ))}
               </div>
+              {title != null && streams.length > 0 && (
+                <div style={{ marginTop: 12 }}>
+                  <div className="sub" style={{ marginBottom: 6 }}>Track list for title #{title}</div>
+                  <div style={{ display: "grid", gap: 4 }}>
+                    {streams.map((s, i) => (
+                      <div key={i} className="row" style={{ gap: 8, fontSize: 12 }}>
+                        <span className="badge">{s.kind}</span>
+                        <span className="mono" style={{ width: 38 }}>{s.lang ?? "und"}</span>
+                        <span>{streamCodec(s)}</span>
+                        <span className="sub mono">pid {s.pid}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </section>
           )}
+
+          {/* Disc menu */}
+          <Menus source={discPath} onError={setError} onToast={setToast} />
 
           {/* Output */}
           <section className="card">
@@ -796,6 +841,31 @@ export default function App() {
             {keys?.exists
               ? <div className="sub">{keys.entries.toLocaleString()} entries · {fmtBytes(keys.bytes)}</div>
               : <div className="sub">Not downloaded yet</div>}
+            <div className="row wrap" style={{ gap: 8, marginTop: 10 }}>
+              <button className="ghost sm" disabled={!discPath || !!busy}
+                onClick={async () => {
+                  setBusy("derive");
+                  try {
+                    const r = await api.keysNative(discPath || null);
+                    await refresh();
+                    setToast(`${r.added ? "Derived" : "Already keyed"}: ${r.key.name}`);
+                  } catch (e) { setError(String(e)); } finally { setBusy(null); }
+                }}>
+                {busy === "derive" ? "Deriving…" : "Derive key for this disc"}
+              </button>
+              <button className="ghost sm" disabled={!!busy}
+                onClick={async () => {
+                  setBusy("bdplus");
+                  try { setToast(`BD+ VM installed at ${await api.bdplusInstall()}`); }
+                  catch (e) { setError(String(e)); } finally { setBusy(null); }
+                }}>
+                {busy === "bdplus" ? "Installing…" : "Install BD+ VM"}
+              </button>
+            </div>
+            <p className="hint" style={{ marginTop: 8 }}>
+              Native: the VID comes from the drive's LibreDrive firmware and the media key from the
+              disc's own MKB. No MakeMKV, no host certificate.
+            </p>
           </section>
 
           <section className="card" style={{ marginTop: 16 }}>
@@ -861,7 +931,7 @@ export default function App() {
             <label className="check" style={{ marginTop: 10 }}>
               <input type="checkbox" checked={cfg?.mcp_enabled ?? false}
                 onChange={(e) => void saveCfg({ mcp_enabled: e.target.checked })} />
-              Let an agent drive BluForge over MCP
+              Let an agent drive Keepsake Atelier over MCP
             </label>
             <label className="field" style={{ marginTop: 10 }}>Port
               <input className="mono" type="number" min={1024} max={65535}

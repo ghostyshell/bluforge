@@ -1,11 +1,20 @@
 # Changelog
 
-All notable changes to BluForge. Newest first.
+All notable changes to Keepsake Atelier. Newest first.
 
 ## Unreleased
 
 ### Changed
 
+- **The desktop app is now Keepsake Atelier**, with a new app icon and in-app
+  logo. Product name, window title, bundle identifier
+  (`click.keepsakeatelier.app`) and the docs were updated. The engine and CLI
+  binary are still `bluforge`, and the data directory
+  (`~/Library/Application Support/bluforge`) is unchanged so existing keys,
+  menus and settings carry over.
+- The desktop app now surfaces the menu documents (parse, edit, save, apply),
+  native key derivation for the inserted disc, BD+ VM installation, and the
+  per-title stream list.
 - `plan_backend` tries the fully native key derivation even when MakeMKV is not
   installed, and `bluforge aacs` prints the VID obtained from the LibreDrive
   vendor read. MakeMKV's `discatt.dat` is now only a fallback for a drive whose

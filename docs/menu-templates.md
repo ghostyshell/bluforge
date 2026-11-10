@@ -8,7 +8,7 @@ A Blu-ray disc has two things people call "the menu":
 2. the **playable titles** libbluray enumerates (playlist, duration, chapters,
    streams).
 
-BluForge parses both into a *menu document*, which can be edited, saved as a
+Keepsake Atelier parses both into a *menu document*, which can be edited, saved as a
 named template, and applied to a different disc.
 
 ## What a menu document holds
@@ -118,7 +118,7 @@ unchanged.
   disc.
 - An ISO must be mounted first (`hdiutil attach`), because the parser reads
   `BDMV/index.bdmv` through the filesystem.
-- BD-J menus are Java applications in `JAR/`. BluForge records the BD-J object
+- BD-J menus are Java applications in `JAR/`. Keepsake Atelier records the BD-J object
   names from the navigation table but does not run or parse the Java UI.
 - Enumerating titles needs libbluray to open the disc, which needs a key for an
   AACS disc. Without one the document still contains the navigation table and a

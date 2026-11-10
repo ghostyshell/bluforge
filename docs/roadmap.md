@@ -1,6 +1,6 @@
 # Roadmap
 
-Where BluForge is, and what comes next. Status is honest: "done" means built,
+Where Keepsake Atelier is, and what comes next. Status is honest: "done" means built,
 tested and used on a real disc.
 
 ## Phase 1 - Disc access and inspection - done
@@ -33,13 +33,12 @@ tested and used on a real disc.
 - Decrypted ISO or folder export.
 - Author a `BDMV`/ISO from finished MKV/MP4 files with chapters.
 
-## Phase 5 - Surfaces - partial
+## Phase 5 - Surfaces - done
 
 - CLI for everything (`bluforge ...`).
-- Tauri desktop app for devices, disc inspection, rips, covers, settings.
+- Tauri desktop app (Keepsake Atelier) for devices, disc inspection and track
+  lists, rips, covers, ISO export, authoring, keys, BD+ and menu documents.
 - MCP server exposing the core to agents.
-- Not done: the desktop app does not yet surface key recovery, ISO export,
-  authoring, or menu templates.
 
 ## Phase 6 - Disc menu documents and templates - done (this change)
 
@@ -55,12 +54,14 @@ Parse a disc's menu, edit it, save it as a template, apply it to another disc.
 - CLI: `bluforge menu parse|list|show|edit|apply|remove`.
 - See `docs/menu-templates.md`.
 
-## Phase 7 - Menu documents in the desktop app - next
+## Phase 7 - Menu documents in the desktop app - done
 
-- Browse a disc's menu in the UI, rename titles, flag the main feature, edit
-  chapter labels, and preview the applied result before saving.
-- Pick a saved template when starting a rip, so naming and episode mapping come
-  from the template instead of a re-lookup.
+- Parse the inserted disc's menu in the UI, rename titles, flag the main
+  feature, edit chapter labels, inspect the navigation table, save a template,
+  apply one to another disc, and delete templates.
+- The same panel lists saved templates and shows what a parse could not read.
+- Also surfaced alongside it: native key derivation for the inserted disc, BD+
+  VM installation, and the per-title stream list.
 
 ## Phase 8 - Authored menus - future
 
@@ -74,6 +75,30 @@ Parse a disc's menu, edit it, save it as a template, apply it to another disc.
 
 - Current native recovery derives the AACS1 media key and VUK. AACS2 discs need
   the unit-key table; `bluforge keys` already stores and uses one when present.
+
+## Parity with DVDFab-class apps
+
+What the app covers today, against the ripping-suite feature set:
+
+| Capability | Status |
+| --- | --- |
+| Disc inspection: titles, playlists, durations, chapters | done |
+| Track list per title (codecs, languages) | done |
+| Rip: lossless remux to MKV/MP4 | done |
+| Rip: x264/x265/VideoToolbox encode | done |
+| TV/anime episode split with TMDB naming | done |
+| Decrypted ISO / folder export (`Copy`) | done |
+| Authoring: BDMV/ISO from finished files | done (single title) |
+| Disc menu parse, edit, save, apply | done |
+| Native AACS key derivation, BD+ VM | done |
+| Cover art | done |
+| DVD (`VIDEO_TS`) ripping | not started |
+| 1:1 encrypted disc clone | not started (decrypted copy only) |
+| BD-25 / BD-50 splitting | not started |
+| Burning to disc | not started |
+| Cinavia detection/removal | not implemented |
+| UHD/AACS2 unit-key workflow | partial (core stores unit keys, no UI) |
+| Batch queue (one job at a time) | not started |
 
 ## Deliberately out of scope
 

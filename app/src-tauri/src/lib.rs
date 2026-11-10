@@ -283,6 +283,124 @@ fn open_disc(path: String) -> Result<DiscInfo, String> {
     Ok(info)
 }
 
+/// Resolve a UI "disc source" to something the menu parser can read.
+///
+/// The UI often holds a raw device node (`/dev/rdiskN`), which has no BDMV
+/// directory; fall back to the mounted optical volume in that case.
+fn menu_source(source: &str) -> PathBuf {
+    let p = PathBuf::from(source);
+    if !source.is_empty() && bluforge_core::menu::bdmv_dir(&p).is_some() {
+        return p;
+    }
+    if let Some(m) = bluforge_core::device::list_optical()
+        .into_iter()
+        .find_map(|d| d.mount_point)
+    {
+        return PathBuf::from(m);
+    }
+    p
+}
+
+#[tauri::command]
+fn disc_streams(
+    path: String,
+    title: u32,
+) -> Result<Vec<bluforge_core::disc::StreamInfo>, String> {
+    let disc = bluforge_core::Disc::open(
+        std::path::Path::new(&path),
+        Some(&bluforge_core::keys::keydb_path()),
+    )
+    .map_err(|e| e.to_string())?;
+    disc.streams(title).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn menu_parse(source: String) -> Result<bluforge_core::menu::DiscMenu, String> {
+    bluforge_core::menu::parse(
+        &menu_source(&source),
+        Some(&bluforge_core::keys::keydb_path()),
+    )
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn menu_list() -> Result<Vec<serde_json::Value>, String> {
+    let dir = bluforge_core::menu::store_dir();
+    Ok(bluforge_core::menu::list(&dir)
+        .into_iter()
+        .map(|(name, path)| {
+            let doc = bluforge_core::menu::load(&dir, &name).ok();
+            serde_json::json!({
+                "name": name,
+                "path": path.display().to_string(),
+                "label": doc.as_ref().map(|d| d.label.clone()).unwrap_or_default(),
+                "titles": doc.as_ref().map(|d| d.titles.len()).unwrap_or(0),
+            })
+        })
+        .collect())
+}
+
+#[tauri::command]
+fn menu_load(template: String) -> Result<bluforge_core::menu::DiscMenu, String> {
+    bluforge_core::menu::load(&bluforge_core::menu::store_dir(), &template)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn menu_save(
+    template: String,
+    doc: bluforge_core::menu::DiscMenu,
+) -> Result<String, String> {
+    bluforge_core::menu::save(&bluforge_core::menu::store_dir(), &template, &doc)
+        .map(|p| p.display().to_string())
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn menu_apply(
+    template: String,
+    target: String,
+    save: Option<String>,
+) -> Result<bluforge_core::menu::DiscMenu, String> {
+    let dir = bluforge_core::menu::store_dir();
+    let tpl = bluforge_core::menu::load(&dir, &template).map_err(|e| e.to_string())?;
+    let target_doc = bluforge_core::menu::parse(
+        &menu_source(&target),
+        Some(&bluforge_core::keys::keydb_path()),
+    )
+    .map_err(|e| e.to_string())?;
+    let doc = bluforge_core::menu::apply(&tpl, &target_doc, &template);
+    if let Some(name) = save {
+        bluforge_core::menu::save(&dir, &name, &doc).map_err(|e| e.to_string())?;
+    }
+    Ok(doc)
+}
+
+#[tauri::command]
+fn menu_remove(template: String) -> Result<String, String> {
+    bluforge_core::menu::remove(&bluforge_core::menu::store_dir(), &template)
+        .map(|p| p.display().to_string())
+        .map_err(|e| e.to_string())
+}
+
+/// Derive and store a key for the inserted disc, natively (LibreDrive VID +
+/// the disc's own MKB + the KEYDB device keys). No MakeMKV, no certificate.
+#[tauri::command]
+fn keys_native(source: Option<String>) -> Result<serde_json::Value, String> {
+    let mount = menu_source(source.as_deref().unwrap_or(""));
+    let (key, added) = bluforge_core::native::derive_and_store(&mount)
+        .map_err(|e| e.to_string())?;
+    Ok(serde_json::json!({ "key": key, "added": added }))
+}
+
+/// Install the public BD+ VM data so BD+ discs decrypt without MakeMKV.
+#[tauri::command]
+fn bdplus_install() -> Result<String, String> {
+    bluforge_core::bdplus::install()
+        .map(|p| p.display().to_string())
+        .map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 fn start_rip(
     app: AppHandle,
@@ -444,12 +562,21 @@ pub fn run() {
             tv_plan,
             template_placeholders,
             tmdb_lookup,
-            mcp_status
+            mcp_status,
+            menu_parse,
+            menu_list,
+            menu_load,
+            menu_save,
+            menu_apply,
+            menu_remove,
+            keys_native,
+            bdplus_install,
+            disc_streams
         ])
         .setup(|app| {
             let _ = app.get_webview_window("main");
             Ok(())
         })
         .run(tauri::generate_context!())
-        .expect("error while running BluForge");
+        .expect("error while running Keepsake Atelier");
 }
