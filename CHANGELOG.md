@@ -24,6 +24,16 @@ All notable changes to Keepsake Atelier. Newest first.
   vendor read. MakeMKV's `discatt.dat` is now only a fallback for a drive whose
   LibreDrive vendor read fails.
 
+### Fixed
+
+- **The macOS DMG is self-contained.** It used to link the build machine's
+  Homebrew libraries and failed with a dyld error on a clean Mac.
+  `scripts/bundle-app.sh` rebases libbluray and its dependencies, fixes and
+  copies the dlopen'ed libaacs/libbdplus from temporary copies, signs every
+  dylib and the app, and refuses to ship if a `/opt/homebrew` or `/usr/local`
+  reference remains. The app and doctor use the bundled paths. Verified by
+  mounting the DMG and launching the app from the mounted volume.
+
 ### Verified
 
 - **Live disc pass (LG BD-RE BU40N, pressed AACS Blu-ray):** disc info and the
