@@ -34,6 +34,17 @@
       "kiwi": "https://file.kiwi/0ac4cbfd#ODRjWeSu2SgG-1CSnmlDrA",
       "size": "2.2 MiB",
       "sha256": "4f2ce0dc9f87932353f383bb7c4468caf5e3686b4eb9d2617b41d7a18a67f59d"
+    },
+    {
+      "label": "Windows (x86_64, CLI)",
+      "name": "keepsake-atelier-0.1.0-windows-x64.zip",
+      "version": "0.1.0",
+      "os": "Windows",
+      "arch": "x86_64",
+      "gofile": "https://gofile.io/d/rJsUbsKk",
+      "kiwi": "https://file.kiwi/5fff9622#-dBaX_t-mqay-D5gyNO0vA",
+      "size": "2.2 MiB",
+      "sha256": "045fd964a19783ba9943391b447c3159ed56636774c2d4bdf8da1b13d5d8b909"
     }
   ]
 }
