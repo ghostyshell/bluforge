@@ -65,6 +65,11 @@ All notable changes to Keepsake Atelier. Newest first.
   source, the selected title's name becomes `{title}` (a trailing `(1967)` is
   split off as `{year}`), and its chapter labels replace the ChapterDB names
   when the counts match. Editing a template now changes the next rip.
+- **Burning (single-title ISOs):** `burn <image.iso> --device /dev/rdiskN
+  [--yes]` writes with growisofs (cdrecord fallback), refusing a mounted device
+  or missing image and requiring an explicit `--yes` (dry run by default). The
+  app's ISO panel has a confirmed **Burn ISO to disc** button. Multi-title discs
+  are folder-only because macOS has no UDF 2.50 image writer.
 - **Native AACS2 unit-key derivation:** `AACS/Unit_Key_RO.inf` is parsed (AACS1
   48-byte records, AACS2 64-byte; `Content000.cer[0] == 0x10` marks AACS2) and
   each encrypted unit key is AES-128-ECB decrypted with the VUK. `keys native`

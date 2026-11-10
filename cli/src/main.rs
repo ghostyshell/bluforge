@@ -183,6 +183,20 @@ enum Cmd {
         /// Output .iso file.
         dest: std::path::PathBuf,
     },
+    /// Write a Blu-ray ISO to a writer (growisofs, or cdrecord as a fallback).
+    Burn {
+        /// The .iso to write.
+        image: std::path::PathBuf,
+        /// Raw device node, eg. /dev/rdisk4 (see `devices`).
+        #[arg(long)]
+        device: std::path::PathBuf,
+        /// Write speed, eg. 4 for 4x.
+        #[arg(long)]
+        speed: Option<u32>,
+        /// Actually write. Without it, only the command is printed.
+        #[arg(long)]
+        yes: bool,
+    },
     /// DVD-Video: list titles or rip one (uses the bundled dvdvideo demuxer).
     Dvd {
         #[command(subcommand)]
@@ -1337,6 +1351,30 @@ fn run(cli: &Cli) -> Result<(), keepsake_core::CoreError> {
                 },
             )?;
             eprintln!("\nwrote {} ({} bytes)", dest.display(), written);
+        }
+        Cmd::Burn {
+            image,
+            device,
+            speed,
+            yes,
+        } => {
+            let req = keepsake_core::burn::BurnRequest {
+                image: image.clone(),
+                device: device.clone(),
+                speed: *speed,
+                dry_run: !*yes,
+            };
+            let cancel = std::sync::atomic::AtomicBool::new(false);
+            keepsake_core::burn::run(&req, &cancel, |p| {
+                if p.done {
+                    eprintln!("{}", p.message);
+                } else {
+                    eprint!("\r  {:>5.1}%  {}", p.percent, p.message);
+                }
+            })?;
+            if !*yes {
+                println!("dry run: add --yes to write the disc");
+            }
         }
         Cmd::Dvd { action } => match action {
             DvdAction::List { path } => {

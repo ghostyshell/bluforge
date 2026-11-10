@@ -24,6 +24,7 @@ The engine, CLI binary and crate names are still `keepsake-atelier`.
 | Cover art: search/view/download from HiResCovers, dvdcover.com, TMDB | ✅ |
 | Decrypted ISO / folder export | ✅ |
 | 1:1 encrypted disc clone | ✅ |
+| Burn a single-title ISO to disc | ✅ (growisofs; untested without a writer) |
 | DVD-Video (`VIDEO_TS`): title list + rip | ✅ |
 | TV / anime: per-episode split, SxxExx titles, OP/ED/preview chapters | ✅ |
 | Desktop UI (Tauri v2) | ✅ |
@@ -98,6 +99,8 @@ cargo build --release
 ./target/release/keepsake-atelier verify /Volumes/MY_DISC            # check navigation/clips
 ./target/release/keepsake-atelier dvd list /Volumes/DVD              # DVD titles
 ./target/release/keepsake-atelier dvd rip /Volumes/DVD --title 1 --out ~/movie.mkv
+./target/release/keepsake-atelier burn ~/movie.iso --device /dev/rdisk4        # dry run
+./target/release/keepsake-atelier burn ~/movie.iso --device /dev/rdisk4 --yes  # write
 ./target/release/keepsake-atelier doctor                              # what is installed
 ./target/release/keepsake-atelier clone /dev/rdisk4 ~/movie-clone.iso         # 1:1, encrypted
 ./target/release/keepsake-atelier rip /Volumes/MY_DISC                        # main title -> ~/Downloads
@@ -335,6 +338,7 @@ Tools:
 | `verify` | check a BDMV tree: navigation, playlists, clips |
 | `dvd_info` / `dvd_start` | list DVD titles / rip one (MPEG-2 + AC-3/DTS copy) |
 | `clone_start` | 1:1 encrypted disc copy to an ISO |
+| `burn_start` | write an ISO to a writer drive (dry run unless confirmed) |
 | `doctor` | installed tools and which capability each missing piece blocks |
 | `covers_search` / `covers_download` | cover art from hirescovers / dvdcover / TMDB |
 | `keys_update` | refresh KEYDB.cfg |
@@ -396,6 +400,24 @@ unless `--subs` is passed, and menus are not ripped. In the app, pointing the
 disc field at a DVD shows a **DVD-Video** card with the title list and a rip
 button; progress and cancel work like a Blu-ray rip. MCP: `dvd_info` and
 `dvd_start`.
+
+## Burning
+
+A single-title Blu-ray ISO (from `author --out disc.iso`) can be written to a
+writer drive:
+
+```sh
+keepsake-atelier burn ~/movie.iso --device /dev/rdisk4          # prints the command
+keepsake-atelier burn ~/movie.iso --device /dev/rdisk4 --yes    # actually writes
+```
+
+`growisofs` (dvd+rw-tools) is used, falling back to `cdrecord`. The device must
+be an unmounted `/dev/rdiskN`; the disc is erased and there is no undo, so the
+CLI requires `--yes` and the app asks for confirmation. The app has a **Burn ISO
+to disc** button in the Decrypted ISO panel.
+
+Multi-title discs are authored as a BDMV *folder* (there is no UDF 2.50 image
+writer on macOS for it), so they cannot be burned from this build yet.
 
 ## System check
 

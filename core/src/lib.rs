@@ -8,6 +8,7 @@ pub mod author;
 pub mod bdmv;
 pub mod bdplus;
 pub mod binaries;
+pub mod burn;
 pub mod clone;
 pub mod config;
 pub mod covers;

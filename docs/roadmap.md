@@ -149,6 +149,18 @@ consume a saved document directly.
 - Unit tests cover the IFO parser and the ffmpeg argument builder; the actual
   `dvdvideo` read needs a real disc to exercise.
 
+## Phase 16 - Burning - partial
+
+- `burn <image.iso> --device /dev/rdiskN [--yes]` writes a single-title ISO with
+  growisofs (cdrecord fallback). It refuses a mounted device or a missing image,
+  prints the command by default, and requires `--yes` to write; cancelling warns
+  that the disc may be partially written. The app's Decrypted ISO panel has a
+  confirmed **Burn ISO to disc** button.
+- Unit tests cover the command builders, progress parser and image validation.
+- Not testable here (no writer drive) and not yet possible for **multi-title**
+  discs: macOS has no UDF 2.50 image writer (`hdiutil` caps at 1.50, `mkisofs`
+  rejects `-udf-version 2.50`), so those stay folder-only.
+
 ## Parity with DVDFab-class apps
 
 What the app covers today, against the ripping-suite feature set:
@@ -169,7 +181,7 @@ What the app covers today, against the ripping-suite feature set:
 | DVD (`VIDEO_TS`) ripping | done (MPEG-2/AC-3/DTS copy, no menus) |
 | 1:1 encrypted disc clone | done |
 | BD-25 / BD-50 splitting | done (whole titles per disc) |
-| Burning to disc | not started |
+| Burning to disc | partial: single-title ISO via growisofs (untested without a writer) |
 | Cinavia detection/removal | not implemented |
 | UHD/AACS2 unit-key workflow | done (derived from Unit_Key_RO.inf with the VUK) |
 | Batch queue (one job at a time) | done |
@@ -193,10 +205,10 @@ remaining gaps, and each is blocked on something outside the codebase:
   BD-J API stubs plus a player to verify. There is no player here that renders
   HDMV IG, so this would ship unverified. The menu *documents* (parse/edit/save/
   apply) and multi-title authoring are the parts that are ready for it.
-- **Burning.** Two blockers: macOS tools cannot produce a Blu-ray-spec UDF 2.50
-  image (`hdiutil makehybrid -udf` caps at 1.50; `mkisofs` writes UDF 2.01), and
-  there is no writer drive attached (`cdrecord` is present). Writing an
-  unverified, non-spec image risks coasters.
+- **Burning.** Single-title ISOs can be written (growisofs), but the write is
+  untested here because no writer drive is attached. Multi-title discs remain
+  folder-only: macOS has no Blu-ray-spec UDF 2.50 image writer (`hdiutil
+  makehybrid -udf` caps at 1.50; `mkisofs` rejects `-udf-version 2.50`).
 - **Cinavia.** A proprietary audio watermark. There is no open detector or
   remover; "removal" would need the secret pattern and is legally fraught.
 - **Multi-title ISO.** The folder output is complete and verified; packaging it

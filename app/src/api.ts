@@ -244,6 +244,12 @@ export type StreamInfo = {
   pid: number;
 };
 
+export type BurnProgress = {
+  percent: number;
+  message: string;
+  done: boolean;
+};
+
 export type DvdTitle = {
   number: number;
   chapters: number;
@@ -423,6 +429,18 @@ export const api = {
   bdplusInstall: () => invoke<string>("bdplus_install"),
   verify: (path: string) => invoke<VerifyReport>("verify", { path }),
   doctor: () => invoke<DoctorReport>("doctor"),
+  burnStart: (request: {
+    image: string;
+    device: string;
+    speed: number | null;
+    dry_run: boolean;
+  }) => invoke<void>("burn_start", { request }),
+  onBurnProgress: (cb: (p: BurnProgress) => void): Promise<UnlistenFn> =>
+    listen<BurnProgress>("burn://progress", (e) => cb(e.payload)),
+  onBurnDone: (cb: (path: string) => void): Promise<UnlistenFn> =>
+    listen<string>("burn://done", (e) => cb(e.payload)),
+  onBurnError: (cb: (msg: string) => void): Promise<UnlistenFn> =>
+    listen<string>("burn://error", (e) => cb(e.payload)),
   dvdInfo: (path: string) => invoke<DvdInfo>("dvd_info", { path }),
   dvdRip: (request: {
     source: string;

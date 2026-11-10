@@ -319,6 +319,7 @@ fn run_tool(name: &str, args: Value) -> Result<Value, String> {
         }
         "dvd_start" => start_dvd(args),
         "clone_start" => start_clone(args),
+        "burn_start" => start_burn(args),
         "doctor" => serde_json::to_value(keepsake_core::doctor::run()).map_err(|e| e.to_string()),
         "verify" => {
             let path = resolve_source(&str_arg(&args, "path")?);
@@ -932,6 +933,85 @@ struct CloneArgs {
     dest: String,
 }
 
+#[derive(Deserialize)]
+struct BurnArgs {
+    image: String,
+    device: String,
+    #[serde(default)]
+    speed: Option<u32>,
+    #[serde(default)]
+    dry_run: Option<bool>,
+    #[serde(default)]
+    confirm: Option<bool>,
+}
+
+fn start_burn(args: Value) -> Result<Value, String> {
+    let a: BurnArgs =
+        serde_json::from_value(args).map_err(|e| format!("bad burn arguments: {e}"))?;
+    require_free_slot()?;
+    // Writing erases the disc: only do it when both the caller and confirm agree.
+    let dry_run = a.dry_run.unwrap_or(true) || a.confirm != Some(true);
+    let req = keepsake_core::burn::BurnRequest {
+        image: PathBuf::from(&a.image),
+        device: PathBuf::from(&a.device),
+        speed: a.speed,
+        dry_run,
+    };
+    let id = NEXT_JOB.fetch_add(1, Ordering::SeqCst);
+    let cancel = Arc::new(AtomicBool::new(false));
+    {
+        let mut v = jobs().lock().unwrap();
+        v.push(Job {
+            id,
+            kind: "burn".into(),
+            state: "running".into(),
+            message: if dry_run {
+                "dry run".into()
+            } else {
+                "starting".into()
+            },
+            percent: 0.0,
+            dest: Some(a.image.clone()),
+            error: None,
+            cancel: Some(cancel.clone()),
+        });
+    }
+    let cancel2 = cancel.clone();
+    std::thread::spawn(move || {
+        let res = keepsake_core::burn::run(&req, &cancel2, |p| {
+            job_update(id, |j| {
+                if !p.done {
+                    j.percent = p.percent;
+                    j.message = p.message.clone();
+                }
+            });
+        });
+        match res {
+            Ok(()) => job_update(id, |j| {
+                j.state = "done".into();
+                j.message = if dry_run {
+                    "dry run: nothing written".into()
+                } else {
+                    "burned".into()
+                };
+                if !dry_run {
+                    j.percent = 100.0;
+                }
+            }),
+            Err(e) => job_update(id, |j| {
+                j.state = if cancel2.load(Ordering::SeqCst) {
+                    "cancelled".into()
+                } else {
+                    "error".into()
+                };
+                j.message = e.to_string();
+                j.error = Some(e.to_string());
+            }),
+        }
+    });
+    Ok(json!({ "id": id, "dry_run": dry_run }))
+}
+
 fn start_clone(args: Value) -> Result<Value, String> {
     let a: CloneArgs =
         serde_json::from_value(args).map_err(|e| format!("bad clone arguments: {e}"))?;
@@ -1198,6 +1278,17 @@ fn tools() -> Vec<Value> {
                 "series": { "type": "string", "description": "Series name override for the TMDB lookup." },
                 "start": { "type": "integer", "description": "First episode number on this disc (overrides the remembered mapping)." }
             }, "required": ["source"] }
+        }),
+        json!({
+            "name": "burn_start",
+            "description": "Write a single-title Blu-ray ISO to a writer drive. Dry run unless confirm=true (erases the disc). Returns a job id.",
+            "inputSchema": { "type": "object", "properties": {
+                "image": { "type": "string", "description": "The .iso to write." },
+                "device": { "type": "string", "description": "Raw device node, eg. /dev/rdisk4." },
+                "speed": { "type": "integer" },
+                "dry_run": { "type": "boolean", "description": "Default true; print the command only." },
+                "confirm": { "type": "boolean", "description": "Must be true for dry_run=false; writing erases the disc." }
+            }, "required": ["image", "device"] }
         }),
         json!({
             "name": "clone_start",

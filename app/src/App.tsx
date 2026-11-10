@@ -8,6 +8,7 @@ import {
   type DvdProgress,
   type EncodeSettings,
   type AudioSel,
+  type BurnProgress,
   type CloneProgress,
   type CoverHit,
   type IsoProgress,
@@ -137,6 +138,7 @@ export default function App() {
   const [isoProgress, setIsoProgress] = useState<IsoProgress | null>(null);
   const [isoBusy, setIsoBusy] = useState(false);
   const [cloneProgress, setCloneProgress] = useState<CloneProgress | null>(null);
+  const [burnProgress, setBurnProgress] = useState<BurnProgress | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -537,6 +539,9 @@ export default function App() {
       api.onCloneProgress((p) => setCloneProgress(p)),
       api.onCloneDone(({ dest }) => { setCloneProgress(null); setToast("Clone written"); void api.reveal(dest); }),
       api.onCloneError((e) => { setCloneProgress(null); setError(e); }),
+      api.onBurnProgress((p) => setBurnProgress(p)),
+      api.onBurnDone(() => { setBurnProgress(null); setToast("Disc burned"); }),
+      api.onBurnError((e) => { setBurnProgress(null); setError(e); }),
     ];
     return () => { us.forEach((u) => u.then((f) => f())); };
   }, []);
@@ -639,6 +644,21 @@ export default function App() {
       setKeyEpoch((n) => n + 1);
       setToast(gone ? "key removed" : "not found");
     } catch (e) { setError(String(e)); }
+  };
+
+  const burnIso = async () => {
+    const dev = optical[0];
+    if (!dev || !isoPath) {
+      setError("need a writer drive and a configured output folder");
+      return;
+    }
+    const device = `/dev/r${dev.bsd_name}`;
+    if (!window.confirm(`Write\n${isoPath}\nto ${device}?\n\nThis erases the disc and cannot be undone.`)) return;
+    setError(null);
+    setBurnProgress({ percent: 0, message: "starting", done: false });
+    try {
+      await api.burnStart({ image: isoPath, device, speed: null, dry_run: false });
+    } catch (e) { setError(String(e)); setBurnProgress(null); }
   };
 
   const keys = snap?.keys;
@@ -1467,6 +1487,32 @@ export default function App() {
                 {isoProgress.stage === "done" && (
                   <button className="ghost sm" style={{ marginTop: 8 }} onClick={() => api.reveal(isoPath)}>Reveal ISO</button>
                 )}
+              </div>
+            )}
+
+            <button className="ghost" style={{ width: "100%", justifyContent: "center", marginTop: 8 }}
+              disabled={!optical[0] || isoBusy || !!busy || !!runningJob || !!cloneProgress || !!burnProgress}
+              title={optical[0] ? "Write the exported ISO to the drive (erases the disc)" : "Connect a writer drive first"}
+              onClick={() => void burnIso()}>
+              Burn ISO to disc
+            </button>
+            <p className="hint" style={{ marginTop: 6 }}>
+              Writes {isoPath.split("/").pop() || "the ISO"} to{" "}
+              {optical[0] ? `/dev/r${optical[0].bsd_name}` : "a writer drive"}. Erases the disc;
+              no undo. Multi-title discs must be burned from their BDMV folder with another
+              tool for now.
+            </p>
+            {burnProgress && (
+              <div style={{ marginTop: 12 }}>
+                <div className="progress" role="progressbar" aria-label="Burn progress"
+                  aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(burnProgress.percent)}>
+                  <i style={{ width: `${burnProgress.percent}%` }} />
+                </div>
+                <div className="stats" style={{ marginTop: 8 }} aria-live="polite">
+                  <span>{burnProgress.percent.toFixed(0)}%</span>
+                  <span>{burnProgress.message}</span>
+                  <button className="ghost sm" onClick={() => void api.cancelRip()}>cancel</button>
+                </div>
               </div>
             )}
           </section>

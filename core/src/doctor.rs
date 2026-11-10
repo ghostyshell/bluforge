@@ -214,7 +214,7 @@ pub fn run() -> DoctorReport {
             .as_ref()
             .map(|p| p.display().to_string())
             .unwrap_or_else(|| "growisofs not installed".into()),
-        Some("brew install cdrtools (and use a Blu-ray writer)"),
+        Some("brew install dvd+rw-tools (and use a Blu-ray writer)"),
     ));
 
     // Data directory
