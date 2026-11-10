@@ -309,18 +309,19 @@ fn audio_chans(format: u8) -> Option<&'static str> {
     }
 }
 
-/// TrueHD / DTS-HD carry an embedded lossy core, which ffmpeg exposes as an
-/// *extra* audio stream of the same PID. That shifts every later ffmpeg audio
-/// index, so mapping/labelling has to account for it.
+/// TrueHD carries an embedded AC-3 core that ffmpeg exposes as an *extra* audio
+/// stream of the same PID. That shifts every later ffmpeg audio index, so
+/// mapping/labelling has to account for it.
+///
+/// DTS-HD (0x85/0x86) is different: its lossy core travels inside the same
+/// stream, and ffmpeg exposes it as a single audio stream. Adding a core map
+/// there makes ffmpeg fail with `Stream map '0:a:N' matches no streams`.
 fn has_core(coding_type: u8) -> bool {
-    matches!(coding_type, 0x83 | 0x85 | 0x86)
+    coding_type == 0x83
 }
 
-fn core_codec_label(coding_type: u8) -> &'static str {
-    match coding_type {
-        0x83 => "AC3",
-        _ => "DTS",
-    }
+fn core_codec_label(_coding_type: u8) -> &'static str {
+    "AC3"
 }
 
 /// Secondary coding types are the disc's commentary / picture-in-picture tracks.
@@ -1838,6 +1839,25 @@ mod tests {
         assert_eq!(meta.iter().filter(|m| *m == "default").count(), 2); // video + audio
         assert!(meta.contains(&"title=English TrueHD".to_string()));
         assert!(meta.contains(&"title=English AC3 (core)".to_string()));
+    }
+
+    #[test]
+    fn dts_hd_is_one_stream_without_a_core_map() {
+        // ffmpeg exposes DTS-HD MA as a single audio stream (its core is inside
+        // it), unlike TrueHD. A phantom core map makes ffmpeg fail at open.
+        let ctx = TrackCtx {
+            streams: vec![
+                st("video", "", 0x24, 8),
+                st("audio", "eng", 0x86, 6),
+                st("audio", "eng", 0x81, 6),
+            ],
+            default_audio: Some(0),
+            ..Default::default()
+        };
+        let (maps, meta) = plan_tracks(&ctx, AudioSel::All, SubSel::None);
+        assert_eq!(maps, vec!["0:v:0", "0:a:0", "0:a:1"]);
+        assert!(meta.contains(&"title=English DTS-HD".to_string()));
+        assert!(!meta.iter().any(|m| m.contains("(core)")));
     }
 
     #[test]

@@ -118,6 +118,31 @@ impl Vars {
     }
 }
 
+/// Known placeholder names. A known variable that has no value (no TMDB match
+/// means no `{year}`, SDR means no `{hdr}`) renders as empty; an unknown name is
+/// kept verbatim so a typo stays visible.
+const KNOWN: &[&str] = &[
+    "title",
+    "year",
+    "tmdb",
+    "disc",
+    "resolution",
+    "hdr",
+    "video_codec",
+    "audio_lang",
+    "audio_codec",
+    "runtime",
+    "chapters",
+    "playlist",
+    "index",
+    "ext",
+    "series",
+    "season",
+    "episode",
+    "episode_title",
+    "episode_title_clean",
+];
+
 fn strip_bad(s: &str) -> String {
     s.chars()
         .map(|c| if "/\\:*?\"<>|".contains(c) { '-' } else { c })
@@ -189,6 +214,8 @@ pub fn render(template: &str, vars: &Vars, ext: &str, fallback: &str) -> PathBuf
                     None => v.to_string(),
                 }) {
                     Some(v) => out.push_str(&v),
+                    // Known but unavailable (no year, SDR has no HDR): drop it.
+                    None if KNOWN.contains(&key) => {}
                     None => {
                         out.push('{');
                         out.push_str(raw);
@@ -258,6 +285,24 @@ mod tests {
         assert_eq!(p, PathBuf::from("Gladiator II (2024) - 2160p.mkv"));
         let p = render("{title} - {bogus}", &v, "mkv", "");
         assert_eq!(p, PathBuf::from("Gladiator II - {bogus}.mkv"));
+    }
+
+    #[test]
+    fn known_placeholder_without_a_value_is_dropped() {
+        let mut v = Vars::default();
+        v.set("title", "The Jungle Book");
+        v.set("resolution", "1080p");
+        // No TMDB match (no year) and SDR (no hdr): both must disappear cleanly.
+        let p = render(
+            "{title} ({year})/{title} ({year}) - {resolution} {hdr}",
+            &v,
+            "mkv",
+            "",
+        );
+        assert_eq!(
+            p,
+            PathBuf::from("The Jungle Book/The Jungle Book - 1080p.mkv")
+        );
     }
 
     #[test]
