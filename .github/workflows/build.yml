@@ -6,7 +6,7 @@ on:
       platforms:
         description: "all, macos, linux or windows"
         type: choice
-        options: [all, macos, macos-x64, linux, ui, windows]
+        options: [all, macos, macos-x64, linux, linux-cli, ui, windows]
         default: all
   push:
     tags: ["v*"]
@@ -130,7 +130,7 @@ jobs:
 
   linux-x64:
     name: Linux x64 (CLI)
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.platforms == 'all' || inputs.platforms == 'linux' }}
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.platforms == 'all' || inputs.platforms == 'linux' || inputs.platforms == 'linux-cli' }}
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4

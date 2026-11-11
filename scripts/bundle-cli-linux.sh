@@ -30,7 +30,7 @@ cp "$RES/ffmpeg" "$RES/ffprobe" "$RES/00000.jar" "$RES/ffmpeg-LICENSES.txt" "$OU
 # Bundling glibc is unsupported and breaks on other distributions.
 is_host_lib() {
     case "$1" in
-        linux-vdso*|ld-linux*|libc.so*|libm.so*|libpthread.so*|libdl.so*|librt.so*|libutil.so*|libresolv.so*|libanl.so*|libnsl.so*|libcrypt.so*) return 0 ;;
+        linux-vdso*|ld-linux*|libc.so*|libm.so*|libmvec.so*|libpthread.so*|libdl.so*|librt.so*|libutil.so*|libresolv.so*|libanl.so*|libnsl.so*|libcrypt.so*) return 0 ;;
         *) return 1 ;;
     esac
 }
@@ -74,7 +74,7 @@ done
 # host means the tarball is not self-contained.
 stray=$(ldd "$OUT/keepsake-atelier" \
     | awk -v lib="$OUT/lib/" '/=>/ && $3 !~ lib { print }' \
-    | grep -Ev '(linux-vdso|ld-linux|libc\.so|libm\.so|libpthread\.so|libdl\.so|librt\.so|libutil\.so|libresolv\.so|libanl\.so|libnsl\.so|libcrypt\.so)' || true)
+    | grep -Ev '(linux-vdso|ld-linux|libc\.so|libm\.so|libmvec\.so|libpthread\.so|libdl\.so|librt\.so|libutil\.so|libresolv\.so|libanl\.so|libnsl\.so|libcrypt\.so)' || true)
 if [ -n "$stray" ]; then
     echo "unbundled reference in keepsake-atelier:" >&2
     echo "$stray" >&2
