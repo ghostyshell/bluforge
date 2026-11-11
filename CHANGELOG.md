@@ -6,6 +6,13 @@ All notable changes to Keepsake Atelier. Newest first.
 
 ### Added
 
+- **macOS 12 support.** The DMG was blocked at 15 by Homebrew's deployment
+  target. `scripts/build-disc-libs.sh` now builds libgpg-error, libgcrypt,
+  libudfread, libaacs, libbdplus and libbluray from source with
+  `MACOSX_DEPLOYMENT_TARGET=12.0`, without freetype, fontconfig or libxml2.
+  The app, the bundled libraries and the ffmpeg all report `minos 12.0`, and CI
+  refuses a DMG with any bundled item above 12.0. The CLI tarball still links
+  Homebrew and remains macOS 15+.
 - **A self-contained Linux ffmpeg.** The Linux app now builds the same
   ffmpeg n9.0.2 as macOS, with libdvdread, libdvdnav, libx264 and libx265, and
   bundles it. DVD-Video works without installing a newer system ffmpeg. CI

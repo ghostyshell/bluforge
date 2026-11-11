@@ -32,18 +32,28 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: app/package-lock.json
-      - name: Build ffmpeg
+      - name: Build disc libraries and ffmpeg
         run: |
-          brew install nasm meson cmake ninja pkg-config dylibbundler libbluray libaacs libbdplus libgcrypt
+          brew install nasm meson cmake ninja pkg-config dylibbundler bison libbluray libaacs libbdplus libgcrypt
+          scripts/build-disc-libs.sh
           scripts/build-ffmpeg.sh
       - name: Build app
         working-directory: app
+        env:
+          BLURAY_PREFIX: ${{ github.workspace }}/vendor/disc/prefix
+          MACOSX_DEPLOYMENT_TARGET: "12.0"
         run: npm ci && npx tauri build --bundles app --target aarch64-apple-darwin --config '{"bundle":{"createUpdaterArtifacts":false}}'
       - name: Bundle libraries and DMG
         run: |
           V=$(python3 -c 'import json; print(json.load(open("app/src-tauri/tauri.conf.json"))["version"])')
           APP=$(ls -d target/aarch64-apple-darwin/release/bundle/macos/*.app | head -1)
-          scripts/bundle-app.sh "$APP"
+          BLURAY_PREFIX="$PWD/vendor/disc/prefix" scripts/bundle-app.sh "$APP"
+          BIN="$APP/Contents/MacOS/keepsake-atelier-app"
+          for f in "$BIN" "$APP/Contents/Resources/lib/"*.dylib; do
+            m=$(otool -l "$f" | awk '/LC_BUILD_VERSION/{f=1} f&&/minos/{print $2; exit}')
+            [ "$m" = "12.0" ] || { echo "unexpected minos $m for $f" >&2; exit 1; }
+          done
+          [ "$(plutil -extract LSMinimumSystemVersion raw "$APP/Contents/Info.plist")" = "12.0" ]
           mkdir -p dist
           hdiutil create -volname "Keepsake Atelier" -srcfolder "$APP" -ov -format UDZO "dist/Keepsake-Atelier-${V}-arm64.dmg"
           cargo build --release --target aarch64-apple-darwin -p keepsake-atelier
@@ -68,18 +78,28 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: app/package-lock.json
-      - name: Build ffmpeg
+      - name: Build disc libraries and ffmpeg
         run: |
-          brew install nasm meson cmake ninja pkg-config dylibbundler libbluray libaacs libbdplus libgcrypt
+          brew install nasm meson cmake ninja pkg-config dylibbundler bison libbluray libaacs libbdplus libgcrypt
+          scripts/build-disc-libs.sh
           scripts/build-ffmpeg.sh
       - name: Build app
         working-directory: app
+        env:
+          BLURAY_PREFIX: ${{ github.workspace }}/vendor/disc/prefix
+          MACOSX_DEPLOYMENT_TARGET: "12.0"
         run: npm ci && npx tauri build --bundles app --target x86_64-apple-darwin --config '{"bundle":{"createUpdaterArtifacts":false}}'
       - name: Bundle libraries and DMG
         run: |
           V=$(python3 -c 'import json; print(json.load(open("app/src-tauri/tauri.conf.json"))["version"])')
           APP=$(ls -d target/x86_64-apple-darwin/release/bundle/macos/*.app | head -1)
-          scripts/bundle-app.sh "$APP"
+          BLURAY_PREFIX="$PWD/vendor/disc/prefix" scripts/bundle-app.sh "$APP"
+          BIN="$APP/Contents/MacOS/keepsake-atelier-app"
+          for f in "$BIN" "$APP/Contents/Resources/lib/"*.dylib; do
+            m=$(otool -l "$f" | awk '/LC_BUILD_VERSION/{f=1} f&&/minos/{print $2; exit}')
+            [ "$m" = "12.0" ] || { echo "unexpected minos $m for $f" >&2; exit 1; }
+          done
+          [ "$(plutil -extract LSMinimumSystemVersion raw "$APP/Contents/Info.plist")" = "12.0" ]
           mkdir -p dist
           hdiutil create -volname "Keepsake Atelier" -srcfolder "$APP" -ov -format UDZO "dist/Keepsake-Atelier-${V}-x64.dmg"
           cargo build --release --target x86_64-apple-darwin -p keepsake-atelier

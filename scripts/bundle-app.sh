@@ -31,14 +31,21 @@ mkdir -p "$LIB"
 
 # libaacs and libbdplus are opened by name at runtime. Fix copies so their own
 # dependencies also point into Resources/lib, then place them next to the app.
+DISC_PREFIX=${BLURAY_PREFIX:-}
 EXTRA=()
 for name in libaacs libbdplus; do
-  DIR=$(brew --prefix "$name" 2>/dev/null || true)
-  if [ -n "$DIR" ] && [ -f "$DIR/lib/$name.0.dylib" ]; then
-    cp "$DIR/lib/$name.0.dylib" "$TMP/$name.0.dylib"
+  SRC=""
+  if [ -n "$DISC_PREFIX" ] && [ -f "$DISC_PREFIX/lib/$name.0.dylib" ]; then
+    SRC="$DISC_PREFIX/lib/$name.0.dylib"
+  else
+    DIR=$(brew --prefix "$name" 2>/dev/null || true)
+    [ -n "$DIR" ] && [ -f "$DIR/lib/$name.0.dylib" ] && SRC="$DIR/lib/$name.0.dylib"
+  fi
+  if [ -n "$SRC" ]; then
+    cp "$SRC" "$TMP/$name.0.dylib"
     EXTRA+=(-x "$TMP/$name.0.dylib")
   else
-    echo "warning: $name not installed; encrypted discs will not decrypt" >&2
+    echo "warning: $name not found; encrypted discs will not decrypt" >&2
   fi
 done
 
@@ -58,6 +65,9 @@ done
 bad=""
 for f in "$BIN" "$LIB"/*.dylib; do
   refs=$(otool -L "$f" 2>/dev/null | grep -E '/(opt/homebrew|usr/local)/' || true)
+  if [ -n "$DISC_PREFIX" ]; then
+    refs="$refs$(otool -L "$f" 2>/dev/null | grep -F "$DISC_PREFIX" || true)"
+  fi
   if [ -n "$refs" ]; then
     bad="$bad\n$f: $refs"
   fi

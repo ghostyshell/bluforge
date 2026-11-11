@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- macOS 15 or newer on Apple Silicon or Intel, or an x86_64 Linux or Windows
+- macOS 12 or newer on Apple Silicon or Intel, or an x86_64 Linux or Windows
   machine. The per-platform matrix is in [Platforms](../platforms.md).
 - The macOS DMG is self-contained; the Linux and Windows builds install their
   own runtime pieces as described below.

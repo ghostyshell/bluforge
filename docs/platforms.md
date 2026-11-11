@@ -1,5 +1,9 @@
 # Platforms
 
+The macOS app supports macOS 12 or newer. Its bundled disc libraries are built
+from source with a 12.0 deployment target; the CLI tarball still links Homebrew
+bottles and needs macOS 15 or newer.
+
 Keepsake Atelier is macOS-first. The engine and CLI are portable Rust, but the
 optical drive, native AACS and disc-burning layers talk to operating-system
 interfaces, so each platform is at a different stage.
@@ -21,11 +25,12 @@ interfaces, so each platform is at a different stage.
 
 ## macOS
 
-The reference platform. The DMG bundles libbluray, libaacs, libbdplus and their
-dependencies (fixed and re-signed with `scripts/bundle-app.sh`), the bundled
-ffmpeg has `dvdvideo`, libx264 and libx265, and the native AACS path uses IOKit
-and a LibreDrive vendor read. The CLI tarballs are not bundled and need the
-Homebrew libraries.
+The reference platform. The DMG bundles libbluray, libaacs, libbdplus,
+libudfread, libgcrypt and libgpg-error, all built from source with
+`MACOSX_DEPLOYMENT_TARGET=12.0` by `scripts/build-disc-libs.sh`, then fixed and
+re-signed with `scripts/bundle-app.sh`. The bundled ffmpeg has `dvdvideo`,
+libx264 and libx265, and the native AACS path uses IOKit and a LibreDrive
+vendor read. The CLI tarballs are not bundled and need the Homebrew libraries.
 
 - **Apple Silicon:** the normal download.
 - **Intel:** built in CI on an Intel runner (`x86_64-apple-darwin`). The same
