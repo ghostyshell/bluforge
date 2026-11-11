@@ -190,6 +190,7 @@ jobs:
       - name: Build the AACS helper DLL
         shell: msys2 {0}
         run: |
+          mkdir -p app/src-tauri/resources/windows-libs
           gcc -shared -O2 -DBF_AACS_DLL \
             -I core/src -I core/third_party/libaacs \
             core/src/aacs_key.c \
