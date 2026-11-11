@@ -32,10 +32,12 @@ install_name_tool -id "@executable_path/lib/libaacs.0.dylib" "$OUT/lib/libaacs.0
 install_name_tool -id "@executable_path/lib/libbdplus.0.dylib" "$OUT/lib/libbdplus.0.dylib"
 cp "$RES/ffmpeg" "$RES/ffprobe" "$RES/00000.jar" "$RES/ffmpeg-LICENSES.txt" "$OUT/"
 
+LOG=$(mktemp)
+trap 'rm -f "$LOG"' EXIT
 cd "$OUT"
 dylibbundler -b -of -x keepsake-atelier -d lib -p "@executable_path/lib" \
-    -x lib/libaacs.0.dylib -x lib/libbdplus.0.dylib > "$OUT/../cli-bundle.log" 2>&1 \
-    || { cat "$OUT/../cli-bundle.log" >&2; exit 1; }
+    -x lib/libaacs.0.dylib -x lib/libbdplus.0.dylib > "$LOG" 2>&1 \
+    || { cat "$LOG" >&2; exit 1; }
 
 for f in keepsake-atelier lib/*.dylib; do
     codesign --force --sign - "$f" >/dev/null 2>&1 || { echo "cannot sign $f" >&2; exit 1; }
