@@ -128,7 +128,7 @@ fetch "https://downloads.videolan.org/pub/videolan/libdvdnav/$DVDNAV_VER/libdvdn
 meson_build() { # dir [extra options...]
     local dir=$1
     shift
-    meson setup "$dir/_build" "$dir" --prefix="$PREFIX" \
+    meson setup "$dir/_build" "$dir" --prefix="$PREFIX" --libdir=lib \
         --default-library=static --buildtype=release \
         -Denable_docs=false "$@"
     meson compile -C "$dir/_build" -j "$JOBS"
