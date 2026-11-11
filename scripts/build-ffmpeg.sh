@@ -209,6 +209,7 @@ if [ ! -x "$PREFIX/bin/ffmpeg" ] || [ "$FORCE" = 1 ]; then
         --enable-libdvdread \
         --enable-libdvdnav \
         ${APPLE_CODECS[@]+"${APPLE_CODECS[@]}"} \
+        --disable-zlib --disable-bzlib --disable-lzma --disable-iconv \
         --disable-vulkan --disable-xlib --disable-libxcb --disable-libxcb-shm \
         --disable-libxcb-xfixes --disable-libxcb-shape --disable-libdrm \
         --disable-vaapi --disable-vdpau --disable-sdl2 --disable-opencl \
@@ -229,6 +230,16 @@ STAMP=$(date +%Y-%m-%d)
     echo "libdvdnav: $DVDNAV_VER"
     echo "configure: GPL, libx264, libx265, libdvdread, libdvdnav${OS:+, $OS}"
 } > "$BUILD/VERSIONS.txt"
+
+if [ "$OS" = "Darwin" ]; then
+    bad=$(otool -L "$PREFIX/bin/ffmpeg" "$PREFIX/bin/ffprobe" \
+        | grep -E '/(opt/homebrew|usr/local)/' || true)
+    if [ -n "$bad" ]; then
+        echo "ffmpeg still references Homebrew:" >&2
+        echo "$bad" >&2
+        exit 1
+    fi
+fi
 
 cp -f "$PREFIX/bin/ffmpeg" "$RES/ffmpeg"
 cp -f "$PREFIX/bin/ffprobe" "$RES/ffprobe"
