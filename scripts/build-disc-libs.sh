@@ -39,9 +39,12 @@ need() {
 for t in cc make cmake meson ninja pkg-config curl tar python3; do need "$t"; done
 
 # GNU bison: libaacs's parser uses %code, which Apple's BSD bison rejects.
-if [ -x /opt/homebrew/opt/bison/bin/bison ]; then
-    export PATH="/opt/homebrew/opt/bison/bin:$PATH"
-fi
+for prefix in /opt/homebrew/opt/bison/bin /usr/local/opt/bison/bin; do
+    if [ -x "$prefix/bison" ]; then
+        export PATH="$prefix:$PATH"
+        break
+    fi
+done
 need bison
 if ! bison --version 2>/dev/null | grep -q "GNU Bison"; then
     echo "GNU bison is required (brew install bison)" >&2
