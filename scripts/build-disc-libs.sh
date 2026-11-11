@@ -136,7 +136,7 @@ if [ ! -f "$PREFIX/lib/libudfread.3.dylib" ] || [ "$FORCE" = 1 ]; then
     ( cd "$SRC/libudfread-$UDFREAD_VER"
       rm -rf build
       meson setup build --prefix="$PREFIX" --libdir=lib \
-          --default-library=shared --buildtype=release -Denable_docs=false
+          --default-library=shared --buildtype=release
       meson compile -C build -j "$JOBS"
       meson install -C build )
 fi
