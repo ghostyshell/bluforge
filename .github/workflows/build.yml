@@ -176,22 +176,30 @@ jobs:
           install: >-
             mingw-w64-x86_64-libaacs
             mingw-w64-x86_64-libbdplus
-            mingw-w64-x86_64-ntldd
       - name: Bundle the AACS DLLs
         shell: msys2 {0}
         run: |
+          copy_closure() {
+            local src="$1" dest="$2"
+            ldd "$src" 2>/dev/null |
+              awk '{ if ($2 == "=>") print $3; else if ($1 ~ /^\/mingw64/) print $1 }' |
+              while read -r dll; do
+                unix=$(cygpath -u "$dll" 2>/dev/null || true)
+                case "$unix" in
+                  /mingw64/*)
+                    if [ -f "$unix" ] && [ ! -f "$dest/$(basename "$unix")" ]; then
+                      cp "$unix" "$dest/"
+                      copy_closure "$unix" "$dest"
+                    fi
+                    ;;
+                esac
+              done
+          }
           mkdir -p app/src-tauri/resources/windows-libs
           cp /mingw64/bin/libaacs-0.dll app/src-tauri/resources/windows-libs/libaacs.dll
           cp /mingw64/bin/libbdplus-0.dll app/src-tauri/resources/windows-libs/libbdplus.dll
-          for root in /mingw64/bin/libaacs-0.dll /mingw64/bin/libbdplus-0.dll; do
-            ntldd -R "$root" | awk '{ if ($2 == "=>") print $3; else if ($1 ~ /mingw64/) print $1 }' |
-            while read -r dll; do
-              unix=$(cygpath -u "$dll" 2>/dev/null || true)
-              case "$unix" in
-                *mingw64*) [ -f "$unix" ] && cp -n "$unix" app/src-tauri/resources/windows-libs/ ;;
-              esac
-            done
-          done
+          copy_closure /mingw64/bin/libaacs-0.dll app/src-tauri/resources/windows-libs
+          copy_closure /mingw64/bin/libbdplus-0.dll app/src-tauri/resources/windows-libs
           ls -l app/src-tauri/resources/windows-libs
       - name: vcpkg libbluray
         shell: pwsh
@@ -261,7 +269,6 @@ jobs:
             mingw-w64-x86_64-libaacs
             mingw-w64-x86_64-libbdplus
             mingw-w64-x86_64-pkg-config
-            mingw-w64-x86_64-ntldd
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-gnu
@@ -280,18 +287,30 @@ jobs:
           V=$(python3 -c 'import json; print(json.load(open("app/src-tauri/tauri.conf.json"))["version"])')
           mkdir -p dist
           cp target/x86_64-pc-windows-gnu/release/keepsake-atelier.exe dist/
-          if command -v ntldd >/dev/null 2>&1; then
-            ntldd -R target/x86_64-pc-windows-gnu/release/keepsake-atelier.exe > /tmp/ntldd.txt 2>&1 || true
-            head -20 /tmp/ntldd.txt
-            awk '{ if ($2 == "=>") print $3; else if ($1 ~ /mingw64/) print $1 }' /tmp/ntldd.txt |
-            while read -r dll; do
-              unix=$(cygpath -u "$dll" 2>/dev/null || true)
-              case "$unix" in
-                *mingw64*)
-                  [ -f "$unix" ] && cp -n "$unix" dist/ ;;
-              esac
-            done
-          fi
+          copy_closure() {
+            local src="$1" dest="$2"
+            ldd "$src" 2>/dev/null |
+              awk '{ if ($2 == "=>") print $3; else if ($1 ~ /^\/mingw64/) print $1 }' |
+              while read -r dll; do
+                unix=$(cygpath -u "$dll" 2>/dev/null || true)
+                case "$unix" in
+                  /mingw64/*)
+                    if [ -f "$unix" ] && [ ! -f "$dest/$(basename "$unix")" ]; then
+                      cp "$unix" "$dest/"
+                      copy_closure "$unix" "$dest"
+                    fi
+                    ;;
+                esac
+              done
+          }
+          # libaacs and libbdplus are dlopen'ed, so they never appear in the
+          # PE import table. Copy them explicitly under the names libbluray
+          # looks up, then pull in their own dependency closure.
+          cp /mingw64/bin/libaacs-0.dll dist/libaacs.dll
+          cp /mingw64/bin/libbdplus-0.dll dist/libbdplus.dll
+          copy_closure dist/keepsake-atelier.exe dist
+          copy_closure /mingw64/bin/libaacs-0.dll dist
+          copy_closure /mingw64/bin/libbdplus-0.dll dist
           cd dist && zip -9 "keepsake-atelier-${V}-windows-x64.zip" *
           ls -lh
           ls -lh
