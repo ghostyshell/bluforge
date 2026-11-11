@@ -88,7 +88,7 @@ libbluray and its dependencies. Unpack it and run
 
 What works: reading an ISO, BDMV folder or authored disc image; `disc`,
 `verify`, `menu`, `rip` and `author` to a folder, provided ffmpeg and tsMuxeR
-are on `PATH`.
+are on `PATH`; and `burn` through IMAPI2.
 
 There is also an **NSIS installer** built in CI with MSVC, statically linked
 libbluray from vcpkg, and Windows ffmpeg/ffprobe in the bundle. It launches the
