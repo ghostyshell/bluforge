@@ -6,6 +6,10 @@ All notable changes to Keepsake Atelier. Newest first.
 
 ### Added
 
+- **A self-contained Linux ffmpeg.** The Linux app now builds the same
+  ffmpeg n9.0.2 as macOS, with libdvdread, libdvdnav, libx264 and libx265, and
+  bundles it. DVD-Video works without installing a newer system ffmpeg. CI
+  checks the `dvdvideo` demuxer and the encoders before packaging.
 - **Native AACS on Linux and Windows.** The macOS path's crypto half is now a
   portable C file backed by a vendored libaacs 0.11.1 subset. Linux reads the
   drive over `SG_IO`; Windows uses `IOCTL_SCSI_PASS_THROUGH_DIRECT`. Both try

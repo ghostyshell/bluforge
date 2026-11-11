@@ -21,15 +21,22 @@ BUILD="$ROOT/vendor/ffmpeg"
 SRC="$BUILD/src"
 PREFIX="$BUILD/prefix"
 RES="$ROOT/app/src-tauri/resources"
-JOBS=$(sysctl -n hw.ncpu 2>/dev/null || echo 8)
+OS=$(uname -s)
+JOBS=$(sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 8)
 MACOS_MIN=${MACOS_MIN:-12.0}
 FORCE=0
 [ "${1:-}" = "--force" ] && FORCE=1
 
 export PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
 export PATH="$PREFIX/bin:$PATH"
-export MACOSX_DEPLOYMENT_TARGET="$MACOS_MIN"
-CFLAGS_EXTRA="-mmacosx-version-min=$MACOS_MIN"
+if [ "$OS" = "Darwin" ]; then
+    export MACOSX_DEPLOYMENT_TARGET="$MACOS_MIN"
+    CFLAGS_EXTRA="-mmacosx-version-min=$MACOS_MIN"
+    CXXLIB="-lc++"
+else
+    CFLAGS_EXTRA=""
+    CXXLIB="-lstdc++"
+fi
 
 need() {
     command -v "$1" >/dev/null 2>&1 || {
@@ -37,7 +44,7 @@ need() {
         exit 1
     }
 }
-for t in clang make cmake nasm meson pkg-config git curl tar; do need "$t"; done
+for t in cc make cmake nasm meson pkg-config git curl tar; do need "$t"; done
 
 mkdir -p "$SRC" "$PREFIX" "$RES"
 
@@ -82,11 +89,13 @@ if [ ! -f "$PREFIX/lib/libx265.a" ] || [ "$FORCE" = 1 ]; then
     echo "== building x265"
     cd "$SRC/x265"
     rm -rf build
+    CMAKE_OSX=()
+    [ "$OS" = "Darwin" ] && CMAKE_OSX=(-DCMAKE_OSX_DEPLOYMENT_TARGET="$MACOS_MIN")
     cmake -S source -B build -G Ninja \
         -DCMAKE_INSTALL_PREFIX="$PREFIX" \
         -DCMAKE_BUILD_TYPE=Release \
-        -DCMAKE_OSX_DEPLOYMENT_TARGET="$MACOS_MIN" \
         -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+        "${CMAKE_OSX[@]}" \
         -DENABLE_SHARED=OFF -DENABLE_CLI=OFF -DENABLE_ASSEMBLY=ON
     cmake --build build -j "$JOBS"
     cmake --install build
@@ -102,7 +111,7 @@ Name: x265
 Description: H.265/HEVC video encoder
 Version: 4.2
 Libs: -L\${libdir} -lx265
-Libs.private: -lc++ -lm
+Libs.private: $CXXLIB -lm
 Cflags: -I\${includedir}
 EOF
     fi
@@ -145,6 +154,8 @@ if [ ! -x "$PREFIX/bin/ffmpeg" ] || [ "$FORCE" = 1 ]; then
     echo "== building ffmpeg"
     cd "$SRC/ffmpeg"
     make distclean >/dev/null 2>&1 || true
+    APPLE_CODECS=()
+    [ "$OS" = "Darwin" ] && APPLE_CODECS=(--enable-videotoolbox --enable-audiotoolbox)
     ./configure \
         --prefix="$PREFIX" \
         --pkg-config-flags=--static \
@@ -155,8 +166,7 @@ if [ ! -x "$PREFIX/bin/ffmpeg" ] || [ "$FORCE" = 1 ]; then
         --enable-libx265 \
         --enable-libdvdread \
         --enable-libdvdnav \
-        --enable-videotoolbox \
-        --enable-audiotoolbox \
+        "${APPLE_CODECS[@]}" \
         --disable-vulkan --disable-xlib --disable-libxcb --disable-libxcb-shm \
         --disable-libxcb-xfixes --disable-libxcb-shape --disable-libdrm \
         --disable-vaapi --disable-vdpau --disable-sdl2 --disable-opencl \
@@ -175,14 +185,16 @@ STAMP=$(date +%Y-%m-%d)
     echo "x265:      4.2 ($(git -C "$SRC/x265" rev-parse --short HEAD))"
     echo "libdvdread:$DVDREAD_VER"
     echo "libdvdnav: $DVDNAV_VER"
-    echo "configure: GPL, libx264, libx265, libdvdread, libdvdnav, videotoolbox, audiotoolbox"
+    echo "configure: GPL, libx264, libx265, libdvdread, libdvdnav${OS:+, $OS}"
 } > "$BUILD/VERSIONS.txt"
 
 cp -f "$PREFIX/bin/ffmpeg" "$RES/ffmpeg"
 cp -f "$PREFIX/bin/ffprobe" "$RES/ffprobe"
 chmod +x "$RES/ffmpeg" "$RES/ffprobe"
-codesign --force --sign - "$RES/ffmpeg" >/dev/null 2>&1 || true
-codesign --force --sign - "$RES/ffprobe" >/dev/null 2>&1 || true
+if command -v codesign >/dev/null 2>&1; then
+    codesign --force --sign - "$RES/ffmpeg" >/dev/null 2>&1 || true
+    codesign --force --sign - "$RES/ffprobe" >/dev/null 2>&1 || true
+fi
 
 {
     echo "Keepsake Atelier bundled ffmpeg"

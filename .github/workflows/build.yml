@@ -133,13 +133,17 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
             librsvg2-dev patchelf libgtk-3-dev libsoup-3.0-dev pkg-config \
-            libbluray-dev libaacs-dev libbdplus-dev libgcrypt20-dev libgpg-error-dev ffmpeg
+            libbluray-dev libaacs-dev libbdplus-dev libgcrypt20-dev libgpg-error-dev \
+            build-essential nasm meson ninja-build cmake libtool autoconf automake libnuma-dev
+      - name: Build bundled ffmpeg
+        run: |
+          scripts/build-ffmpeg.sh
+          vendor/ffmpeg/ffmpeg -hide_banner -demuxers | grep -q dvdvideo
+          vendor/ffmpeg/ffmpeg -hide_banner -encoders | grep -q libx265
+          vendor/ffmpeg/ffmpeg -version | head -1
       - name: Build app
         working-directory: app
         run: |
-          mkdir -p src-tauri/resources
-          cp /usr/bin/ffmpeg src-tauri/resources/ffmpeg
-          cp /usr/bin/ffprobe src-tauri/resources/ffprobe
           npm ci
           npx tauri build --bundles deb,appimage --config '{"bundle":{"createUpdaterArtifacts":false}}'
       - name: Package artifacts

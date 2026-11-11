@@ -60,7 +60,6 @@
           "libbluray2",
           "libaacs0",
           "libbdplus0",
-          "ffmpeg",
           "libgcrypt20",
           "libgpg-error0"
         ]

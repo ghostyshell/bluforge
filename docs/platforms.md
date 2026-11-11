@@ -14,7 +14,7 @@ interfaces, so each platform is at a different stage.
 | Author to a BDMV folder | yes | yes | yes, with tsMuxeR | yes, with tsMuxeR |
 | Author a UDF 2.50 ISO | yes (`newfs_udf`) | yes | yes (portable, BD-R) | yes (portable, BD-R) |
 | Authored BD-J menu | yes | yes | yes (writer) | yes (writer) |
-| DVD-Video | yes (bundled ffmpeg) | yes (bundled ffmpeg) | needs an ffmpeg with `dvdvideo` | yes (bundled ffmpeg) |
+| DVD-Video | yes (bundled ffmpeg) | yes (bundled ffmpeg) | yes (bundled ffmpeg) | yes (bundled ffmpeg) |
 | Verify, menu documents, KEYDB | yes | yes | yes | yes |
 | Burn to disc | `hdiutil` | `hdiutil` | `growisofs` | IMAPI2 (untested) |
 | MCP server | yes | yes | yes | preview |
@@ -61,10 +61,14 @@ and with the x86_64 CI artifact under an Ubuntu 22.04 container:
 - Authoring to a BDMV folder with tsMuxeR, and multi-title authoring to a
   UDF 2.50 ISO with the portable writer. The core test suite creates such an
   image on Linux; the macOS-verified flow produces the same layout.
+- DVD-Video through the bundled ffmpeg, which is built with libdvdread,
+  libdvdnav, libx264 and libx265. The AppImage and deb carry it in
+  `/usr/lib/Keepsake Atelier`.
 - Burning with growisofs when `dvd+rw-tools` is installed.
 - A desktop app as an **AppImage** (bundles GTK/WebKit and the app) and a
   **.deb** (depends on `libwebkit2gtk-4.1-0`, `libgtk-3-0`, `libbluray2`,
-  `libaacs0`, `libbdplus0` and `ffmpeg`). The build, packaged resources and
+  `libaacs0`, `libbdplus0`, `libgcrypt20` and `libgpg-error0`; ffmpeg is
+  bundled). The build, packaged resources and
   dependency set are verified; the window has not been driven interactively on
   a Linux desktop here.
 

@@ -60,8 +60,8 @@ export KEEPSAKE_FFMPEG="/Applications/Keepsake Atelier.app/Contents/Resources/ff
 - **AppImage:** `chmod +x Keepsake-Atelier-0.1.0-linux-x64.AppImage` and run it.
   It carries WebKitGTK, GTK3 and ffmpeg.
 - **deb:** `sudo apt install ./Keepsake-Atelier-0.1.0-linux-x64.deb`. It pulls
-  `libwebkit2gtk-4.1-0`, `libgtk-3-0`, `libbluray2`, `libaacs0`, `libbdplus0`
-  and `ffmpeg`.
+  `libwebkit2gtk-4.1-0`, `libgtk-3-0`, `libbluray2`, `libaacs0`, `libbdplus0`,
+  `libgcrypt20` and `libgpg-error0`; ffmpeg is bundled.
 - **CLI tarball:** unpack and run `./keepsake-atelier doctor`. Install
   `libbluray`, `libaacs`, `libbdplus`, `libgcrypt` and `ffmpeg` from the
   distribution.
