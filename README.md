@@ -128,8 +128,8 @@ menus, keys, DVD, covers, queue, verify, burn and system check.
 - **Copy.** 1:1 encrypted clone, decrypted ISO, or a plain folder.
 - **Verify.** Walk every title, movie object, playlist, clip and menu row before
   you burn.
-- **Burn.** Native `hdiutil burn`, or growisofs with an explicit device. Dry run
-  by default. Confirmation required.
+- **Burn.** Native `hdiutil burn` on macOS, growisofs on Linux, and Windows'
+  IMAPI2 stack. Dry run by default. Confirmation required.
 - **Automate.** Every capability is a CLI command and an MCP tool. The server is
   off by default and binds to loopback.
 

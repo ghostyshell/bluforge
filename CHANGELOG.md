@@ -6,6 +6,11 @@ All notable changes to Keepsake Atelier. Newest first.
 
 ### Added
 
+- **Windows burning through IMAPI2.** `burn` now drives Windows' own COM writer
+  stack from PowerShell, so no extra tool is required. It picks the first
+  compatible recorder or the drive letter passed as `--device D:`, sets the
+  write speed, refuses write-protected media and closes the session. The script
+  is unit-tested; a physical write still needs a writer and a blank disc.
 - **Browser fixture for interface work.** `cd app && npm run dev:mock` answers
   the Tauri commands with fixtures, so the shell can be laid out, clicked and
   screenshotted without a disc drive. It is loaded behind `import.meta.env.DEV`

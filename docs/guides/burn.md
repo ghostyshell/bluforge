@@ -10,8 +10,9 @@ keepsake-atelier devices
 keepsake-atelier doctor
 ```
 
-`devices` lists optical drives with BSD names and capacity. `doctor` should say
-`hdiutil burn (native)`.
+`devices` lists optical drives with device names and capacity. `doctor` should
+say `hdiutil burn (native)` on macOS, `growisofs` on Linux, or
+`IMAPI2 (native PowerShell)` on Windows.
 
 ## 2. Ask what the image needs
 
@@ -28,13 +29,15 @@ BD-25 or larger disc; a BD-50 needs a BD-50.
 keepsake-atelier burn /path/movie.iso
 ```
 
-This prints the exact command and changes nothing. The default is
-`hdiutil burn`, which picks the writer itself.
+This prints what would happen and changes nothing. The default is
+`hdiutil burn` on macOS, the first compatible writer through IMAPI2 on Windows,
+and growisofs on Linux.
 
-To use growisofs with an explicit device:
+To use an explicit device:
 
 ```sh
-keepsake-atelier burn /path/movie.iso --device /dev/rdisk4
+keepsake-atelier burn /path/movie.iso --device /dev/rdisk4   # Linux
+keepsake-atelier burn C:\path\movie.iso --device D:          # Windows
 ```
 
 ## 4. Write
@@ -49,7 +52,8 @@ requires `confirm=true`. There is no silent write path.
 Options:
 
 - `--speed N` sets the write speed.
-- `--device /dev/rdiskN` switches to growisofs.
+- `--device /dev/rdiskN` switches to growisofs on Linux.
+- `--device D:` selects a Windows recorder; omit it to use the first one.
 - hdiutil verifies by default after writing; keep that on for the first burn.
 
 ## 5. Read it back

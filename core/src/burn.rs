@@ -1,9 +1,10 @@
 //! Burn a Blu-ray ISO to an optical writer.
 //!
-//! Uses `growisofs` (dvd+rw-tools) when available, falling back to `cdrecord`.
-//! `--dry-run` prints the command instead of writing; the CLI requires `--yes`
-//! to actually write. Cancelling cannot undo what has already been written, so
-//! the UI/CLI warns about that before starting.
+//! macOS uses the native `hdiutil burn`, Linux uses `growisofs` with a
+//! `cdrecord` fallback, and Windows drives the built-in IMAPI2 stack through
+//! PowerShell. `--dry-run` reports what would happen instead of writing; the
+//! CLI requires `--yes` to actually write. Cancelling cannot undo what has
+//! already been written, so the UI/CLI warns about that before starting.
 
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
@@ -46,7 +47,74 @@ fn in_path(name: &str) -> Option<PathBuf> {
 
 /// The writer front-end that will be used.
 pub fn tool() -> Option<PathBuf> {
-    in_path("growisofs").or_else(|| in_path("cdrecord"))
+    #[cfg(target_os = "windows")]
+    {
+        // IMAPI2 is driven through PowerShell and ships with Windows.
+        return in_path("powershell.exe").or_else(|| in_path("powershell"));
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        in_path("growisofs").or_else(|| in_path("cdrecord"))
+    }
+}
+
+/// A PowerShell script that writes the image with Windows' own IMAPI2 stack.
+/// The placeholders are substituted by `windows_script`; keeping it as a raw
+/// string avoids doubling every PowerShell brace for `format!`.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+const WINDOWS_BURN_SCRIPT: &str = r#"$ErrorActionPreference = 'Stop'
+$image = __IMAGE__
+$want = __DEVICE__
+$master = New-Object -ComObject IMAPI2.MsftDiscMaster2
+if ($master.Count -eq 0) { throw 'no optical recorder found' }
+$recorder = $null
+for ($i = 0; $i -lt $master.Count; $i++) {
+  $candidate = New-Object -ComObject IMAPI2.MsftDiscRecorder2
+  $candidate.InitializeDiscRecorder($master.Item($i))
+  $hit = $false
+  if ($want) {
+    foreach ($p in @($candidate.VolumePathNames)) {
+      if ($p -and $p.StartsWith($want.TrimEnd(':'))) { $hit = $true }
+    }
+  }
+  if (-not $want -or $hit) { $recorder = $candidate; break }
+}
+if ($null -eq $recorder) { throw "no recorder matches $want" }
+$format = New-Object -ComObject IMAPI2.MsftDiscFormat2Data
+if (-not $format.IsCurrentMediaSupported($recorder)) { throw 'the inserted media is not writable by this drive' }
+$format.Recorder = $recorder
+$format.ClientName = 'Keepsake Atelier'
+$format.ForceMediaToBeClosed = $true
+if ($format.MediaPhysicallyWriteProtected) { throw 'the disc is write protected' }
+__SPEED__
+$stream = New-Object -ComObject ADODB.Stream
+$stream.Type = 1
+$stream.Open()
+$stream.LoadFromFile($image)
+try { $format.Write($stream) } finally { $stream.Close() }
+Write-Output 'BURN-OK'
+"#;
+
+fn ps_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "''"))
+}
+
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+fn windows_script(req: &BurnRequest) -> String {
+    let image = ps_quote(&req.image.display().to_string());
+    let device = req
+        .device
+        .as_ref()
+        .map(|d| ps_quote(&d.display().to_string()))
+        .unwrap_or_else(|| "''".into());
+    let speed = req
+        .speed
+        .map(|s| format!("$format.SetWriteSpeed({s})"))
+        .unwrap_or_default();
+    WINDOWS_BURN_SCRIPT
+        .replace("__IMAGE__", &image)
+        .replace("__DEVICE__", &device)
+        .replace("__SPEED__", &speed)
 }
 
 /// Validate the parts that do not require hardware (used by dry runs).
@@ -62,10 +130,18 @@ fn check_image(req: &BurnRequest) -> Result<(), CoreError> {
     }
     if let Some(device) = &req.device {
         let dev = device.to_string_lossy();
-        if !dev.starts_with("/dev/") {
-            return Err(CoreError::Disc(format!(
-                "device must be a /dev/rdiskN node, got {dev}"
-            )));
+        #[cfg(target_os = "windows")]
+        let shaped = dev.len() >= 2
+            && dev.as_bytes()[1] == b':'
+            && dev.as_bytes()[0].is_ascii_alphabetic();
+        #[cfg(not(target_os = "windows"))]
+        let shaped = dev.starts_with("/dev/");
+        if !shaped {
+            return Err(CoreError::Disc(if cfg!(target_os = "windows") {
+                format!("device must be a drive letter, e.g. D:, got {dev}")
+            } else {
+                format!("device must be a /dev/rdiskN node, got {dev}")
+            }));
         }
     }
     Ok(())
@@ -77,14 +153,21 @@ pub fn check(req: &BurnRequest) -> Result<(), CoreError> {
     match &req.device {
         Some(device) => {
             let dev = device.to_string_lossy();
-            if !Path::new(device).exists() {
-                return Err(CoreError::Disc(format!("device not present: {dev}")));
+            #[cfg(not(target_os = "windows"))]
+            {
+                if !Path::new(device).exists() {
+                    return Err(CoreError::Disc(format!("device not present: {dev}")));
+                }
+                if let Some(mp) = crate::device::mount_point_for_device(&dev) {
+                    return Err(CoreError::Disc(format!(
+                        "{dev} is mounted at {mp}; unmount the disc before burning"
+                    )));
+                }
             }
-            if let Some(mp) = crate::device::mount_point_for_device(&dev) {
-                return Err(CoreError::Disc(format!(
-                    "{dev} is mounted at {mp}; unmount the disc before burning"
-                )));
-            }
+            // On Windows the letter is a volume, not a file handle. IMAPI2
+            // validates the recorder and the inserted media when it starts.
+            #[cfg(target_os = "windows")]
+            let _ = &dev;
         }
         None => {
             if crate::device::list_optical().is_empty() {
@@ -97,6 +180,7 @@ pub fn check(req: &BurnRequest) -> Result<(), CoreError> {
     Ok(())
 }
 
+#[cfg(not(target_os = "windows"))]
 fn command_with(
     growisofs: Option<&Path>,
     cdrecord: Option<&Path>,
@@ -153,12 +237,32 @@ fn command_with(
 
 /// The command that would be run.
 pub fn command(req: &BurnRequest) -> Result<(PathBuf, Vec<String>), CoreError> {
-    command_with(
-        in_path("growisofs").as_deref(),
-        in_path("cdrecord").as_deref(),
-        Some(Path::new("/usr/bin/hdiutil")).filter(|p| p.is_file()),
-        req,
-    )
+    #[cfg(target_os = "windows")]
+    {
+        let ps = in_path("powershell.exe")
+            .or_else(|| in_path("powershell"))
+            .ok_or_else(|| CoreError::Disc("powershell.exe not found".into()))?;
+        return Ok((
+            ps,
+            vec![
+                "-NoProfile".into(),
+                "-NonInteractive".into(),
+                "-ExecutionPolicy".into(),
+                "Bypass".into(),
+                "-Command".into(),
+                windows_script(req),
+            ],
+        ));
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        command_with(
+            in_path("growisofs").as_deref(),
+            in_path("cdrecord").as_deref(),
+            Some(Path::new("/usr/bin/hdiutil")).filter(|p| p.is_file()),
+            req,
+        )
+    }
 }
 
 fn parse_percent(line: &str) -> Option<f64> {
@@ -182,15 +286,35 @@ where
     }
     let (bin, args) = command(req)?;
     if req.dry_run {
+        let message = if cfg!(target_os = "windows") {
+            format!(
+                "would write {} with IMAPI2 to {}",
+                req.image.display(),
+                req.device
+                    .as_ref()
+                    .map(|d| d.display().to_string())
+                    .unwrap_or_else(|| "the first writer".into())
+            )
+        } else {
+            format!("would run: {} {}", bin.display(), args.join(" "))
+        };
         on_progress(BurnProgress {
             percent: 0.0,
-            message: format!("would run: {} {}", bin.display(), args.join(" ")),
+            message,
             done: true,
         });
         return Ok(());
     }
 
-    let native = req.device.is_none();
+    #[cfg(target_os = "windows")]
+    on_progress(BurnProgress {
+        percent: 1.0,
+        message: "preparing the writer".into(),
+        done: false,
+    });
+
+    // IMAPI2 talks on stdout; hdiutil also uses stdout, growisofs stderr.
+    let native = req.device.is_none() || cfg!(target_os = "windows");
     let mut command = Command::new(&bin);
     command.args(&args);
     // growisofs reports progress on stderr, hdiutil on stdout.
@@ -274,6 +398,7 @@ mod tests {
         }
     }
 
+    #[cfg(not(target_os = "windows"))]
     #[test]
     fn builds_growisofs_and_cdrecord_commands() {
         let (bin, args) = command_with(
@@ -312,6 +437,24 @@ mod tests {
         .unwrap();
         assert_eq!(bin, PathBuf::from("/usr/bin/hdiutil"));
         assert_eq!(args, vec!["burn", "/tmp/disc.iso", "-speed", "4"]);
+    }
+
+    #[test]
+    fn builds_the_windows_imapi_script() {
+        let mut r = req();
+        r.device = Some(PathBuf::from("D:"));
+        r.speed = Some(8);
+        let script = windows_script(&r);
+        assert!(script.contains("$image = '/tmp/disc.iso'"));
+        assert!(script.contains("$want = 'D:'"));
+        assert!(script.contains("SetWriteSpeed(8)"));
+        assert!(script.contains("IMAPI2.MsftDiscFormat2Data"));
+        assert!(script.contains("ForceMediaToBeClosed = $true"));
+        assert!(script.contains("Write-Output 'BURN-OK'"));
+
+        r.image = PathBuf::from("C:\\disc's.iso");
+        let quoted = windows_script(&r);
+        assert!(quoted.contains("$image = 'C:\\disc''s.iso'"));
     }
 
     #[test]

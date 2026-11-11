@@ -247,10 +247,12 @@ pub fn run() -> DoctorReport {
     ));
 
     // Burning stack
-    let native_burn = Path::new("/usr/bin/hdiutil").is_file();
+    let native_burn = cfg!(target_os = "macos") && Path::new("/usr/bin/hdiutil").is_file();
     let growisofs = in_path("growisofs");
     let cdrecord = in_path("cdrecord");
-    let burning = native_burn || growisofs.is_some();
+    let powershell = in_path("powershell.exe").or_else(|| in_path("powershell"));
+    let imapi = cfg!(target_os = "windows") && powershell.is_some();
+    let burning = native_burn || imapi || growisofs.is_some() || cdrecord.is_some();
     r.checks.push(check(
         "burning",
         burning,
@@ -263,6 +265,8 @@ pub fn run() -> DoctorReport {
                     ""
                 }
             )
+        } else if imapi {
+            "IMAPI2 (native PowerShell)".into()
         } else if let Some(g) = &growisofs {
             g.display().to_string()
         } else if let Some(c) = &cdrecord {
@@ -270,12 +274,12 @@ pub fn run() -> DoctorReport {
         } else {
             "no writer front-end".into()
         },
-        Some(if cfg!(target_os = "macos") {
+        Some(if cfg!(target_os = "windows") {
+            "IMAPI2 is built into Windows; connect a writer drive"
+        } else if cfg!(target_os = "macos") {
             "macOS hdiutil (built in), or brew install dvd+rw-tools"
-        } else if cfg!(target_os = "linux") {
-            "install dvd+rw-tools (growisofs)"
         } else {
-            "no writer front-end on Windows yet; use a macOS or Linux machine"
+            "install dvd+rw-tools (growisofs)"
         }),
     ));
 
@@ -354,7 +358,13 @@ pub fn run() -> DoctorReport {
         "Burning to disc",
         burning && !drives.is_empty(),
         if burning && !drives.is_empty() {
-            "hdiutil burn + an optical drive"
+            if cfg!(target_os = "windows") {
+                "IMAPI2 + an optical drive"
+            } else if cfg!(target_os = "macos") {
+                "hdiutil burn + an optical drive"
+            } else {
+                "growisofs + an optical drive"
+            }
         } else if burning {
             "writer front-end ready; connect a writer drive"
         } else {

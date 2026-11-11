@@ -16,7 +16,7 @@ interfaces, so each platform is at a different stage.
 | Authored BD-J menu | yes | yes | yes (writer) | yes (writer) |
 | DVD-Video | yes (bundled ffmpeg) | yes (bundled ffmpeg) | needs an ffmpeg with `dvdvideo` | needs an ffmpeg with `dvdvideo` |
 | Verify, menu documents, KEYDB | yes | yes | yes | yes |
-| Burn to disc | `hdiutil` | `hdiutil` | `growisofs` | no |
+| Burn to disc | `hdiutil` | `hdiutil` | `growisofs` | IMAPI2 (untested) |
 | MCP server | yes | yes | yes | preview |
 
 ## macOS
@@ -98,10 +98,15 @@ DLLs in `resources/windows-libs` and points `LIBAACS_PATH` and `LIBBDPLUS_PATH`
 there, so a KEYDB entry can decrypt a disc. The CLI zip carries the same
 closure next to the exe.
 
+Burning uses Windows' own **IMAPI2** COM stack through PowerShell, so no extra
+tool is needed. It picks the first compatible recorder, or the drive letter
+passed as `--device D:`. The write path is implemented and unit-tested at the
+script level, but has not been run on a physical writer here.
+
 What does not work yet:
 
-- Native AACS key recovery and burning.
-- UDF ISO authoring.
+- Native AACS key recovery.
+- UDF 2.50 ISO authoring.
 - Interactive validation of the installer on a Windows desktop.
 
 ## Building everything

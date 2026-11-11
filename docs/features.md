@@ -176,7 +176,8 @@ keepsake-atelier verify /Volumes/MY_DISC --json
 
 ## Burning
 
-- Native `hdiutil burn` by default. It picks the writer itself.
+- Native `hdiutil burn` on macOS, `growisofs` on Linux, and IMAPI2 through
+  PowerShell on Windows. The macOS and Windows paths pick the writer themselves.
 - `--device /dev/rdiskN` selects growisofs, with cdrecord as a fallback.
 - Dry run by default. A real write needs `--yes` in the CLI, a confirmation in
   the app, and `confirm=true` over MCP.
@@ -187,6 +188,7 @@ keepsake-atelier verify /Volumes/MY_DISC --json
 keepsake-atelier burn /path/movie.iso
 keepsake-atelier burn /path/movie.iso --yes
 keepsake-atelier burn /path/movie.iso --device /dev/rdisk4 --yes
+keepsake-atelier burn C:\\path\\movie.iso --device D: --yes   # Windows
 ```
 
 ## Command line, desktop app and MCP
