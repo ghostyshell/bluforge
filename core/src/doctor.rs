@@ -320,7 +320,10 @@ pub fn run() -> DoctorReport {
     let helper_ok = if cfg!(all(target_os = "windows", target_env = "msvc")) {
         std::env::current_exe()
             .ok()
-            .and_then(|p| p.parent().map(|d| d.join("windows-libs").join("keepsake-aacs.dll")))
+            .and_then(|p| {
+                p.parent()
+                    .map(|d| d.join("windows-libs").join("keepsake-aacs.dll"))
+            })
             .is_some_and(|p| p.is_file())
     } else {
         true

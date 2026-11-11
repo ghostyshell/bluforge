@@ -1443,7 +1443,7 @@ fn tools() -> Vec<Value> {
                 "chapters": { "type": "boolean" },
                 "auto_chapter_minutes": { "type": "integer", "description": "Force a chapter every N minutes instead." },
                 "split_gb": { "type": "number", "description": "Split whole inputs across discs of at most this many GB (25/50); writes one folder per disc." },
-                "menu": { "type": "boolean", "description": "Add an authored BD-J title menu as first play and top menu (experimental; verified with libbluray, not on hardware)." },
+                "menu": { "type": "boolean", "description": "Add an authored BD-J title menu as first play and top menu (verified with libbluray and the render harness; hardware playback still untested)." },
                 "menu_background": { "type": "string", "description": "Background image for the authored menu." },
                 "menu_template": { "type": "string", "description": "Saved menu document (name or path) whose title names feed the menu." }
             }, "required": ["dest"] }

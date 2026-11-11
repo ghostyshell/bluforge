@@ -140,6 +140,8 @@ What does not work yet:
 - `ubuntu-22.04` builds the Linux CLI with an older glibc floor.
 - `ubuntu-24.04` builds the Linux AppImage and deb.
 - `windows-latest` builds the Windows CLI zip and the NSIS installer.
+- A non-blocking `ubuntu-24.04` job renders the BD-J menu under Xvfb and
+  uploads the frames.
 
 Run it from the Actions tab or `gh workflow run build.yml`. The local
 `scripts/publish-release.sh` and the weekly launchd job still build the macOS
