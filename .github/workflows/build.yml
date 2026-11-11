@@ -311,6 +311,14 @@ jobs:
           copy_closure dist/keepsake-atelier.exe dist
           copy_closure /mingw64/bin/libaacs-0.dll dist
           copy_closure /mingw64/bin/libbdplus-0.dll dist
+          # A silent no-libbluray build is the failure mode we just fixed.
+          objdump -p dist/keepsake-atelier.exe | grep -qi libbluray \
+            || { echo "::error::libbluray is not linked into the Windows CLI"; exit 1; }
+          ls dist/libbluray*.dll >/dev/null 2>&1 \
+            || { echo "::error::the libbluray DLL closure is missing"; exit 1; }
+          for dll in libaacs.dll libbdplus.dll; do
+            [ -f "dist/$dll" ] || { echo "::error::missing $dll"; exit 1; }
+          done
           cd dist && zip -9 "keepsake-atelier-${V}-windows-x64.zip" *
           ls -lh
           ls -lh
