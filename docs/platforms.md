@@ -6,7 +6,7 @@ interfaces, so each platform is at a different stage.
 
 | Capability | macOS arm64 | macOS x64 | Linux x64 | Windows x64 |
 | --- | --- | --- | --- | --- |
-| Desktop app | yes | yes | not yet | not yet |
+| Desktop app | yes | yes | preview (AppImage/deb) | not yet |
 | CLI | yes | yes | yes | preview |
 | Optical drive discovery | IOKit | IOKit | sysfs (`/dev/sr*`) | not yet |
 | Native AACS key recovery | yes | yes | no (use KEYDB) | no (use KEYDB) |
@@ -52,14 +52,19 @@ and with the x86_64 CI artifact under an Ubuntu 22.04 container:
 - `keys` import/search, libaacs decryption with a KEYDB entry.
 - Authoring to a BDMV folder with tsMuxeR.
 - Burning with growisofs when `dvd+rw-tools` is installed.
+- A desktop app as an **AppImage** (bundles GTK/WebKit and the app) and a
+  **.deb** (depends on `libwebkit2gtk-4.1-0`, `libgtk-3-0`, `libbluray2`,
+  `libaacs0`, `libbdplus0` and `ffmpeg`). The build, packaged resources and
+  dependency set are verified; the window has not been driven interactively on
+  a Linux desktop here.
 
 What does not work yet:
 
 - Native AACS key recovery. Use a KEYDB entry or libaacs.
 - UDF 2.50 ISO authoring. `newfs_udf` and `hdiutil` are macOS tools; write a
   BDMV folder instead and let your authoring tool make the image.
-- The desktop app. Tauri builds on Linux, but the UI and device cards have not
-  been validated there.
+- Interactive UI validation on a Linux desktop. The AppImage and deb build and
+  package correctly, but the window has not been exercised end to end.
 
 ## Windows
 
