@@ -114,6 +114,46 @@ jobs:
           name: linux-x64
           path: dist/*
 
+  linux-app:
+    name: Linux x64 (AppImage + deb)
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.platforms == 'all' || inputs.platforms == 'linux' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
+            librsvg2-dev patchelf libgtk-3-dev libsoup-3.0-dev pkg-config \
+            libbluray-dev libaacs-dev libbdplus-dev ffmpeg
+      - name: Build app
+        working-directory: app
+        run: |
+          mkdir -p src-tauri/resources
+          cp /usr/bin/ffmpeg src-tauri/resources/ffmpeg
+          cp /usr/bin/ffprobe src-tauri/resources/ffprobe
+          npm ci
+          npx tauri build --bundles deb,appimage --config '{"bundle":{"createUpdaterArtifacts":false}}'
+      - name: Package artifacts
+        run: |
+          V=$(python3 -c 'import json; print(json.load(open("app/src-tauri/tauri.conf.json"))["version"])')
+          mkdir -p dist
+          DEB=$(ls target/release/bundle/deb/*.deb | head -1)
+          APPIMG=$(ls target/release/bundle/appimage/*.AppImage | head -1)
+          cp "$DEB" "dist/Keepsake-Atelier-${V}-linux-x64.deb"
+          cp "$APPIMG" "dist/Keepsake-Atelier-${V}-linux-x64.AppImage"
+          ls -lh dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-app
+          path: dist/*
+
   windows-x64:
     name: Windows x64 (CLI)
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.platforms == 'all' || inputs.platforms == 'windows' }}
