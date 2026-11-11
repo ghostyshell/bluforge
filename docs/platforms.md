@@ -9,7 +9,7 @@ interfaces, so each platform is at a different stage.
 | Desktop app | yes | yes | preview (AppImage/deb) | preview (installer) |
 | CLI | yes | yes | yes | preview |
 | Optical drive discovery | IOKit | IOKit | sysfs (`/dev/sr*`) | WMI (`Win32_CDROMDrive`) |
-| Native AACS key recovery | yes | yes | no (use KEYDB) | no (use KEYDB) |
+| Native AACS key recovery | yes | yes | no (use KEYDB) | no (KEYDB via bundled libaacs) |
 | Rip and encode | yes | yes | yes, with a system ffmpeg | yes, with ffmpeg on `PATH` |
 | Author to a BDMV folder | yes | yes | yes, with tsMuxeR | yes, with tsMuxeR |
 | Author a UDF 2.50 ISO | yes (`newfs_udf`) | yes | no | no |
@@ -93,10 +93,10 @@ system install.
 
 The app discovers drives through WMI (`Win32_CDROMDrive`), ejects through
 `Shell.Application`, and understands drive letters as sources. It can open an
-ISO or a BDMV folder. The installer job also copies the MinGW libaacs and
-libbdplus DLLs into `resources/windows-libs` and points `LIBAACS_PATH` and
-`LIBBDPLUS_PATH` there, so a KEYDB entry can decrypt a disc. The published
-installer predates that change; the next Windows build carries it.
+ISO or a BDMV folder. The installer bundles the MinGW libaacs and libbdplus
+DLLs in `resources/windows-libs` and points `LIBAACS_PATH` and `LIBBDPLUS_PATH`
+there, so a KEYDB entry can decrypt a disc. The CLI zip carries the same
+closure next to the exe.
 
 What does not work yet:
 
@@ -108,9 +108,10 @@ What does not work yet:
 
 `.github/workflows/build.yml` is the cross-platform matrix:
 
-- `macos-14` builds the Apple Silicon DMG and CLI.
+- `macos-15` builds the Apple Silicon DMG and CLI.
 - `macos-15-intel` builds the Intel DMG and CLI.
-- `ubuntu-24.04` builds the Linux CLI, the AppImage and the deb.
+- `ubuntu-22.04` builds the Linux CLI with an older glibc floor.
+- `ubuntu-24.04` builds the Linux AppImage and deb.
 - `windows-latest` builds the Windows CLI zip and the NSIS installer.
 
 Run it from the Actions tab or `gh workflow run build.yml`. The local
