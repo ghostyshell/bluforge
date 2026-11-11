@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   api,
   type AppConfig,
@@ -671,6 +671,7 @@ export default function App() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [paletteQuery, setPaletteQuery] = useState("");
   const [paletteIndex, setPaletteIndex] = useState(0);
+  const [helpOpen, setHelpOpen] = useState(false);
 
   const keys = snap?.keys;
   const optical = snap?.optical ?? [];
@@ -770,6 +771,15 @@ export default function App() {
       run: () => { void api.doctor().then(setDoctor).catch((e) => setError(String(e))); },
     },
     {
+      id: "shortcuts",
+      label: "Keyboard shortcuts",
+      hint: "Every key the workshop listens for",
+      icon: "menu",
+      kbd: "?",
+      group: "Maintenance",
+      run: () => { setHelpOpen(true); },
+    },
+    {
       id: "update",
       label: "Check for updates",
       hint: "Ask the release feed for a newer build",
@@ -832,6 +842,10 @@ export default function App() {
         setPaletteIndex(0);
       } else if (e.key === "Escape") {
         setPaletteOpen(false);
+        setHelpOpen(false);
+      } else if (e.key === "?" && !isTyping(e.target)) {
+        e.preventDefault();
+        setHelpOpen((open) => !open);
       } else if (e.altKey && /^[1-8]$/.test(e.key)) {
         e.preventDefault();
         setSection(SECTIONS[Number(e.key) - 1].id);
@@ -844,9 +858,15 @@ export default function App() {
   const page = PAGE_META[section];
   const checksOk = doctor?.checks.filter((c) => c.ok).length ?? 0;
   const checksTotal = doctor?.checks.length ?? 0;
+  const activePercent = runningJob
+    ? runningJob.percent
+    : progress && !progress.done
+      ? progress.percent
+      : null;
 
   return (
     <div className="app">
+      <a className="skip-link" href="#main">Skip to the workspace</a>
       <div className="backdrop" aria-hidden="true">
         <span className="orb orb-a" />
         <span className="orb orb-b" />
@@ -937,7 +957,7 @@ export default function App() {
           </div>
         </nav>
 
-        <main className="workspace" id="main">
+        <main className="workspace" id="main" tabIndex={-1}>
           <div className="page" key={section}>
             <header className="page-head">
               <div className="page-head-text">
@@ -1940,22 +1960,32 @@ export default function App() {
                 {runningJob ? "working" : discPath ? "ready" : "idle"}
               </span>
             </div>
-            <h2>
-              {runningJob
-                ? `Ripping title ${runningJob.title ?? "main"}`
-                : disc
-                  ? disc.name || "Blu-ray"
-                  : "No disc loaded"}
-            </h2>
-            <p className="lede">
-              {runningJob
-                ? runningJob.message || `${runningJob.percent.toFixed(0)}% complete`
-                : disc
-                  ? `${tvPlan ? `${Object.values(tvSel).filter(Boolean).length} episodes` : `Title ${title ?? "main"}`} · ${lossless ? "remux" : "encode"} · ${container.toUpperCase()}`
-                  : discPath
-                    ? "Drive selected. Read the disc to load its titles."
-                    : "Read a disc or point the app at an ISO to begin."}
-            </p>
+            <div className="cta-main">
+              <div className="grow">
+                <h2>
+                  {runningJob
+                    ? `Ripping title ${runningJob.title ?? "main"}`
+                    : disc
+                      ? disc.name || "Blu-ray"
+                      : "No disc loaded"}
+                </h2>
+                <p className="lede">
+                  {runningJob
+                    ? runningJob.message || `${runningJob.percent.toFixed(0)}% complete`
+                    : disc
+                      ? `${tvPlan ? `${Object.values(tvSel).filter(Boolean).length} episodes` : `Title ${title ?? "main"}`} · ${lossless ? "remux" : "encode"} · ${container.toUpperCase()}`
+                      : discPath
+                        ? "Drive selected. Read the disc to load its titles."
+                        : "Read a disc or point the app at an ISO to begin."}
+                </p>
+              </div>
+              {activePercent != null && (
+                <div className="ring" style={{ "--p": activePercent } as CSSProperties}
+                  role="img" aria-label={`${Math.round(activePercent)} percent complete`}>
+                  <span>{Math.round(activePercent)}%</span>
+                </div>
+              )}
+            </div>
             <div className="cta-actions">
               {runningJob ? (
                 <button className="danger" onClick={() => void api.queueCancel(runningJob.id)}>
@@ -2068,6 +2098,8 @@ export default function App() {
         </span>
         <span>·</span>
         <span>mcp <b>{mcp?.port ? `:${mcp.port}` : "off"}</b></span>
+        <span>·</span>
+        <button className="status-link" onClick={() => setHelpOpen(true)} aria-label="Keyboard shortcuts">? shortcuts</button>
       </footer>
 
       {paletteOpen && (
@@ -2116,6 +2148,38 @@ export default function App() {
                 <p className="hint" style={{ padding: 16 }}>No commands match that.</p>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {helpOpen && (
+        <div className="sheet-scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) setHelpOpen(false); }}>
+          <div className="sheet" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
+            <div className="sheet-head">
+              <div>
+                <p className="eyebrow">reference</p>
+                <h2>Keyboard shortcuts</h2>
+              </div>
+              <button className="ghost sm" onClick={() => setHelpOpen(false)}>Close</button>
+            </div>
+            <div className="kbd-grid">
+              {[
+                [IS_MAC ? "⌘ K" : "Ctrl K", "Open the command palette"],
+                ["Alt 1 to 8", "Jump to a section"],
+                ["Tab", "Move between controls"],
+                ["Enter or Space", "Choose a title or artwork"],
+                ["Esc", "Close a dialog"],
+                ["?", "This sheet"],
+              ].map(([key, what]) => (
+                <div key={key} className="kbd-row">
+                  <kbd>{key}</kbd>
+                  <span>{what}</span>
+                </div>
+              ))}
+            </div>
+            <p className="hint" style={{ marginTop: 14 }}>
+              Burning and authoring still ask for confirmation. Nothing starts from a stray key.
+            </p>
           </div>
         </div>
       )}
@@ -2222,6 +2286,12 @@ const ICON_PATHS: Record<string, string[]> = {
   chevronsLeft: ["m15 18-6-6 6-6"],
   chevronsRight: ["m9 18 6-6-6-6"],
 };
+
+function isTyping(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  const tag = target.tagName;
+  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target.isContentEditable;
+}
 
 function Icon({ name, size = 16 }: { name: string; size?: number }) {
   const paths = ICON_PATHS[name] ?? ICON_PATHS.disc;

@@ -165,6 +165,24 @@ button:focus:not(:focus-visible) {
   mask-image: radial-gradient(120% 90% at 50% 0%, #000 30%, transparent 82%);
 }
 
+.skip-link {
+  position: fixed;
+  top: 10px;
+  left: 10px;
+  z-index: 80;
+  padding: 9px 13px;
+  border: 1px solid var(--line-laser);
+  border-radius: 9px;
+  background: var(--ink-2);
+  color: var(--text);
+  font-size: 12.5px;
+  transform: translateY(-160%);
+  transition: transform var(--base) var(--ease);
+}
+.skip-link:focus {
+  transform: none;
+}
+
 /* ---------- top bar ---------- */
 
 .topbar {
@@ -921,6 +939,9 @@ input[type="checkbox"] {
   border-color: rgba(103, 232, 249, 0.28);
   background: rgba(103, 232, 249, 0.07);
 }
+.chip.live .dot {
+  animation: breathe 2.4s ease-in-out infinite;
+}
 .dot {
   width: 6px;
   height: 6px;
@@ -1244,6 +1265,15 @@ button.drive.on .drive-ico {
   animation: spin-slow 22s linear infinite;
   pointer-events: none;
 }
+.cta-main {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.cta-main .grow {
+  min-width: 0;
+}
 .cta h2 {
   position: relative;
   margin: 8px 0 4px;
@@ -1265,6 +1295,44 @@ button.drive.on .drive-ico {
 }
 .cta-actions button {
   width: 100%;
+}
+
+@property --p {
+  syntax: "<number>";
+  inherits: false;
+  initial-value: 0;
+}
+
+.ring {
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 66px;
+  height: 66px;
+  border-radius: 50%;
+  background: conic-gradient(
+    from -90deg,
+    var(--laser-2) calc(var(--p) * 1%),
+    rgba(255, 255, 255, 0.09) 0
+  );
+  transition: --p 0.45s var(--ease);
+  filter: drop-shadow(0 0 12px rgba(103, 232, 249, 0.35));
+}
+.ring::before {
+  content: "";
+  position: absolute;
+  inset: 7px;
+  border-radius: 50%;
+  background: #0a0d15;
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.ring span {
+  position: relative;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
 }
 
 .insp-card {
@@ -1369,6 +1437,21 @@ button.drive.on .drive-ico {
 .statusbar b {
   font-weight: 500;
   color: var(--text-dim);
+}
+.statusbar .status-link {
+  min-height: 0;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: none;
+  color: var(--text-faint);
+  font: inherit;
+  font-size: 10.5px;
+}
+.statusbar .status-link:hover:not(:disabled) {
+  border: none;
+  background: none;
+  color: var(--laser-2);
 }
 .statusbar .ok {
   color: var(--good);
@@ -1651,6 +1734,70 @@ h1 {
   font-family: var(--mono);
   font-size: 10px;
   color: var(--text-faint);
+}
+
+/* ---------- shortcuts sheet ---------- */
+
+.sheet-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 55;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(3, 4, 8, 0.6);
+  backdrop-filter: blur(6px);
+  animation: fade-in 0.18s var(--ease) both;
+}
+.sheet {
+  width: min(520px, 100%);
+  padding: 20px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-xl);
+  background: rgba(13, 16, 25, 0.98);
+  box-shadow: var(--shadow-lg);
+  animation: palette-in 0.3s var(--ease-out) both;
+}
+.sheet-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.sheet h2 {
+  margin: 6px 0 0;
+  font-size: 21px;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+  text-transform: none;
+  color: var(--text);
+}
+.kbd-grid {
+  display: grid;
+  gap: 8px;
+}
+.kbd-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.025);
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+.kbd-row kbd {
+  padding: 3px 7px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.3);
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text);
+  white-space: nowrap;
 }
 
 /* ---------- scrollbars ---------- */

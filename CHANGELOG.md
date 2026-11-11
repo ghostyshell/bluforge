@@ -15,6 +15,9 @@ All notable changes to Keepsake Atelier. Newest first.
 
 ### Changed
 
+- **Second interface pass.** A `?` shortcuts sheet, a live conic progress ring
+  in the session card, and a status-bar shortcut link. The palette gained a
+  shortcuts entry.
 - **New desktop interface.** The app is now a sectioned shell: a rail for the
   eight stages, a focused workspace, a persistent session inspector with the
   primary action, progress and queue, and a status bar. Output settings, keys,
@@ -48,6 +51,14 @@ All notable changes to Keepsake Atelier. Newest first.
 
 ### Fixed
 
+- **Windows CI no longer depends on `ntldd`.** The MSYS2 package download came
+  back checksum-corrupt and failed the installer job before it started. The
+  workflow now walks `ldd` output recursively, which ships with the MSYS2
+  runtime.
+- **The Windows CLI zip carries libaacs and libbdplus.** Both are `dlopen`ed by
+  libbluray, so they never appear in the PE import table. The packaging step now
+  copies them under the names libbluray looks up, plus their own dependency
+  closure.
 - **The macOS DMG is self-contained.** It used to link the build machine's
   Homebrew libraries and failed with a dyld error on a clean Mac.
   `scripts/bundle-app.sh` rebases libbluray and its dependencies, fixes and

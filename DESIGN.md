@@ -76,7 +76,10 @@ use the rhythm.
 - **Row.** `.title` rows are focusable buttons with a left laser marker when
   selected.
 - **Progress.** 8px track, gradient fill, sheen only while `.live`. Always
-  paired with numeric stats.
+  paired with numeric stats. While a job runs, the session card also shows a
+  66px conic ring with the live percentage.
+- **Shortcuts sheet.** `?` opens a modal list of every key. `Esc`, the close
+  button or the scrim dismisses it. The status bar has a persistent link.
 - **Empty state.** Dashed container, icon, one sentence of what to do. No dead
   ends.
 
@@ -91,6 +94,7 @@ use the rhythm.
 | Palette | fade, drop 8px, scale from 98% | 300ms |
 | Primary hover | sheen sweep | 700ms |
 | Progress | width ease plus sheen | 350ms / 1.8s loop |
+| Progress ring | `--p` conic value | 450ms |
 
 Easing is `cubic-bezier(.22,.8,.24,1)` for state and
 `cubic-bezier(.16,1,.3,1)` for entrances. Animate transform and opacity only.
@@ -109,8 +113,9 @@ the ambient orbs.
   `aria-pressed`.
 - Covers are focusable with `aria-pressed`.
 - State is never colour alone: chips pair a dot with a word.
-- `Cmd/Ctrl+K` opens the command palette, `Esc` closes it, `Alt+1..8` jumps
-  between sections. The palette has arrow-key and Enter handling.
+- `Cmd/Ctrl+K` opens the command palette, `?` opens the shortcuts sheet,
+  `Esc` closes either, `Alt+1..8` jumps between sections. The palette has
+  arrow-key and Enter handling.
 - Text contrast targets WCAG AA against the panel surface.
 
 ## Preview and review
