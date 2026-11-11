@@ -75,7 +75,7 @@ if [ -n "$ARTIFACTS" ]; then
   [ -d "$ARTIFACTS" ] || die "no artifact directory at $ARTIFACTS"
   DIST=$(cd "$ARTIFACTS" && pwd)
   FILES=()
-  for f in "$DIST"/*.dmg "$DIST"/*.tar.gz "$DIST"/*.zip; do
+  for f in "$DIST"/*.dmg "$DIST"/*.tar.gz "$DIST"/*.zip "$DIST"/*.AppImage "$DIST"/*.deb; do
     if [ -f "$f" ]; then FILES+=("$(basename "$f")"); fi
   done
   [ ${#FILES[@]} -gt 0 ] || die "no dmg/tar.gz/zip files in $DIST"
