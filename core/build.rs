@@ -10,6 +10,7 @@ fn main() {
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
 
     // Try to locate libbluray (with libaacs/libbdplus as its runtime deps).
+    let mut vcpkg_build = false;
     let probe = if target_os == "macos" {
         let prefix = env::var("BLURAY_PREFIX").unwrap_or_else(|_| {
             if Path::new("/opt/homebrew/include/libbluray").is_dir() {
@@ -23,6 +24,23 @@ fn main() {
             vec![format!("{prefix}/lib")],
             vec!["bluray".into()],
         ))
+    } else if target_os == "windows" {
+        // vcpkg builds libbluray statically on Windows. find_package emits the
+        // link directives itself; the extra link emission below is skipped.
+        match vcpkg::Config::new().find_package("libbluray") {
+            Ok(l) => {
+                vcpkg_build = true;
+                Ok((
+                    l.include_paths
+                        .iter()
+                        .map(|p| p.display().to_string())
+                        .collect(),
+                    Vec::new(),
+                    Vec::new(),
+                ))
+            }
+            Err(e) => Err(std::io::Error::other(e.to_string())),
+        }
     } else {
         match pkg_config::Config::new().probe("libbluray") {
             Ok(l) => Ok((
@@ -59,14 +77,16 @@ fn main() {
             b.warnings(false);
             b.compile("bfbluray");
 
-            for path in &link_paths {
-                println!("cargo:rustc-link-search=native={path}");
-                if target_os == "macos" || target_os == "linux" {
-                    println!("cargo:rustc-link-arg=-Wl,-rpath,{path}");
+            if !vcpkg_build {
+                for path in &link_paths {
+                    println!("cargo:rustc-link-search=native={path}");
+                    if target_os == "macos" || target_os == "linux" {
+                        println!("cargo:rustc-link-arg=-Wl,-rpath,{path}");
+                    }
                 }
-            }
-            for lib in &libs {
-                println!("cargo:rustc-link-lib=dylib={lib}");
+                for lib in &libs {
+                    println!("cargo:rustc-link-lib=dylib={lib}");
+                }
             }
             if target_os == "macos" {
                 println!("cargo:rustc-link-lib=framework=IOKit");

@@ -7,13 +7,15 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include <strings.h>
 #include <sys/stat.h>
-#include <unistd.h>
 #ifdef _WIN32
 #  include <direct.h>
+#  include <io.h>
+#  define strcasecmp _stricmp
 #  define bf_mkdir(path) _mkdir(path)
 #else
+#  include <strings.h>
+#  include <unistd.h>
 #  define bf_mkdir(path) mkdir(path, 0755)
 #endif
 

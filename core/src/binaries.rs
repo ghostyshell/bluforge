@@ -11,6 +11,9 @@ fn candidates(name: &str) -> Vec<PathBuf> {
     if let Ok(exe) = std::env::current_exe() {
         let dir = exe.parent().unwrap_or(Path::new(".")).to_path_buf();
         v.push(dir.join(name));
+        v.push(format!("{name}.exe").into());
+        v.push(dir.join("resources").join(name));
+        v.push(dir.join("resources").join(format!("{name}.exe")));
         // macOS bundle: Contents/MacOS/<exe> -> Contents/Resources/<name>
         if let Some(contents) = dir.parent() {
             v.push(contents.join("Resources").join(name));

@@ -154,6 +154,67 @@ jobs:
           name: linux-app
           path: dist/*
 
+  windows-app:
+    name: Windows x64 (installer)
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.platforms == 'all' || inputs.platforms == 'windows' }}
+    runs-on: windows-latest
+    env:
+      VCPKGRS_TRIPLET: x64-windows-static-md
+      VCPKG_ROOT: C:\\vcpkg
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: vcpkg libbluray
+        shell: pwsh
+        run: |
+          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install libbluray --triplet x64-windows-static-md
+      - name: Windows ffmpeg
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip" -OutFile ffmpeg.zip
+          Expand-Archive ffmpeg.zip -DestinationPath ffmpeg
+          $ff = Get-ChildItem ffmpeg -Recurse -Filter ffmpeg.exe | Select-Object -First 1
+          $fp = Get-ChildItem ffmpeg -Recurse -Filter ffprobe.exe | Select-Object -First 1
+          Copy-Item $ff.FullName app/src-tauri/resources/ffmpeg.exe
+          Copy-Item $fp.FullName app/src-tauri/resources/ffprobe.exe
+      - name: Point the bundle at the Windows helpers
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          p = "app/src-tauri/tauri.conf.json"
+          c = json.load(open(p))
+          r = c["bundle"]["resources"]
+          r.pop("resources/ffmpeg", None)
+          r.pop("resources/ffprobe", None)
+          r["resources/ffmpeg.exe"] = "ffmpeg.exe"
+          r["resources/ffprobe.exe"] = "ffprobe.exe"
+          json.dump(c, open(p, "w"), indent=2)
+          open(p, "a").write("\n")
+          PY
+      - name: Build installer
+        working-directory: app
+        run: |
+          npm ci
+          npx tauri build --bundles nsis --config '{"bundle":{"createUpdaterArtifacts":false}}'
+      - name: Package
+        shell: pwsh
+        run: |
+          $V = python -c "import json; print(json.load(open('app/src-tauri/tauri.conf.json'))['version'])"
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          $nsis = Get-ChildItem target/release/bundle/nsis -Filter *.exe | Select-Object -First 1
+          Copy-Item $nsis.FullName "dist/Keepsake-Atelier-$V-windows-x64-setup.exe"
+          Get-ChildItem dist | Format-Table
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-app
+          path: dist/*
+
   windows-x64:
     name: Windows x64 (CLI)
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.platforms == 'all' || inputs.platforms == 'windows' }}
