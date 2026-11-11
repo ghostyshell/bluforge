@@ -169,6 +169,30 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: app/package-lock.json
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          path-type: inherit
+          install: >-
+            mingw-w64-x86_64-libaacs
+            mingw-w64-x86_64-libbdplus
+            mingw-w64-x86_64-ntldd
+      - name: Bundle the AACS DLLs
+        shell: msys2 {0}
+        run: |
+          mkdir -p app/src-tauri/resources/windows-libs
+          cp /mingw64/bin/libaacs-0.dll app/src-tauri/resources/windows-libs/libaacs.dll
+          cp /mingw64/bin/libbdplus-0.dll app/src-tauri/resources/windows-libs/libbdplus.dll
+          for root in /mingw64/bin/libaacs-0.dll /mingw64/bin/libbdplus-0.dll; do
+            ntldd -R "$root" | awk '{ if ($2 == "=>") print $3; else if ($1 ~ /mingw64/) print $1 }' |
+            while read -r dll; do
+              unix=$(cygpath -u "$dll" 2>/dev/null || true)
+              case "$unix" in
+                *mingw64*) [ -f "$unix" ] && cp -n "$unix" app/src-tauri/resources/windows-libs/ ;;
+              esac
+            done
+          done
+          ls -l app/src-tauri/resources/windows-libs
       - name: vcpkg libbluray
         shell: pwsh
         run: |
@@ -194,6 +218,11 @@ jobs:
           r.pop("resources/ffprobe", None)
           r["resources/ffmpeg.exe"] = "ffmpeg.exe"
           r["resources/ffprobe.exe"] = "ffprobe.exe"
+          import os
+          d = "app/src-tauri/resources/windows-libs"
+          if os.path.isdir(d):
+              for name in os.listdir(d):
+                  r[f"resources/windows-libs/{name}"] = f"windows-libs/{name}"
           json.dump(c, open(p, "w"), indent=2)
           open(p, "a").write("\n")
           PY

@@ -288,6 +288,35 @@ pub fn bundled_lib(name: &str) -> Option<std::path::PathBuf> {
 /// libbdplus are `dlopen`ed by name. Setting these before the first `bd_open`
 /// makes a clean Mac that has never seen Homebrew decrypt and play discs.
 pub fn use_bundled_libs() {
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(dir) = exe.parent() {
+                let libs = dir.join("resources").join("windows-libs");
+                if libs.is_dir() {
+                    if let Some(path) = std::env::var_os("PATH") {
+                        let mut paths = vec![libs.clone()];
+                        paths.extend(std::env::split_paths(&path));
+                        if let Ok(joined) = std::env::join_paths(paths) {
+                            std::env::set_var("PATH", joined);
+                        }
+                    }
+                    for (var, file) in [
+                        ("LIBAACS_PATH", "libaacs.dll"),
+                        ("LIBBDPLUS_PATH", "libbdplus.dll"),
+                    ] {
+                        if std::env::var_os(var).is_some() {
+                            continue;
+                        }
+                        let p = libs.join(file);
+                        if p.is_file() {
+                            std::env::set_var(var, p);
+                        }
+                    }
+                }
+            }
+        }
+    }
     for (var, file) in [
         ("LIBAACS_PATH", "libaacs.0.dylib"),
         ("LIBBDPLUS_PATH", "libbdplus.0.dylib"),
@@ -1011,6 +1040,14 @@ pub fn aacs_unmount(device: &Path) -> bool {
 /// Whole-disk BSD name behind `source`: a `/dev/diskN` / `/dev/rdiskN` node, or
 /// the device backing a mounted optical volume.
 pub fn bsd_name_for(source: &Path) -> Option<String> {
+    #[cfg(target_os = "windows")]
+    {
+        let s = source.to_string_lossy();
+        let bytes = s.as_bytes();
+        if bytes.len() >= 2 && bytes[1] == b':' {
+            return Some(s[..2].to_string());
+        }
+    }
     let s = source.to_string_lossy();
     if let Some(rest) = s.strip_prefix("/dev/") {
         let rest = rest.strip_prefix('r').unwrap_or(rest);
@@ -1030,6 +1067,12 @@ pub fn bsd_name_for(source: &Path) -> Option<String> {
 /// a plain file/folder (ISO, BDMV dir). A mounted volume hands back the still
 /// AACS-encrypted bytes, so the device is required.
 pub fn raw_device_for(source: &Path) -> Option<PathBuf> {
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(drive) = bsd_name_for(source) {
+            return Some(PathBuf::from(drive));
+        }
+    }
     let s = source.to_string_lossy();
     if s.starts_with("/dev/rdisk") {
         return Some(source.to_path_buf());

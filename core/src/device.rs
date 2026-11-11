@@ -471,11 +471,68 @@ pub use linux::list;
 #[cfg(target_os = "windows")]
 mod windows {
     use super::BlockDevice;
+    use std::process::Command;
 
-    /// Windows drive discovery is not implemented yet. The CLI still reads
-    /// ISOs, folders and BDMV trees; only the physical drive picker is empty.
+    /// Optical drives from WMI. Each drive letter is a whole optical device;
+    /// the volume label (when media is present) becomes the display name.
     pub fn list() -> Vec<BlockDevice> {
-        Vec::new()
+        let script = r#"$items = @(Get-CimInstance Win32_CDROMDrive | ForEach-Object {
+  $d = $_.Drive
+  $label = $null
+  if ($d) { try { $label = (Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='$d'").VolumeName } catch {} }
+  [pscustomobject]@{ drive=$d; model=$_.Model; media=$_.MediaType; label=$label; size=$_.Size; pnp=$_.PNPDeviceID }
+}); ConvertTo-Json -InputObject $items -Compress -Depth 3"#;
+        let out = match Command::new("powershell")
+            .args(["-NoProfile", "-NonInteractive", "-Command", script])
+            .output()
+        {
+            Ok(o) if o.status.success() => o,
+            _ => return Vec::new(),
+        };
+        let text = String::from_utf8_lossy(&out.stdout);
+        let value: serde_json::Value = match serde_json::from_str(text.trim()) {
+            Ok(v) => v,
+            Err(_) => return Vec::new(),
+        };
+        let items = match value {
+            serde_json::Value::Array(a) => a,
+            other => vec![other],
+        };
+        let mut result = Vec::new();
+        for item in items {
+            let drive = item["drive"].as_str().unwrap_or("").to_string();
+            if drive.is_empty() {
+                continue;
+            }
+            let model = item["model"].as_str().map(|s| s.to_string());
+            let label = item["label"]
+                .as_str()
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string());
+            let size = item["size"]
+                .as_u64()
+                .or_else(|| item["size"].as_str().and_then(|s| s.parse().ok()))
+                .unwrap_or(0);
+            let pnp = item["pnp"].as_str().unwrap_or("").to_string();
+            let media = label.clone().or_else(|| model.clone());
+            result.push(BlockDevice {
+                bsd_name: drive.clone(),
+                media_name: media,
+                is_whole: true,
+                removable: true,
+                size_bytes: size,
+                vendor: None,
+                product: model,
+                revision: None,
+                scsi_pdt: Some(5),
+                optical: true,
+                interconnect: None,
+                mount_point: Some(format!("{drive}\\")),
+                device_path: Some(drive),
+                registry_path: pnp,
+            });
+        }
+        result
     }
 }
 
@@ -579,10 +636,21 @@ pub fn eject() -> Result<String, crate::CoreError> {
         .ok_or_else(|| crate::CoreError::Disc("no optical drive detected".into()))?;
     #[cfg(target_os = "windows")]
     {
-        let _ = dev;
-        return Err(crate::CoreError::Disc(
-            "eject is not implemented on Windows yet".into(),
-        ));
+        let drive = format!("{}:", dev.bsd_name.trim_end_matches(':'));
+        let script = format!(
+            "$s=New-Object -ComObject Shell.Application; $s.Namespace(17).ParseName('{}').InvokeVerb('Eject')",
+            drive.replace('\'', "''")
+        );
+        return match std::process::Command::new("powershell")
+            .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+            .status()
+        {
+            Ok(status) if status.success() => Ok(format!("ejected {}", drive)),
+            Ok(status) => Err(crate::CoreError::Disc(format!(
+                "eject failed for {drive} ({status})"
+            ))),
+            Err(e) => Err(crate::CoreError::Disc(format!("eject failed: {e}"))),
+        };
     }
 
     #[cfg(target_os = "linux")]
