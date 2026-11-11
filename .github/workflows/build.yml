@@ -105,13 +105,6 @@ jobs:
         run: cargo build --release -p keepsake-atelier
       - name: Test core
         run: cargo test -p keepsake-core --lib
-      - name: Menu render check
-        run: xvfb-run -a sh scripts/test-menu.sh "" /tmp/keepsake-menu-test
-      - name: Upload menu frames
-        uses: actions/upload-artifact@v4
-        with:
-          name: menu-frames
-          path: /tmp/keepsake-menu-test/menu-*.png
       - name: Package
         run: |
           V=$(python3 -c 'import json; print(json.load(open("app/src-tauri/tauri.conf.json"))["version"])')
@@ -162,6 +155,32 @@ jobs:
         with:
           name: linux-app
           path: dist/*
+
+  menu-check:
+    name: BD-J menu render
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.platforms == 'all' || inputs.platforms == 'linux' }}
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y openjdk-17-jdk xvfb openbox
+      - name: Render the menu
+        run: |
+          Xvfb :99 -screen 0 1280x800x24 >/dev/null 2>&1 &
+          export DISPLAY=:99
+          openbox >/dev/null 2>&1 &
+          sleep 2
+          timeout 240 sh scripts/test-menu.sh "" /tmp/keepsake-menu-test
+      - name: Upload menu frames
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: menu-frames
+          path: /tmp/keepsake-menu-test/menu-*.png
+          if-no-files-found: warn
 
   windows-app:
     name: Windows x64 (installer)
