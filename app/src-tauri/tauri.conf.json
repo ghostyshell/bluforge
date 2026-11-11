@@ -51,7 +51,19 @@
       "resources/00000.jar": "00000.jar"
     },
     "publisher": "Keepsake Atelier",
-    "copyright": "Copyright 2026 Keepsake Atelier"
+    "copyright": "Copyright 2026 Keepsake Atelier",
+    "linux": {
+      "deb": {
+        "depends": [
+          "libwebkit2gtk-4.1-0",
+          "libgtk-3-0",
+          "libbluray2",
+          "libaacs0",
+          "libbdplus0",
+          "ffmpeg"
+        ]
+      }
+    }
   },
   "plugins": {
     "updater": {

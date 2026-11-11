@@ -21,6 +21,12 @@ fn candidates(name: &str) -> Vec<PathBuf> {
             v.push(repo.join("core/assets/menu").join(name));
             v.push(repo.join("vendor/ffmpeg").join(name));
         }
+        // Linux installs (deb/FHS and AppImage) put resources in
+        // /usr/lib/<product>/ while the binary is in /usr/bin.
+        if let Some(prefix) = dir.parent() {
+            v.push(prefix.join("lib").join("Keepsake Atelier").join(name));
+            v.push(prefix.join("lib").join("keepsake-atelier").join(name));
+        }
     }
     v.push(crate::config_dir().join("bin").join(name));
     v
