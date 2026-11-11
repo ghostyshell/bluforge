@@ -2,9 +2,10 @@
 
 ## Requirements
 
-- An Apple Silicon or Intel Mac. Linux and Windows CLI builds are covered in
-  [Platforms](../platforms.md).
-- macOS 15 or newer (the bundled libbluray/aacs/bdplus builds require it).
+- macOS 15 or newer on Apple Silicon or Intel, or an x86_64 Linux or Windows
+  machine. The per-platform matrix is in [Platforms](../platforms.md).
+- The macOS DMG is self-contained; the Linux and Windows builds install their
+  own runtime pieces as described below.
 - A USB Blu-ray writer or reader for disc work. DVD drives work for DVD titles.
 - Free disk space: a lossless rip is roughly the size of the feature, and an
   authored ISO needs that much again.
@@ -46,13 +47,38 @@ sudo install -m 755 keepsake-atelier /usr/local/bin/
 keepsake-atelier doctor
 ```
 
-The tarball does not bundle libbluray or ffmpeg. Install the Homebrew libraries
-(`libbluray libaacs libbdplus`) and point the CLI at a suitable ffmpeg build.
-The app bundle carries one:
+The macOS tarball does not bundle libbluray or ffmpeg. Install the Homebrew
+libraries (`libbluray libaacs libbdplus`) and point the CLI at a suitable ffmpeg
+build. The app bundle carries one:
 
 ```sh
 export KEEPSAKE_FFMPEG="/Applications/Keepsake Atelier.app/Contents/Resources/ffmpeg"
 ```
+
+## Linux
+
+- **AppImage:** `chmod +x Keepsake-Atelier-0.1.0-linux-x64.AppImage` and run it.
+  It carries WebKitGTK, GTK3 and ffmpeg.
+- **deb:** `sudo apt install ./Keepsake-Atelier-0.1.0-linux-x64.deb`. It pulls
+  `libwebkit2gtk-4.1-0`, `libgtk-3-0`, `libbluray2`, `libaacs0`, `libbdplus0`
+  and `ffmpeg`.
+- **CLI tarball:** unpack and run `./keepsake-atelier doctor`. Install
+  `libbluray`, `libaacs`, `libbdplus` and `ffmpeg` from the distribution.
+
+Drive discovery uses sysfs and eject uses `CDROMEJECT`. Encrypted discs need a
+KEYDB entry and libaacs; there is no native AACS recovery on Linux yet.
+
+## Windows
+
+- **Installer:** run the NSIS setup. SmartScreen may ask for **More info** then
+  **Run anyway** because the build is not signed. The app carries ffmpeg and
+  the libaacs/libbdplus DLL closure.
+- **CLI zip:** unpack anywhere and run `keepsake-atelier.exe doctor`. libbluray
+  is linked into the executable, and the zip carries libaacs, libbdplus and
+  their dependency closure for KEYDB decryption.
+
+Drives are found through WMI and ejected through `Shell.Application`. Native
+AACS and burning are not implemented on Windows.
 
 ## Runtime libraries
 
