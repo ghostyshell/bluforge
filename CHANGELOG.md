@@ -59,6 +59,11 @@ All notable changes to Keepsake Atelier. Newest first.
   libbluray, so they never appear in the PE import table. The packaging step now
   copies them under the names libbluray looks up, plus their own dependency
   closure.
+- **The Windows CLI has disc support again.** `build.rs` sent every Windows
+  target through vcpkg, so the MinGW build silently compiled without libbluray
+  and disabled disc features. MSVC keeps the static vcpkg library; MinGW now
+  probes through pkg-config. The zip carries `libbluray-4.dll` and its full
+  16-DLL closure, and CI fails if libbluray is missing from the PE imports.
 - **The macOS DMG is self-contained.** It used to link the build machine's
   Homebrew libraries and failed with a dyld error on a clean Mac.
   `scripts/bundle-app.sh` rebases libbluray and its dependencies, fixes and
