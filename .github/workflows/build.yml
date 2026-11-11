@@ -34,7 +34,7 @@ jobs:
           cache-dependency-path: app/package-lock.json
       - name: Build disc libraries and ffmpeg
         run: |
-          brew install nasm meson cmake ninja pkg-config dylibbundler bison libbluray libaacs libbdplus libgcrypt
+          brew install nasm meson cmake ninja pkg-config dylibbundler bison
           scripts/build-disc-libs.sh
           scripts/build-ffmpeg.sh
       - name: Build app
@@ -47,8 +47,13 @@ jobs:
         run: |
           V=$(python3 -c 'import json; print(json.load(open("app/src-tauri/tauri.conf.json"))["version"])')
           APP=$(ls -d target/aarch64-apple-darwin/release/bundle/macos/*.app | head -1)
-          BLURAY_PREFIX="$PWD/vendor/disc/prefix" scripts/bundle-app.sh "$APP"
           BIN="$APP/Contents/MacOS/keepsake-atelier-app"
+          if ! otool -L "$BIN" | grep -q "vendor/disc/prefix/lib/libbluray"; then
+            echo "the app did not link the custom libbluray" >&2
+            otool -L "$BIN" >&2
+            exit 1
+          fi
+          BLURAY_PREFIX="$PWD/vendor/disc/prefix" scripts/bundle-app.sh "$APP"
           for f in "$BIN" "$APP/Contents/Resources/ffmpeg" "$APP/Contents/Resources/ffprobe" "$APP/Contents/Resources/lib/"*.dylib; do
             m=$(otool -l "$f" | awk '/LC_BUILD_VERSION/{f=1} f&&/minos/{print $2; exit}')
             [ "$m" = "12.0" ] || { echo "unexpected minos $m for $f" >&2; exit 1; }
@@ -56,6 +61,7 @@ jobs:
           [ "$(plutil -extract LSMinimumSystemVersion raw "$APP/Contents/Info.plist")" = "12.0" ]
           mkdir -p dist
           hdiutil create -volname "Keepsake Atelier" -srcfolder "$APP" -ov -format UDZO "dist/Keepsake-Atelier-${V}-arm64.dmg"
+          brew install libbluray libaacs libbdplus libgcrypt
           cargo build --release --target aarch64-apple-darwin -p keepsake-atelier
           tar -czf "dist/keepsake-atelier-${V}-macos-arm64.tar.gz" -C target/aarch64-apple-darwin/release keepsake-atelier
           ls -lh dist
@@ -80,7 +86,7 @@ jobs:
           cache-dependency-path: app/package-lock.json
       - name: Build disc libraries and ffmpeg
         run: |
-          brew install nasm meson cmake ninja pkg-config dylibbundler bison libbluray libaacs libbdplus libgcrypt
+          brew install nasm meson cmake ninja pkg-config dylibbundler bison
           scripts/build-disc-libs.sh
           scripts/build-ffmpeg.sh
       - name: Build app
@@ -93,8 +99,13 @@ jobs:
         run: |
           V=$(python3 -c 'import json; print(json.load(open("app/src-tauri/tauri.conf.json"))["version"])')
           APP=$(ls -d target/x86_64-apple-darwin/release/bundle/macos/*.app | head -1)
-          BLURAY_PREFIX="$PWD/vendor/disc/prefix" scripts/bundle-app.sh "$APP"
           BIN="$APP/Contents/MacOS/keepsake-atelier-app"
+          if ! otool -L "$BIN" | grep -q "vendor/disc/prefix/lib/libbluray"; then
+            echo "the app did not link the custom libbluray" >&2
+            otool -L "$BIN" >&2
+            exit 1
+          fi
+          BLURAY_PREFIX="$PWD/vendor/disc/prefix" scripts/bundle-app.sh "$APP"
           for f in "$BIN" "$APP/Contents/Resources/ffmpeg" "$APP/Contents/Resources/ffprobe" "$APP/Contents/Resources/lib/"*.dylib; do
             m=$(otool -l "$f" | awk '/LC_BUILD_VERSION/{f=1} f&&/minos/{print $2; exit}')
             [ "$m" = "12.0" ] || { echo "unexpected minos $m for $f" >&2; exit 1; }
@@ -102,6 +113,7 @@ jobs:
           [ "$(plutil -extract LSMinimumSystemVersion raw "$APP/Contents/Info.plist")" = "12.0" ]
           mkdir -p dist
           hdiutil create -volname "Keepsake Atelier" -srcfolder "$APP" -ov -format UDZO "dist/Keepsake-Atelier-${V}-x64.dmg"
+          brew install libbluray libaacs libbdplus libgcrypt
           cargo build --release --target x86_64-apple-darwin -p keepsake-atelier
           tar -czf "dist/keepsake-atelier-${V}-macos-x64.tar.gz" -C target/x86_64-apple-darwin/release keepsake-atelier
           ls -lh dist
