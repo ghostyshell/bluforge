@@ -79,6 +79,10 @@ All notable changes to Keepsake Atelier. Newest first.
 
 ### Verified
 
+- **Windows artifacts are executed in CI.** The CLI zip runs `--version` and
+  `doctor` with its shipped DLLs, and the NSIS installer is silently installed,
+  its exe located, and the app required to stay alive for 15 seconds. Before
+  this the installer and the CLI had only been built, never run.
 - **Live disc pass (LG BD-RE BU40N, pressed AACS Blu-ray):** disc info and the
   60-title map, the menu document parse (BD-J first play/top menu + 49 nav
   titles), tree verification, and a lossless title rip (H.264 + AC-3 + PGS,

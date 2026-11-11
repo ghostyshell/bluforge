@@ -218,8 +218,8 @@ claude mcp add --transport http keepsake http://127.0.0.1:8765/mcp
 
 - macOS first. The macOS app is the reference build. Linux ships a tested CLI
   plus AppImage and deb previews; Windows ships a CLI zip and an NSIS installer
-  preview with WMI drive discovery and IMAPI2 burning. See
-  [Platforms](platforms.md).
+  preview with WMI drive discovery and IMAPI2 burning. CI executes the Windows
+  CLI and installs and launches the app. See [Platforms](platforms.md).
 - Cinavia is a proprietary audio watermark. There is no open detector
   or remover, and none is bundled.
 - Authored BD-J menus are verified in a JVM harness and by libbluray's parser,

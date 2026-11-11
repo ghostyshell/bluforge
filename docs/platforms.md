@@ -6,8 +6,8 @@ interfaces, so each platform is at a different stage.
 
 | Capability | macOS arm64 | macOS x64 | Linux x64 | Windows x64 |
 | --- | --- | --- | --- | --- |
-| Desktop app | yes | yes | preview (AppImage/deb) | preview (installer) |
-| CLI | yes | yes | yes | preview |
+| Desktop app | yes | yes | preview (AppImage/deb) | preview (installer, CI smoke) |
+| CLI | yes | yes | yes | yes (CI smoke) |
 | Optical drive discovery | IOKit | IOKit | sysfs (`/dev/sr*`) | WMI (`Win32_CDROMDrive`) |
 | Native AACS key recovery | yes | yes | no (use KEYDB) | no (KEYDB via bundled libaacs) |
 | Rip and encode | yes | yes | yes, with a system ffmpeg | yes, with ffmpeg on `PATH` |
@@ -108,11 +108,16 @@ tool is needed. It picks the first compatible recorder, or the drive letter
 passed as `--device D:`. The write path is implemented and unit-tested at the
 script level, but has not been run on a physical writer here.
 
+CI executes both artifacts on `windows-latest`: the zip runs `--version` and
+`doctor` with its DLL closure, and the installer is silently installed, located,
+and launched. The app has to stay alive for 15 seconds. That covers install and
+startup, not a click-through of the UI.
+
 What does not work yet:
 
 - Native AACS key recovery.
 - UDF 2.50 ISO authoring.
-- Interactive validation of the installer on a Windows desktop.
+- A full interactive pass through the installer and UI on a Windows desktop.
 
 ## Building everything
 
