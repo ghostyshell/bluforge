@@ -53,7 +53,9 @@ and with the x86_64 CI artifact under an Ubuntu 22.04 container:
 - Drive discovery from `/sys/block/sr*`, mount matching from
   `/proc/self/mounts`, and `CDROMEJECT` for eject.
 - `keys` import/search, libaacs decryption with a KEYDB entry.
-- Authoring to a BDMV folder with tsMuxeR.
+- Authoring to a BDMV folder with tsMuxeR, and multi-title authoring to a
+  UDF 2.50 ISO with the portable writer. The core test suite creates such an
+  image on Linux; the macOS-verified flow produces the same layout.
 - Burning with growisofs when `dvd+rw-tools` is installed.
 - A desktop app as an **AppImage** (bundles GTK/WebKit and the app) and a
   **.deb** (depends on `libwebkit2gtk-4.1-0`, `libgtk-3-0`, `libbluray2`,
@@ -88,14 +90,12 @@ libbluray and its dependencies. Unpack it and run
 `keepsake-atelier.exe doctor`.
 
 What works: reading an ISO, BDMV folder or authored disc image; `disc`,
-`verify`, `menu`, `rip` and `author` to a folder, provided ffmpeg and tsMuxeR
-are on `PATH`; and `burn` through IMAPI2.
+`verify`, `menu`, `rip`, and `author` to a folder or a UDF 2.50 ISO, provided
+ffmpeg and tsMuxeR are on `PATH`; and `burn` through IMAPI2.
 
 There is also an **NSIS installer** built in CI with MSVC, statically linked
 libbluray from vcpkg, and Windows ffmpeg/ffprobe in the bundle. It launches the
-same desktop UI and can read an ISO or BDMV folder you point it at. It does not
-bundle libaacs/libbdplus, so encrypted discs need the CLI zip (which does) or a
-system install.
+same desktop UI and can read an ISO or BDMV folder you point it at.
 
 The app discovers drives through WMI (`Win32_CDROMDrive`), ejects through
 `Shell.Application`, and understands drive letters as sources. It can open an
