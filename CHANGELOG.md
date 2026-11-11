@@ -6,6 +6,17 @@ All notable changes to Keepsake Atelier. Newest first.
 
 ### Added
 
+- **Native AACS on Linux and Windows.** The macOS path's crypto half is now a
+  portable C file backed by a vendored libaacs 0.11.1 subset. Linux reads the
+  drive over `SG_IO`; Windows uses `IOCTL_SCSI_PASS_THROUGH_DIRECT`. Both try
+  LibreDrive's vendor READ BUFFER first, then a KEYDB host certificate. The
+  MSVC app loads a MinGW-built `keepsake-aacs.dll` because vcpkg's libgcrypt
+  port is not available for MSVC. The GNU CLI links the code directly. Unit
+  tests cover the MMC CDBs and the LibreDrive record scan.
+- **BD-J render check.** `scripts/test-menu.sh <disc> <out>` runs the shipped
+  JAR with the disc's own menu data, captures three frames, and asserts
+  navigation, playlist selection and the return after end of media. Linux CI
+  runs it under Xvfb and uploads the frames.
 - **Portable UDF 2.50 authoring.** Linux and Windows can now merge multi-title
   discs into a UDF 2.50 ISO instead of stopping at a BDMV folder. A pure-Rust
   writer (`hadris-cd`) streams the staged tree from disk and emits the BD-R

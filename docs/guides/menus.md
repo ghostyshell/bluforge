@@ -76,6 +76,16 @@ reports First Play and Top Menu supported, and the real Xlet runs in a stubbed
 BD-J harness where it renders, moves the selection, requests the right
 `bd://1.PLAYLIST:0000N`, and returns after end of media.
 
+Run that render check on a finished tree or a mounted authored disc:
+
+```sh
+scripts/test-menu.sh /path/to/disc /tmp/menu-frames
+```
+
+It uses the shipped `00000.jar` and the disc's own `menu.txt`/`menu.png`, then
+writes `menu-1.png`, `menu-2.png` and `menu-3.png`. Linux CI runs it under
+Xvfb and uploads the frames as an artifact.
+
 libbluray on macOS cannot start BD-J itself: its JVM loads AWT on the calling
 thread, which enters the AppKit loop inside `bdj_open`. A hardware player is the
 remaining test. Keep menus opt-in until you have tried one on your own player.
@@ -90,4 +100,4 @@ scripts/build-menu.sh
 
 That needs a Java 8 JDK and libbluray's two runtime JARs. The source is
 `core/assets/menu/src/Menu.java`. `scripts/test-menu.sh` runs the harness and
-writes screenshots to a temporary directory.
+writes frames to the directory you pass.

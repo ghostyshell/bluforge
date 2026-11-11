@@ -9,7 +9,7 @@ interfaces, so each platform is at a different stage.
 | Desktop app | yes | yes | preview (AppImage/deb) | preview (installer, CI smoke) |
 | CLI | yes | yes | yes | yes (CI smoke) |
 | Optical drive discovery | IOKit | IOKit | sysfs (`/dev/sr*`) | WMI (`Win32_CDROMDrive`) |
-| Native AACS key recovery | yes | yes | no (use KEYDB) | no (KEYDB via bundled libaacs) |
+| Native AACS key recovery | yes | yes | yes (LibreDrive/auth) | yes (LibreDrive/auth) |
 | Rip and encode | yes | yes | yes, with a system ffmpeg | yes, with ffmpeg on `PATH` |
 | Author to a BDMV folder | yes | yes | yes, with tsMuxeR | yes, with tsMuxeR |
 | Author a UDF 2.50 ISO | yes (`newfs_udf`) | yes | yes (portable, BD-R) | yes (portable, BD-R) |
@@ -37,7 +37,8 @@ Homebrew libraries.
 
 ## Linux
 
-The CLI builds against the distribution's libbluray, libaacs and libbdplus.
+The CLI builds against the distribution's libbluray, libaacs, libbdplus and
+libgcrypt.
 
 ```sh
 sudo apt install pkg-config libbluray-dev libaacs-dev libbdplus-dev ffmpeg
@@ -53,6 +54,9 @@ and with the x86_64 CI artifact under an Ubuntu 22.04 container:
 - Drive discovery from `/sys/block/sr*`, mount matching from
   `/proc/self/mounts`, and `CDROMEJECT` for eject.
 - `keys` import/search, libaacs decryption with a KEYDB entry.
+- Native AACS key recovery over `SG_IO`: the LibreDrive vendor READ BUFFER is
+  tried first, then a KEYDB host certificate. The media key comes from the
+  disc's MKB with the portable libaacs crypto subset.
 - Authoring to a BDMV folder with tsMuxeR, and multi-title authoring to a
   UDF 2.50 ISO with the portable writer. The core test suite creates such an
   image on Linux; the macOS-verified flow produces the same layout.
@@ -65,7 +69,6 @@ and with the x86_64 CI artifact under an Ubuntu 22.04 container:
 
 What does not work yet:
 
-- Native AACS key recovery. Use a KEYDB entry or libaacs.
 - BD-RE authoring. The portable writer builds a mastered UDF 2.50 image, which
   is the BD-R profile: it has no metadata partition. BD-RE still wants the
   macOS `newfs_udf` path.
@@ -91,7 +94,10 @@ libbluray and its dependencies. Unpack it and run
 
 What works: reading an ISO, BDMV folder or authored disc image; `disc`,
 `verify`, `menu`, `rip`, and `author` to a folder or a UDF 2.50 ISO, provided
-ffmpeg and tsMuxeR are on `PATH`; and `burn` through IMAPI2.
+ffmpeg and tsMuxeR are on `PATH`; `burn` through IMAPI2; and native AACS key
+recovery over `IOCTL_SCSI_PASS_THROUGH_DIRECT` (LibreDrive vendor read first,
+KEYDB host certificate fallback). The MSVC app loads `keepsake-aacs.dll` from
+`windows-libs` for the crypto; the GNU CLI links it directly.
 
 There is also an **NSIS installer** built in CI with MSVC, statically linked
 libbluray from vcpkg, and Windows ffmpeg/ffprobe in the bundle. It launches the
@@ -120,7 +126,6 @@ macOS `newfs_udf` path.
 
 What does not work yet:
 
-- Native AACS key recovery.
 - BD-RE authoring.
 - A full interactive pass through the installer and UI on a Windows desktop.
 
@@ -144,7 +149,7 @@ The shape of the work is the same for each:
 
 1. `device.rs`: implement `list()` (drive discovery) and `eject()`.
 2. `disc.rs`: add the library search paths and the raw-device naming.
-3. `native.rs`: implement or explicitly disable native key recovery.
+3. `native.rs` / `scsi.rs`: add the SCSI transport for native key recovery.
 4. `udf.rs` / `udf_portable.rs`: native `newfs_udf`, or the portable writer.
 5. `burn.rs`: add the writer front-end.
 6. `doctor.rs`: make the messages and capability matrix truthful.

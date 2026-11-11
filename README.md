@@ -111,9 +111,10 @@ menus, keys, DVD, covers, queue, verify, burn and system check.
 
 - **Inspect.** Title map, playlists, clips, durations, chapters, streams, HDR,
   AACS state, and the navigation table from `index.bdmv`.
-- **Keys.** Native AACS1 recovery from the drive's volume ID and the disc's MKB,
-  plus AACS2 unit keys derived offline from `Unit_Key_RO.inf`. KEYDB import,
-  search and edit. MakeMKV dumps are a fallback, not a requirement.
+- **Keys.** Native AACS1 recovery from the drive's volume ID and the disc's MKB
+  on macOS, Linux and Windows, plus AACS2 unit keys derived offline from
+  `Unit_Key_RO.inf`. KEYDB import, search and edit. MakeMKV dumps are a
+  fallback, not a requirement.
 - **Rip.** Lossless remux to MKV or MP4, or x264, x265 and VideoToolbox encode.
   English non-commentary audio by default, subtitles off, chapters and metadata
   kept.

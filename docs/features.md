@@ -27,9 +27,10 @@ keepsake-atelier disc /Volumes/MY_DISC --title 0
 ## Keys and AACS
 
 - A `KEYDB.cfg` store with import, search, add, show and remove.
-- Native AACS1 recovery: read the volume ID from the drive, derive the volume
-  unique key and the disc key from the disc's MKB. No host certificate and no
-  MakeMKV required.
+- Native AACS1 recovery on macOS, Linux and Windows: read the volume ID from the
+  drive (LibreDrive vendor read first, KEYDB host certificate fallback), derive
+  the volume unique key and the disc key from the disc's MKB. No MakeMKV
+  required.
 - Native AACS2 support for UHD discs: unit keys are derived offline from
   `AACS/Unit_Key_RO.inf` with the VUK. AACS2 is detected by the first byte of
   `Content000.cer`.

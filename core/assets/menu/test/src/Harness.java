@@ -42,6 +42,9 @@ public class Harness {
     }
 
     static void shot(Frame f, String path) throws Exception {
+        f.toFront();
+        f.requestFocus();
+        pause(250);
         Rectangle r = f.getBounds();
         Robot robot = new Robot();
         BufferedImage img = robot.createScreenCapture(r);
@@ -69,8 +72,11 @@ public class Harness {
             System.out.println("HARNESS_NO_FRAME");
             System.exit(2);
         }
+        f.setAlwaysOnTop(true);
         f.setLocation(0, 0);
         f.setSize(960, 540);
+        f.toFront();
+        f.requestFocus();
         Component canvas = f.getComponent(0);
         pause(800);
         shot(f, shotDir + "/menu-1.png");

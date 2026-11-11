@@ -34,15 +34,19 @@ keepsake-atelier keys native
 ```
 
 The command reads the volume ID from the drive, derives the volume unique key
-from the disc's MKB, and stores the result. No host certificate and no MakeMKV
-required.
+from the disc's MKB, and stores the result. No MakeMKV required.
 
-The volume ID step needs a LibreDrive vendor read. If the drive's firmware does
-not provide it, you get an error such as:
+The volume ID step uses the LibreDrive vendor READ BUFFER when the firmware
+provides it. If it does not, a host certificate from KEYDB is used for the
+standard AACS authentication. The drive transport is IOKit on macOS, `SG_IO` on
+Linux and `IOCTL_SCSI_PASS_THROUGH_DIRECT` on Windows.
+
+If neither the vendor read nor a usable host certificate works, you get an
+error such as:
 
 ```
-native: drive authentication failed (rc=-10)
-aacs-mmc: no LibreDrive VID record in buffer 0x4410
+native: no LibreDrive VID record in buffer 0x4410
+native: drive authentication failed
 ```
 
 That is a firmware limitation, not a key error. A LibreDrive-patched firmware
