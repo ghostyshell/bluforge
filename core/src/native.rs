@@ -714,6 +714,11 @@ pub fn derive(mount: &Path) -> Result<NativeKey, CoreError> {
         header.dks.len() as i32,
         mk.as_mut_ptr(),
     );
+    if rc == -9 {
+        return Err(CoreError::Disc(
+            "keepsake-aacs.dll is missing from windows-libs; reinstall the app".into(),
+        ));
+    }
     if rc != 0 {
         return Err(CoreError::Disc(format!(
             "media key derivation failed (code {rc}); is the KEYDB up to date?"
