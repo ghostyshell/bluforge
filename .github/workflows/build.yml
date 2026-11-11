@@ -303,13 +303,7 @@ jobs:
             if (-not (Test-Path (Join-Path $dir $needed))) { throw "the installed app is missing $needed" }
           }
           $helper = Join-Path $dir "windows-libs/keepsake-aacs.dll"
-          $src = @"
-using System;
-using System.Runtime.InteropServices;
-public static class AacsHelper {
-  [DllImport(@"$helper")] public static extern int bf_media_key(IntPtr mkb, UIntPtr len, IntPtr dks, int n, IntPtr outmk);
-}
-"@
+          $src = 'using System; using System.Runtime.InteropServices; public static class AacsHelper { [DllImport("' + $helper + '")] public static extern int bf_media_key(IntPtr mkb, UIntPtr len, IntPtr dks, int n, IntPtr outmk); }'
           Add-Type -TypeDefinition $src
           $rc = [AacsHelper]::bf_media_key([IntPtr]::Zero, [UIntPtr]::Zero, [IntPtr]::Zero, 0, [IntPtr]::Zero)
           if ($rc -ne 2) { throw "the AACS helper did not load or returned $rc instead of BF_ERR_MKB" }
