@@ -86,6 +86,7 @@ fn main() {
                 b.file("src/aacs_mmc.c");
                 // Native auth + MKB derivation, reusing libaacs's inner crypto.
                 b.file("src/aacs_native.c");
+                b.file("src/aacs_key.c");
                 b.flag_if_supported("-fobjc-arc");
             }
             for inc in &includes {
@@ -120,5 +121,29 @@ fn main() {
         Err(e) => {
             println!("cargo:warning=libbluray not found, disc features disabled: {e}");
         }
+    }
+
+    // Portable AACS crypto for Linux and Windows. It does not depend on
+    // libbluray being present, so it is built outside the probe above.
+    let msvc = target_os == "windows" && env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("msvc");
+    if target_os != "macos" && !msvc && env::var_os("KEEPSAKE_SKIP_AACS_C").is_none() {
+        // KEEPSAKE_SKIP_AACS_C is a type-check escape hatch: it compiles the
+        // Rust side without the vendored C when no gcrypt headers are present.
+        // MSVC uses the MinGW-built keepsake-aacs.dll instead of compiling
+        // this C: vcpkg's libgcrypt port does not support MSVC.
+        let mut a = cc::Build::new();
+        a.include("third_party/libaacs");
+        a.file("src/aacs_key.c");
+        a.file("third_party/libaacs/libaacs/crypto.c");
+        a.file("third_party/libaacs/libaacs/mkb.c");
+        a.file("third_party/libaacs/util/strutl.c");
+        a.file("third_party/libaacs/util/logging_stub.c");
+        a.warnings(false);
+        a.compile("keepsake_aacs");
+        println!("cargo:rerun-if-changed=src/aacs_key.c");
+        println!("cargo:rerun-if-changed=third_party/libaacs");
+
+        println!("cargo:rustc-link-lib=dylib=gcrypt");
+        println!("cargo:rustc-link-lib=dylib=gpg-error");
     }
 }

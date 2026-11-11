@@ -23,6 +23,8 @@ pub mod menu;
 pub mod metadata;
 pub mod native;
 pub mod rip;
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+pub mod scsi;
 pub mod template;
 pub mod tv;
 pub mod udf;

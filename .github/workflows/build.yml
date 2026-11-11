@@ -34,7 +34,7 @@ jobs:
           cache-dependency-path: app/package-lock.json
       - name: Build ffmpeg
         run: |
-          brew install nasm meson cmake ninja pkg-config dylibbundler libbluray libaacs libbdplus
+          brew install nasm meson cmake ninja pkg-config dylibbundler libbluray libaacs libbdplus libgcrypt
           scripts/build-ffmpeg.sh
       - name: Build app
         working-directory: app
@@ -70,7 +70,7 @@ jobs:
           cache-dependency-path: app/package-lock.json
       - name: Build ffmpeg
         run: |
-          brew install nasm meson cmake ninja pkg-config dylibbundler libbluray libaacs libbdplus
+          brew install nasm meson cmake ninja pkg-config dylibbundler libbluray libaacs libbdplus libgcrypt
           scripts/build-ffmpeg.sh
       - name: Build app
         working-directory: app
@@ -100,7 +100,7 @@ jobs:
       - name: Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y pkg-config libbluray-dev libaacs-dev libbdplus-dev
+          sudo apt-get install -y pkg-config libbluray-dev libaacs-dev libbdplus-dev libgcrypt20-dev libgpg-error-dev
       - name: Build CLI
         run: cargo build --release -p keepsake-atelier
       - name: Test core
@@ -133,7 +133,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
             librsvg2-dev patchelf libgtk-3-dev libsoup-3.0-dev pkg-config \
-            libbluray-dev libaacs-dev libbdplus-dev ffmpeg
+            libbluray-dev libaacs-dev libbdplus-dev libgcrypt20-dev libgpg-error-dev ffmpeg
       - name: Build app
         working-directory: app
         run: |
@@ -178,6 +178,20 @@ jobs:
           install: >-
             mingw-w64-x86_64-libaacs
             mingw-w64-x86_64-libbdplus
+            mingw-w64-x86_64-libgcrypt
+      - name: Build the AACS helper DLL
+        shell: msys2 {0}
+        run: |
+          x86_64-w64-mingw32-gcc -shared -O2 -DBF_AACS_DLL \
+            -I core/src -I core/third_party/libaacs \
+            core/src/aacs_key.c \
+            core/third_party/libaacs/libaacs/crypto.c \
+            core/third_party/libaacs/libaacs/mkb.c \
+            core/third_party/libaacs/util/strutl.c \
+            core/third_party/libaacs/util/logging_stub.c \
+            -o app/src-tauri/resources/windows-libs/keepsake-aacs.dll \
+            -lgcrypt -lgpg-error -static-libgcc
+          ls -l app/src-tauri/resources/windows-libs/keepsake-aacs.dll
       - name: Bundle the AACS DLLs
         shell: msys2 {0}
         run: |
@@ -202,6 +216,7 @@ jobs:
           cp /mingw64/bin/libbdplus-0.dll app/src-tauri/resources/windows-libs/libbdplus.dll
           copy_closure /mingw64/bin/libaacs-0.dll app/src-tauri/resources/windows-libs
           copy_closure /mingw64/bin/libbdplus-0.dll app/src-tauri/resources/windows-libs
+          copy_closure app/src-tauri/resources/windows-libs/keepsake-aacs.dll app/src-tauri/resources/windows-libs
           ls -l app/src-tauri/resources/windows-libs
       - name: vcpkg libbluray
         shell: pwsh
@@ -305,6 +320,7 @@ jobs:
             mingw-w64-x86_64-libbluray
             mingw-w64-x86_64-libaacs
             mingw-w64-x86_64-libbdplus
+            mingw-w64-x86_64-libgcrypt
             mingw-w64-x86_64-pkg-config
       - uses: dtolnay/rust-toolchain@stable
         with:

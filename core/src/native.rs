@@ -19,7 +19,6 @@ struct BfDk {
     u_shift: u8,
 }
 
-#[cfg(target_os = "macos")]
 extern "C" {
     fn bf_media_key(
         mkb: *const u8,
@@ -123,22 +122,22 @@ pub fn from_makemkv(
     let dc = rec(&data, 0x01, 0x03, 92).map(|r| r.to_vec());
 
     let mut mk = [0u8; 16];
-    let rc = unsafe {
-        bf_media_key(
-            mkb.as_ptr(),
-            mkb.len(),
-            header.dks.as_ptr(),
-            header.dks.len() as i32,
-            mk.as_mut_ptr(),
-        )
-    };
+    let rc = call_media_key(
+        mkb.as_ptr(),
+        mkb.len(),
+        header.dks.as_ptr(),
+        header.dks.len() as i32,
+        mk.as_mut_ptr(),
+    );
     if rc != 0 {
         return Err(CoreError::Disc(format!(
             "media key derivation failed (code {rc})"
         )));
     }
     let mut vuk = [0u8; 16];
-    unsafe { bf_aesg(mk.as_ptr(), vid.as_ptr(), vuk.as_mut_ptr()) };
+    if !call_aesg(&mk, &vid, &mut vuk) {
+        return Err(CoreError::Disc("AACS AES-G helper is unavailable".into()));
+    }
     let unit_keys = unit_keys_from(ukf.as_deref(), aacs2, &vuk);
 
     let name = mount
@@ -217,6 +216,109 @@ extern "C" {
         out_mk: *mut u8,
         out_vuk: *mut u8,
     ) -> i32;
+}
+
+/// The MSVC app cannot link vcpkg's libgcrypt (the port is MinGW-only), so the
+/// AACS crypto ships as a MinGW-built helper DLL next to the app.
+#[cfg(all(target_os = "windows", target_env = "msvc"))]
+mod aacs_dll {
+    use super::BfDk;
+    use libloading::Library;
+    use std::sync::OnceLock;
+
+    struct Api {
+        lib: Library,
+    }
+
+    // The library is only read after the OnceLock resolves.
+    unsafe impl Send for Api {}
+    unsafe impl Sync for Api {}
+
+    static API: OnceLock<Option<Api>> = OnceLock::new();
+
+    fn load() -> Option<Api> {
+        let exe = std::env::current_exe().ok()?;
+        let dir = exe.parent()?;
+        let candidates = [
+            dir.join("windows-libs").join("keepsake-aacs.dll"),
+            dir.join("keepsake-aacs.dll"),
+            dir.join("resources")
+                .join("windows-libs")
+                .join("keepsake-aacs.dll"),
+        ];
+        for path in candidates {
+            if path.is_file() {
+                if let Ok(lib) = unsafe { Library::new(&path) } {
+                    return Some(Api { lib });
+                }
+            }
+        }
+        None
+    }
+
+    fn api() -> Option<&'static Api> {
+        API.get_or_init(load).as_ref()
+    }
+
+    pub fn media_key(
+        mkb: *const u8,
+        mkb_len: usize,
+        dks: *const BfDk,
+        ndks: i32,
+        out: *mut u8,
+    ) -> i32 {
+        let Some(api) = api() else { return -9 };
+        type F = unsafe extern "C" fn(*const u8, usize, *const BfDk, i32, *mut u8) -> i32;
+        match unsafe { api.lib.get::<F>(b"bf_media_key\0") } {
+            Ok(f) => unsafe { f(mkb, mkb_len, dks, ndks, out) },
+            Err(_) => -9,
+        }
+    }
+
+    pub fn aesg(key: *const u8, data: *const u8, out: *mut u8) -> bool {
+        let Some(api) = api() else { return false };
+        type F = unsafe extern "C" fn(*const u8, *const u8, *mut u8);
+        match unsafe { api.lib.get::<F>(b"bf_aesg\0") } {
+            Ok(f) => {
+                unsafe { f(key, data, out) };
+                true
+            }
+            Err(_) => false,
+        }
+    }
+}
+
+#[cfg(all(target_os = "windows", target_env = "msvc"))]
+fn call_media_key(
+    mkb: *const u8,
+    mkb_len: usize,
+    dks: *const BfDk,
+    ndks: i32,
+    out: *mut u8,
+) -> i32 {
+    aacs_dll::media_key(mkb, mkb_len, dks, ndks, out)
+}
+
+#[cfg(not(all(target_os = "windows", target_env = "msvc")))]
+fn call_media_key(
+    mkb: *const u8,
+    mkb_len: usize,
+    dks: *const BfDk,
+    ndks: i32,
+    out: *mut u8,
+) -> i32 {
+    unsafe { bf_media_key(mkb, mkb_len, dks, ndks, out) }
+}
+
+#[cfg(all(target_os = "windows", target_env = "msvc"))]
+fn call_aesg(key: &[u8], data: &[u8], out: &mut [u8; 16]) -> bool {
+    aacs_dll::aesg(key.as_ptr(), data.as_ptr(), out.as_mut_ptr())
+}
+
+#[cfg(not(all(target_os = "windows", target_env = "msvc")))]
+fn call_aesg(key: &[u8], data: &[u8], out: &mut [u8; 16]) -> bool {
+    unsafe { bf_aesg(key.as_ptr(), data.as_ptr(), out.as_mut_ptr()) };
+    true
 }
 
 /// A key recovered from the drive/disc itself.
@@ -580,16 +682,81 @@ pub fn from_makemkv_and_store(_mount: &Path) -> Result<(NativeKey, bool), CoreEr
     ))
 }
 
+/// Derive the disc key on Linux and Windows: SCSI transport for the volume id,
+/// then the same portable MKB/AES-G derivation as macOS.
 #[cfg(not(target_os = "macos"))]
-pub fn derive(_mount: &Path) -> Result<NativeKey, CoreError> {
-    Err(CoreError::Disc(
-        "native AACS key recovery is macOS-only; add a KEYDB entry or use libaacs".into(),
-    ))
+pub fn derive(mount: &Path) -> Result<NativeKey, CoreError> {
+    let header = read_header(&keys::keydb_path())?;
+    let mkb = read_mkb(mount)?;
+    let (ukf, aacs2) = read_unit_key_file(mount);
+
+    let id = keys::disc_id_for_path(mount).ok_or_else(|| {
+        CoreError::Disc(format!("no AACS/Unit_Key_RO.inf under {}", mount.display()))
+    })?;
+    let device = crate::disc::bsd_name_for(mount).ok_or_else(|| {
+        CoreError::Disc(format!(
+            "cannot resolve the optical device for {}",
+            mount.display()
+        ))
+    })?;
+
+    let vid = crate::scsi::read_vid(
+        &device,
+        header.host_priv.as_deref(),
+        header.host_cert.as_deref(),
+    )?;
+
+    let mut mk = [0u8; 16];
+    let rc = call_media_key(
+        mkb.as_ptr(),
+        mkb.len(),
+        header.dks.as_ptr(),
+        header.dks.len() as i32,
+        mk.as_mut_ptr(),
+    );
+    if rc != 0 {
+        return Err(CoreError::Disc(format!(
+            "media key derivation failed (code {rc}); is the KEYDB up to date?"
+        )));
+    }
+    let mut vuk = [0u8; 16];
+    if !call_aesg(&mk, &vid, &mut vuk) {
+        return Err(CoreError::Disc(
+            "AACS AES-G helper is unavailable (keepsake-aacs.dll is missing)".into(),
+        ));
+    }
+
+    let unit_keys = unit_keys_from(ukf.as_deref(), aacs2, &vuk);
+    let name = mount
+        .file_name()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "UNKNOWN".into());
+    Ok(NativeKey {
+        id,
+        name,
+        vid: hexstr(&vid),
+        media_key: hexstr(&mk),
+        vuk: hexstr(&vuk),
+        unit_keys,
+    })
 }
 
 #[cfg(not(target_os = "macos"))]
-pub fn derive_and_store(_mount: &Path) -> Result<(NativeKey, bool), CoreError> {
-    Err(CoreError::Disc(
-        "native AACS key recovery is macOS-only; add a KEYDB entry or use libaacs".into(),
-    ))
+pub fn derive_and_store(mount: &Path) -> Result<(NativeKey, bool), CoreError> {
+    let key = derive(mount)?;
+    let path = keys::keydb_path();
+    if keys::has_at(&path, &key.id).unwrap_or(false) {
+        return Ok((key, false));
+    }
+    let entry = KeyEntry {
+        id: key.id.clone(),
+        name: Some(format!("{} ({})", key.name, key.name)),
+        media_key: Some(key.media_key.clone()),
+        volume_id: Some(key.vid.clone()),
+        vuk: Some(key.vuk.clone()),
+        unit_keys: key.unit_keys.clone(),
+        note: Some("native".into()),
+    };
+    keys::upsert_at(&path, &entry)?;
+    Ok((key, true))
 }

@@ -23,6 +23,12 @@ directories = "5"
 sha1 = "0.10"
 aes = "0.8"
 
+[target.'cfg(all(windows, target_env = "msvc"))'.dependencies]
+libloading = "0.8"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_IO"] }
+
 [build-dependencies]
 cc = "1"
 vcpkg = "0.2"
