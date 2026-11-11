@@ -24,9 +24,9 @@ fn main() {
             vec![format!("{prefix}/lib")],
             vec!["bluray".into()],
         ))
-    } else if target_os == "windows" {
-        // vcpkg builds libbluray statically on Windows. find_package emits the
-        // link directives itself; the extra link emission below is skipped.
+    } else if target_os == "windows" && env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("msvc") {
+        // The MSVC app takes a static libbluray from vcpkg. find_package emits
+        // the link directives itself; the extra link emission below is skipped.
         match vcpkg::Config::new().find_package("libbluray") {
             Ok(l) => {
                 vcpkg_build = true;
@@ -39,6 +39,23 @@ fn main() {
                     Vec::new(),
                 ))
             }
+            Err(e) => Err(std::io::Error::other(e.to_string())),
+        }
+    } else if target_os == "windows" {
+        // The MinGW CLI links the MSYS2 libbluray through pkg-config, exactly
+        // like Linux. This keeps disc support in the Windows CLI zip.
+        match pkg_config::Config::new().probe("libbluray") {
+            Ok(l) => Ok((
+                l.include_paths
+                    .iter()
+                    .map(|p| p.display().to_string())
+                    .collect(),
+                l.link_paths
+                    .iter()
+                    .map(|p| p.display().to_string())
+                    .collect(),
+                l.libs.clone(),
+            )),
             Err(e) => Err(std::io::Error::other(e.to_string())),
         }
     } else {

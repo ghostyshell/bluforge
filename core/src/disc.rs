@@ -294,9 +294,12 @@ pub fn use_bundled_libs() {
             if let Some(dir) = exe.parent() {
                 // Tauri flattens bundle resources next to the exe in an NSIS
                 // install, while a dev build keeps them under resources/.
-                let libs = [dir.join("windows-libs"), dir.join("resources").join("windows-libs")]
-                    .into_iter()
-                    .find(|p| p.is_dir());
+                let libs = [
+                    dir.join("windows-libs"),
+                    dir.join("resources").join("windows-libs"),
+                ]
+                .into_iter()
+                .find(|p| p.is_dir());
                 if let Some(libs) = libs {
                     if let Some(path) = std::env::var_os("PATH") {
                         let mut paths = vec![libs.clone()];
