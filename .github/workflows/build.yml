@@ -49,7 +49,7 @@ jobs:
           APP=$(ls -d target/aarch64-apple-darwin/release/bundle/macos/*.app | head -1)
           BLURAY_PREFIX="$PWD/vendor/disc/prefix" scripts/bundle-app.sh "$APP"
           BIN="$APP/Contents/MacOS/keepsake-atelier-app"
-          for f in "$BIN" "$APP/Contents/Resources/lib/"*.dylib; do
+          for f in "$BIN" "$APP/Contents/Resources/ffmpeg" "$APP/Contents/Resources/ffprobe" "$APP/Contents/Resources/lib/"*.dylib; do
             m=$(otool -l "$f" | awk '/LC_BUILD_VERSION/{f=1} f&&/minos/{print $2; exit}')
             [ "$m" = "12.0" ] || { echo "unexpected minos $m for $f" >&2; exit 1; }
           done
@@ -95,7 +95,7 @@ jobs:
           APP=$(ls -d target/x86_64-apple-darwin/release/bundle/macos/*.app | head -1)
           BLURAY_PREFIX="$PWD/vendor/disc/prefix" scripts/bundle-app.sh "$APP"
           BIN="$APP/Contents/MacOS/keepsake-atelier-app"
-          for f in "$BIN" "$APP/Contents/Resources/lib/"*.dylib; do
+          for f in "$BIN" "$APP/Contents/Resources/ffmpeg" "$APP/Contents/Resources/ffprobe" "$APP/Contents/Resources/lib/"*.dylib; do
             m=$(otool -l "$f" | awk '/LC_BUILD_VERSION/{f=1} f&&/minos/{print $2; exit}')
             [ "$m" = "12.0" ] || { echo "unexpected minos $m for $f" >&2; exit 1; }
           done
