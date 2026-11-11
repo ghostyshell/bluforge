@@ -214,6 +214,12 @@ jobs:
           $fp = Get-ChildItem ffmpeg -Recurse -Filter ffprobe.exe | Select-Object -First 1
           Copy-Item $ff.FullName app/src-tauri/resources/ffmpeg.exe
           Copy-Item $fp.FullName app/src-tauri/resources/ffprobe.exe
+          $demuxers = & $ff.FullName -hide_banner -demuxers 2>&1
+          if (-not ($demuxers -match "dvdvideo")) { throw "the bundled ffmpeg lacks the dvdvideo demuxer" }
+          $encoders = & $ff.FullName -hide_banner -encoders 2>&1
+          foreach ($codec in @("libx264", "libx265")) {
+            if (-not ($encoders -match $codec)) { throw "the bundled ffmpeg lacks $codec" }
+          }
       - name: Point the bundle at the Windows helpers
         shell: bash
         run: |
@@ -266,6 +272,10 @@ jobs:
             }
           }
           if (-not $exe) { throw "the installer did not place keepsake-atelier-app.exe" }
+          $dir = Split-Path $exe.FullName
+          foreach ($needed in @("ffmpeg.exe", "ffprobe.exe", "00000.jar", "windows-libs/libaacs.dll", "windows-libs/libbdplus.dll")) {
+            if (-not (Test-Path (Join-Path $dir $needed))) { throw "the installed app is missing $needed" }
+          }
           Write-Host "installed at $($exe.FullName)"
           $app = Start-Process -FilePath $exe.FullName -PassThru
           Start-Sleep -Seconds 15
