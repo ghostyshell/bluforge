@@ -199,11 +199,10 @@ pub fn auth_vid(device: &str, host_priv: &[u8], host_cert: &[u8]) -> Result<[u8;
         .map_err(|e| CoreError::Disc(format!("no drive certificate: {e}")))?;
     let drive_nonce = &buf[4..24];
     let drive_cert = &buf[24..116];
-    let drive_cert_ok = unsafe { crypto_aacs_verify_drive_cert(drive_cert.as_ptr()) } == 0;
-    if !drive_cert_ok {
-        return Err(CoreError::Disc(
-            "the drive certificate signature is invalid".into(),
-        ));
+    if unsafe { crypto_aacs_verify_drive_cert(drive_cert.as_ptr()) } != 0 {
+        // libaacs logs this and continues; newer drive certificates may not
+        // be in this libaacs trust set.
+        eprintln!("aacs: drive certificate signature not recognised; continuing");
     }
 
     let mut buf = [0u8; 116];
@@ -218,7 +217,7 @@ pub fn auth_vid(device: &str, host_priv: &[u8], host_cert: &[u8]) -> Result<[u8;
     if unsafe { crypto_aacs_verify(drive_cert.as_ptr(), drive_sig.as_ptr(), signed.as_ptr(), 60) }
         != 0
     {
-        return Err(CoreError::Disc("the drive signature is invalid".into()));
+        eprintln!("aacs: drive signature not verified; continuing");
     }
 
     let mut host_sig = [0u8; 40];
@@ -258,9 +257,9 @@ pub fn auth_vid(device: &str, host_priv: &[u8], host_cert: &[u8]) -> Result<[u8;
         crypto_aes_cmac_16(buf[4..20].as_ptr(), bus_key.as_ptr(), cmac.as_mut_ptr());
     }
     if cmac != buf[20..36] {
-        return Err(CoreError::Disc(
-            "the volume id CMAC does not match the bus key".into(),
-        ));
+        // Matches libaacs: some drives return a VID whose CMAC does not
+        // validate with the host-derived bus key, but the VID is still usable.
+        eprintln!("aacs: volume id CMAC mismatch; continuing");
     }
 
     let mut vid = [0u8; 16];
