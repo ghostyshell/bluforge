@@ -97,7 +97,7 @@ if [ ! -f "$PREFIX/lib/libx265.a" ] || [ "$FORCE" = 1 ]; then
         -DCMAKE_INSTALL_PREFIX="$PREFIX" \
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
-        "${CMAKE_OSX[@]}" "${CMAKE_NUMA[@]}" \
+        ${CMAKE_OSX[@]+"${CMAKE_OSX[@]}"} ${CMAKE_NUMA[@]+"${CMAKE_NUMA[@]}"} \
         -DENABLE_SHARED=OFF -DENABLE_CLI=OFF -DENABLE_ASSEMBLY=ON
     cmake --build build -j "$JOBS"
     cmake --install build
@@ -208,7 +208,7 @@ if [ ! -x "$PREFIX/bin/ffmpeg" ] || [ "$FORCE" = 1 ]; then
         --enable-libx265 \
         --enable-libdvdread \
         --enable-libdvdnav \
-        "${APPLE_CODECS[@]}" \
+        ${APPLE_CODECS[@]+"${APPLE_CODECS[@]}"} \
         --disable-vulkan --disable-xlib --disable-libxcb --disable-libxcb-shm \
         --disable-libxcb-xfixes --disable-libxcb-shape --disable-libdrm \
         --disable-vaapi --disable-vdpau --disable-sdl2 --disable-opencl \

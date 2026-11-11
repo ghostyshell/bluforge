@@ -50,7 +50,7 @@ for name in libaacs libbdplus; do
 done
 
 cd "$RES"
-dylibbundler -b -of -x "$BIN" "${EXTRA[@]}" \
+dylibbundler -b -of -x "$BIN" ${EXTRA[@]+"${EXTRA[@]}"} \
   -d lib -p "@executable_path/../Resources/lib" -ns > "$TMP/bundle.log" 2>&1 \
   || { cat "$TMP/bundle.log" >&2; exit 1; }
 
