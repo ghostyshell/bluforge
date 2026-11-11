@@ -36,15 +36,15 @@ and a bundled ffmpeg for muxing and encoding.
 <!-- downloads:start -->
 | Build | GoFile (primary) | file.kiwi (backup) | Size |
 | --- | --- | --- | --- |
-| `Keepsake-Atelier-0.1.0-arm64.dmg` | [Download](https://gofile.io/d/KEHf5oc4) | [Mirror](https://file.kiwi/e3e4e955#_a1eillGrCT4YrPr6oBi6g) | 34.7 MiB |
-| `Keepsake-Atelier-0.1.0-x64.dmg` | [Download](https://gofile.io/d/503OSi4e) | [Mirror](https://file.kiwi/f30102c9#7n6UpRJRCcBXXt_XDIcDxg) | 38.7 MiB |
+| `Keepsake-Atelier-0.1.0-arm64.dmg` | [Download](https://gofile.io/d/ZtVxpuOQ) | [Mirror](https://file.kiwi/43d2a1a5#6iNl67-I8iMPbxnJr7gXfA) | 34.3 MiB |
+| `Keepsake-Atelier-0.1.0-x64.dmg` | [Download](https://gofile.io/d/BEsEn4p8) | [Mirror](https://file.kiwi/af99cc3c#YvBILlL6yZRCLRZqx0YCUQ) | 38.6 MiB |
 | `keepsake-atelier-0.1.0-macos-arm64.tar.gz` | [Download](https://gofile.io/d/pt4ULjQ0) | [Mirror](https://file.kiwi/036c919d#m2zJsHcGrZekARPlVIqtTQ) | 2.1 MiB |
 | `keepsake-atelier-0.1.0-macos-x64.tar.gz` | [Download](https://gofile.io/d/2kBlpQ7u) | [Mirror](https://file.kiwi/4d146f5e#do9_-f49rsbno2-K_g3ZEA) | 2.2 MiB |
 | `keepsake-atelier-0.1.0-linux-x64.tar.gz` | [Download](https://gofile.io/d/IxuUauOM) | [Mirror](https://file.kiwi/0ac4cbfd#ODRjWeSu2SgG-1CSnmlDrA) | 2.2 MiB |
 | `keepsake-atelier-0.1.0-windows-x64.zip` | [Download](https://gofile.io/d/7d7zrbyj) | [Mirror](https://file.kiwi/b4d63969#D7T2-p5nqOjW2LoB29QpEw) | 7.3 MiB |
 <!-- downloads:end -->
 
-Apple Silicon, macOS 12 or newer. The links are refreshed weekly because GoFile
+Apple Silicon or Intel, macOS 15 or newer. The links are refreshed weekly because GoFile
 expires free-tier files. The [project site](https://ghostyshell.github.io/keepsake-atelier/#downloads)
 reads the same manifest.
 

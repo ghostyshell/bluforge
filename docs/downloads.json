@@ -8,10 +8,10 @@
       "version": "0.1.0",
       "os": "macOS",
       "arch": "arm64",
-      "gofile": "https://gofile.io/d/KEHf5oc4",
-      "kiwi": "https://file.kiwi/e3e4e955#_a1eillGrCT4YrPr6oBi6g",
-      "size": "34.7 MiB",
-      "sha256": "7c4023a801b542550c6e76ffe4abe8306a4b85b28908e424e1df42ea01fe055c"
+      "gofile": "https://gofile.io/d/ZtVxpuOQ",
+      "kiwi": "https://file.kiwi/43d2a1a5#6iNl67-I8iMPbxnJr7gXfA",
+      "size": "34.3 MiB",
+      "sha256": "9065305381a67d79389b4dd902dc7a481288353618042e2f33cdc04d62d1207c"
     },
     {
       "label": "macOS (Intel)",
@@ -19,10 +19,10 @@
       "version": "0.1.0",
       "os": "macOS",
       "arch": "x64",
-      "gofile": "https://gofile.io/d/503OSi4e",
-      "kiwi": "https://file.kiwi/f30102c9#7n6UpRJRCcBXXt_XDIcDxg",
-      "size": "38.7 MiB",
-      "sha256": "964c03bbe93819eccdd42bcc347a03b3a947356d37643c8cda24482a31f5d1bf"
+      "gofile": "https://gofile.io/d/BEsEn4p8",
+      "kiwi": "https://file.kiwi/af99cc3c#YvBILlL6yZRCLRZqx0YCUQ",
+      "size": "38.6 MiB",
+      "sha256": "e21cab6a239f81f3e7888af0828262423555dcf5a4bc0c46c0e4c594d48c732a"
     },
     {
       "label": "macOS (Apple Silicon, CLI)",
