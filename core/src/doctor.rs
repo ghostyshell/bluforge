@@ -93,22 +93,26 @@ pub fn run() -> DoctorReport {
         }),
     ));
 
-    // libaacs
-    let aacs = crate::disc::libaacs_path();
+    // libaacs. Prefer LIBAACS_PATH: the bundled CLI/app sets it to a full path.
+    let aacs = std::env::var("LIBAACS_PATH")
+        .ok()
+        .or_else(|| crate::disc::bundled_lib("libaacs.0.dylib").map(|p| p.display().to_string()))
+        .or_else(|| {
+            crate::disc::libaacs_path().map(|p| {
+                format!(
+                    "{p}{}",
+                    if cfg!(target_os = "macos") {
+                        ".dylib"
+                    } else {
+                        ".so"
+                    }
+                )
+            })
+        });
     r.checks.push(check(
         "libaacs",
         aacs.is_some(),
-        aacs.map(|p| {
-            format!(
-                "{p}{}",
-                if cfg!(target_os = "macos") {
-                    ".dylib"
-                } else {
-                    ".so"
-                }
-            )
-        })
-        .unwrap_or_else(|| "not installed".into()),
+        aacs.clone().unwrap_or_else(|| "not installed".into()),
         Some(if cfg!(target_os = "macos") {
             "brew install libaacs"
         } else {
@@ -119,28 +123,16 @@ pub fn run() -> DoctorReport {
     // libbdplus + VM data
     let bdplus = std::env::var("LIBBDPLUS_PATH")
         .ok()
+        .or_else(|| crate::disc::bundled_lib("libbdplus.0.dylib").map(|p| p.display().to_string()))
         .or_else(|| crate::disc::libbdplus_path().map(|p| format!("{p}.dylib")));
+    let bdplus_detail = bdplus.clone();
     let vm = crate::bdplus::installed();
     r.checks.push(check(
         "libbdplus",
         bdplus.is_some(),
-        match (&bdplus, vm) {
-            (Some(p), true) => format!(
-                "{p}{}, VM installed",
-                if cfg!(target_os = "macos") {
-                    ".dylib"
-                } else {
-                    ".so"
-                }
-            ),
-            (Some(p), false) => format!(
-                "{p}{}, VM data missing",
-                if cfg!(target_os = "macos") {
-                    ".dylib"
-                } else {
-                    ".so"
-                }
-            ),
+        match (&bdplus_detail, vm) {
+            (Some(p), true) => format!("{p}, VM installed"),
+            (Some(p), false) => format!("{p}, VM data missing"),
             (None, _) => "not installed".into(),
         },
         Some(if vm {

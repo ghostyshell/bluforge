@@ -61,9 +61,12 @@ jobs:
           [ "$(plutil -extract LSMinimumSystemVersion raw "$APP/Contents/Info.plist")" = "12.0" ]
           mkdir -p dist
           hdiutil create -volname "Keepsake Atelier" -srcfolder "$APP" -ov -format UDZO "dist/Keepsake-Atelier-${V}-arm64.dmg"
-          brew install libbluray libaacs libbdplus libgcrypt
-          cargo build --release --target aarch64-apple-darwin -p keepsake-atelier
-          tar -czf "dist/keepsake-atelier-${V}-macos-arm64.tar.gz" -C target/aarch64-apple-darwin/release keepsake-atelier
+          BLURAY_PREFIX="$PWD/vendor/disc/prefix" MACOSX_DEPLOYMENT_TARGET=12.0 \
+            cargo build --release --target aarch64-apple-darwin -p keepsake-atelier
+          BLURAY_PREFIX="$PWD/vendor/disc/prefix" scripts/bundle-cli.sh \
+            target/aarch64-apple-darwin/release/keepsake-atelier dist/cli app/src-tauri/resources
+          tar -czf "dist/keepsake-atelier-${V}-macos-arm64.tar.gz" -C dist/cli \
+            keepsake-atelier lib ffmpeg ffprobe 00000.jar ffmpeg-LICENSES.txt
           ls -lh dist
       - uses: actions/upload-artifact@v4
         with:
@@ -113,9 +116,12 @@ jobs:
           [ "$(plutil -extract LSMinimumSystemVersion raw "$APP/Contents/Info.plist")" = "12.0" ]
           mkdir -p dist
           hdiutil create -volname "Keepsake Atelier" -srcfolder "$APP" -ov -format UDZO "dist/Keepsake-Atelier-${V}-x64.dmg"
-          brew install libbluray libaacs libbdplus libgcrypt
-          cargo build --release --target x86_64-apple-darwin -p keepsake-atelier
-          tar -czf "dist/keepsake-atelier-${V}-macos-x64.tar.gz" -C target/x86_64-apple-darwin/release keepsake-atelier
+          BLURAY_PREFIX="$PWD/vendor/disc/prefix" MACOSX_DEPLOYMENT_TARGET=12.0 \
+            cargo build --release --target x86_64-apple-darwin -p keepsake-atelier
+          BLURAY_PREFIX="$PWD/vendor/disc/prefix" scripts/bundle-cli.sh \
+            target/x86_64-apple-darwin/release/keepsake-atelier dist/cli app/src-tauri/resources
+          tar -czf "dist/keepsake-atelier-${V}-macos-x64.tar.gz" -C dist/cli \
+            keepsake-atelier lib ffmpeg ffprobe 00000.jar ffmpeg-LICENSES.txt
           ls -lh dist
       - uses: actions/upload-artifact@v4
         with:

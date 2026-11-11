@@ -1,8 +1,8 @@
 # Platforms
 
-The macOS app supports macOS 12 or newer. Its bundled disc libraries are built
-from source with a 12.0 deployment target; the CLI tarball still links Homebrew
-bottles and needs macOS 15 or newer.
+The macOS app and the macOS CLI tarball both support macOS 12 or newer. Their
+disc libraries are built from source with a 12.0 deployment target. The CLI
+tarball also carries ffmpeg, ffprobe and the menu JAR.
 
 Keepsake Atelier is macOS-first. The engine and CLI are portable Rust, but the
 optical drive, native AACS and disc-burning layers talk to operating-system
@@ -30,7 +30,8 @@ libudfread, libgcrypt and libgpg-error, all built from source with
 `MACOSX_DEPLOYMENT_TARGET=12.0` by `scripts/build-disc-libs.sh`, then fixed and
 re-signed with `scripts/bundle-app.sh`. The bundled ffmpeg has `dvdvideo`,
 libx264 and libx265, and the native AACS path uses IOKit and a LibreDrive
-vendor read. The CLI tarballs are not bundled and need the Homebrew libraries.
+vendor read. The CLI tarball carries the same libraries plus ffmpeg, ffprobe
+and `00000.jar`.
 
 - **Apple Silicon:** the normal download.
 - **Intel:** built in CI on an Intel runner (`x86_64-apple-darwin`). The same

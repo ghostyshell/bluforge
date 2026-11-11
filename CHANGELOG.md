@@ -6,6 +6,11 @@ All notable changes to Keepsake Atelier. Newest first.
 
 ### Added
 
+- **The macOS CLI tarball is self-contained and macOS 12 compatible.** It is
+  built against the same source-built disc libraries, bundled with
+  `@executable_path/lib`, and carries ffmpeg, ffprobe and the menu JAR. The
+  CLI's `lib/` and `bundled_lib` lookup also make `doctor` and `keys` report the
+  bundled AACS backends instead of Homebrew.
 - **macOS 12 support.** The DMG was blocked at 15 by Homebrew's deployment
   target. `scripts/build-disc-libs.sh` now builds libgpg-error, libgcrypt,
   libudfread, libaacs, libbdplus and libbluray from source with

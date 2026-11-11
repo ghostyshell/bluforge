@@ -57,9 +57,10 @@ x86_64 builds. The links are refreshed weekly because GoFile expires free-tier
 files. The [project site](https://ghostyshell.github.io/keepsake-atelier/#downloads)
 reads the same manifest.
 
-The DMG is self-contained: libbluray, libaacs, libbdplus and their dependencies
-are inside the bundle, built with a macOS 12.0 deployment target. The CLI
-tarballs are not; they link Homebrew and need its macOS 15 or newer bottles. The app is not notarized. On first launch, right-click the app,
+The DMG and the macOS CLI tarball are self-contained: libbluray, libaacs,
+libbdplus and their dependencies are inside, built with a macOS 12.0 deployment
+target. The CLI tarball also carries ffmpeg, ffprobe and the menu JAR. Both
+support macOS 12 or newer. The app is not notarized. On first launch, right-click the app,
 choose **Open**, then confirm. Or clear the quarantine flag:
 
 ```sh

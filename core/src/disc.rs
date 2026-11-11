@@ -277,9 +277,14 @@ fn find_lib(stems: &'static [&'static str]) -> Option<&'static str> {
 /// A library shipped in the app bundle's `Contents/Resources/lib`, if present.
 pub fn bundled_lib(name: &str) -> Option<std::path::PathBuf> {
     let exe = std::env::current_exe().ok()?;
-    let contents = exe.parent()?.parent()?;
-    let path = contents.join("Resources/lib").join(name);
-    path.is_file().then_some(path)
+    let dir = exe.parent()?;
+    let mut candidates = vec![dir.join("lib").join(name)];
+    if let Some(parent) = dir.parent() {
+        // bin/../lib for a package layout, Contents/Resources/lib for the app.
+        candidates.push(parent.join("lib").join(name));
+        candidates.push(parent.join("Resources").join("lib").join(name));
+    }
+    candidates.into_iter().find(|p| p.is_file())
 }
 
 /// Point libbluray at the libraries bundled with the app, when present.

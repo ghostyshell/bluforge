@@ -47,13 +47,9 @@ sudo install -m 755 keepsake-atelier /usr/local/bin/
 keepsake-atelier doctor
 ```
 
-The macOS tarball does not bundle libbluray or ffmpeg. Install the Homebrew
-libraries (`libbluray libaacs libbdplus`) and point the CLI at a suitable ffmpeg
-build. The app bundle carries one:
-
-```sh
-export KEEPSAKE_FFMPEG="/Applications/Keepsake Atelier.app/Contents/Resources/ffmpeg"
-```
+The macOS tarball is self-contained. Unpack it and keep `keepsake-atelier` next
+to `lib/`, `ffmpeg`, `ffprobe` and `00000.jar`; it finds all of them beside the
+binary. No Homebrew libraries are needed.
 
 ## Linux
 
