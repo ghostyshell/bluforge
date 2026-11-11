@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "updated": "2026-11-11",
+  "updated": "2026-11-12",
   "artifacts": [
     {
       "label": "macOS (Apple Silicon)",
@@ -8,10 +8,10 @@
       "version": "0.1.0",
       "os": "macOS",
       "arch": "arm64",
-      "gofile": "https://gofile.io/d/W9bGQWqj",
-      "kiwi": "https://file.kiwi/64b07650#KzpjVFGnGJFmSkn08xvjng",
-      "size": "34.5 MiB",
-      "sha256": "db72843136ffd456c3473b0c37a9357126c92d75431c1ad88c8e255815496437"
+      "gofile": "https://gofile.io/d/NYDo4Ov7",
+      "kiwi": "https://file.kiwi/2da5d246#zTfled23TVam5gP_WuuSoA",
+      "size": "33.9 MiB",
+      "sha256": "8c29920b202c67f8fbb28efc268193e97d5cc2cc442615bff80a0b210e53a62f"
     },
     {
       "label": "macOS (Intel)",
@@ -19,10 +19,10 @@
       "version": "0.1.0",
       "os": "macOS",
       "arch": "x64",
-      "gofile": "https://gofile.io/d/xRGaBKub",
-      "kiwi": "https://file.kiwi/753ddc20#m51mRozH0-pYNRmCQtJ--g",
-      "size": "38.9 MiB",
-      "sha256": "dcd42bfcbcaaf2fab54a8621075c139bb3bdaf7a40562209831882e88e31ae63"
+      "gofile": "https://gofile.io/d/TMmHAopv",
+      "kiwi": "https://file.kiwi/95e6615e#IfUgWQi3fZLE5A7RjMe-RA",
+      "size": "38.3 MiB",
+      "sha256": "7f03f2f28d9cc39c3b038f7f78f45f8776bdf38273450d33ecb4f0902daf162f"
     },
     {
       "label": "macOS (Apple Silicon, CLI)",
@@ -30,10 +30,10 @@
       "version": "0.1.0",
       "os": "macOS",
       "arch": "arm64",
-      "gofile": "https://gofile.io/d/2wvXYckY",
-      "kiwi": "https://file.kiwi/3ba97c4d#q10Vi_Q5bzWJa7uMOEGzBA",
+      "gofile": "https://gofile.io/d/anZkvTZx",
+      "kiwi": "https://file.kiwi/ed123cdc#xV1UCui37Y_S2CxtW_yZHg",
       "size": "2.3 MiB",
-      "sha256": "1daaeff4891c02701b649d307f71b3adab83bad07bd06493c46325151ef48fa4"
+      "sha256": "a81a1e44a36c16fe81f9cbd489c2d16721e50f3c472a16a499f43a46c2f2c0bb"
     },
     {
       "label": "macOS (Intel, CLI)",
@@ -41,10 +41,10 @@
       "version": "0.1.0",
       "os": "macOS",
       "arch": "x64",
-      "gofile": "https://gofile.io/d/I5W2kjPw",
-      "kiwi": "https://file.kiwi/ecbc8516#JzA0rtWZxPvQZxx9d_f4-Q",
+      "gofile": "https://gofile.io/d/rgT2EY0F",
+      "kiwi": "https://file.kiwi/2bdd7910#xtOx97XdxiyIahEPULS9Yw",
       "size": "2.4 MiB",
-      "sha256": "38400bd8d34f1c3bddc68c1f294a03eabd766db70ae850f94a6ec50daf82294c"
+      "sha256": "9aff688d70a91c472988b89013605556b1cf80b1d7c8cef0e0b93a47909bc676"
     },
     {
       "label": "Linux (x86_64, CLI)",
