@@ -56,6 +56,11 @@ All notable changes to Keepsake Atelier. Newest first.
 
 ### Fixed
 
+- **Windows ships an ffmpeg that can actually rip DVDs.** The gyan essentials
+  build has libx264/x265 but no libdvdread/libdvdnav, so the `dvdvideo`
+  demuxer was absent. The bundle now uses BtbN's GPL build and CI asserts the
+  demuxer and the two encoders before packaging. The installer grows to about
+  99 MiB as a result.
 - **Windows CI no longer depends on `ntldd`.** The MSYS2 package download came
   back checksum-corrupt and failed the installer job before it started. The
   workflow now walks `ldd` output recursively, which ships with the MSYS2

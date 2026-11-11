@@ -14,7 +14,7 @@ interfaces, so each platform is at a different stage.
 | Author to a BDMV folder | yes | yes | yes, with tsMuxeR | yes, with tsMuxeR |
 | Author a UDF 2.50 ISO | yes (`newfs_udf`) | yes | no | no |
 | Authored BD-J menu | yes | yes | yes (writer) | yes (writer) |
-| DVD-Video | yes (bundled ffmpeg) | yes (bundled ffmpeg) | needs an ffmpeg with `dvdvideo` | needs an ffmpeg with `dvdvideo` |
+| DVD-Video | yes (bundled ffmpeg) | yes (bundled ffmpeg) | needs an ffmpeg with `dvdvideo` | yes (bundled ffmpeg) |
 | Verify, menu documents, KEYDB | yes | yes | yes | yes |
 | Burn to disc | `hdiutil` | `hdiutil` | `growisofs` | IMAPI2 (untested) |
 | MCP server | yes | yes | yes | preview |
