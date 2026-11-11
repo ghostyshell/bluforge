@@ -26,6 +26,7 @@ pub mod rip;
 pub mod template;
 pub mod tv;
 pub mod udf;
+pub mod udf_portable;
 pub mod verify;
 
 pub use clone::{CloneProgress, CloneRequest};

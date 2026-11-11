@@ -78,11 +78,16 @@ on a rewritable disc before committing a stack of BD-Rs.
 
 ## Notes on the UDF image
 
-Multi-title ISOs are written with macOS's `newfs_udf` and `hdiutil`, not
-tsMuxeR. The filesystem is UDF 2.50 with a metadata partition, which is what
-Blu-ray requires. `hdiutil` mounts the image read-write, the merged BDMV tree is
-copied in, and the image is detached. The image is sparse until the files are
-written, so the temporary disk cost is the final size, not double.
+Multi-title ISOs are written by the app, not tsMuxeR.
+
+- macOS uses `newfs_udf` and `hdiutil`. The filesystem is UDF 2.50 with a
+  metadata partition, which is what BD-RE requires. `hdiutil` mounts the image
+  read-write, the merged BDMV tree is copied in, and the image is detached. The
+  image is sparse until the files are written.
+- Linux and Windows use a portable pure-Rust writer. It produces a mastered UDF
+  2.50 image with the BD-R profile (no metadata partition) and streams file data
+  from disk, so a 50 GB tree does not need 50 GB of memory. `KEEPSAKE_PORTABLE_UDF=1`
+  forces this path on macOS for testing.
 
 ## Menu
 

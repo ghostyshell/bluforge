@@ -131,9 +131,8 @@ fn check_image(req: &BurnRequest) -> Result<(), CoreError> {
     if let Some(device) = &req.device {
         let dev = device.to_string_lossy();
         #[cfg(target_os = "windows")]
-        let shaped = dev.len() >= 2
-            && dev.as_bytes()[1] == b':'
-            && dev.as_bytes()[0].is_ascii_alphabetic();
+        let shaped =
+            dev.len() >= 2 && dev.as_bytes()[1] == b':' && dev.as_bytes()[0].is_ascii_alphabetic();
         #[cfg(not(target_os = "windows"))]
         let shaped = dev.starts_with("/dev/");
         if !shaped {

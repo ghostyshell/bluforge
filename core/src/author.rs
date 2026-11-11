@@ -364,11 +364,17 @@ fn menu_spec(
 
 /// Build a native UDF 2.50 image containing an already-staged disc tree.
 fn iso_from_tree(tree: &Path, dest: &Path, label: &str) -> Result<(), CoreError> {
-    let payload = crate::udf::tree_size(&tree.join("BDMV"));
-    let size = crate::udf::image_size(payload);
-    crate::udf::with_image(dest, size, label, |mount| {
-        crate::bdmv::export_tree(tree, mount)
-    })
+    if crate::udf::available() && !crate::udf_portable::forced() {
+        let payload = crate::udf::tree_size(&tree.join("BDMV"));
+        let size = crate::udf::image_size(payload);
+        crate::udf::with_image(dest, size, label, |mount| {
+            crate::bdmv::export_tree(tree, mount)
+        })
+    } else {
+        // Linux and Windows have no newfs_udf. Package the staged tree with
+        // the portable UDF 2.50 writer instead.
+        crate::udf_portable::create_from_tree(tree, dest, label)
+    }
 }
 
 /// Author `req.inputs` into one disc at `dest`: a single title, or one title per
@@ -428,12 +434,6 @@ where
     let want_iso = dest
         .extension()
         .is_some_and(|e| e.eq_ignore_ascii_case("iso"));
-    if want_iso && !crate::udf::available() {
-        return Err(CoreError::Disc(
-            "multi-title ISO needs macOS newfs_udf/hdiutil (UDF 2.50); pass a folder instead"
-                .into(),
-        ));
-    }
 
     let n = req.inputs.len();
     let menu = menu_spec(req, &(0..n as u32).collect::<Vec<_>>())?;
@@ -468,27 +468,59 @@ where
 
     if want_iso {
         // tsMuxeR writes only one playlist per image, so build the merged BDMV
-        // inside a native UDF 2.50 image instead.
-        let payload: u64 = parts
-            .iter()
-            .map(|p| crate::udf::tree_size(&p.join("BDMV")))
-            .sum();
-        let size = crate::udf::image_size(payload);
+        // into a tree first. macOS lays it into a native UDF image; elsewhere
+        // the portable writer packages the finished tree.
         let label = req.label.clone().unwrap_or_else(|| "KEEPSAKE".into());
-        on_progress(AuthorProgress {
-            percent: 71.0,
-            message: format!("creating UDF 2.50 image ({} MiB)", size / (1024 * 1024)),
-            done: false,
-        });
-        crate::udf::with_image(dest, size, &label, |mount| {
-            crate::bdmv::merge(&parts, mount, menu.as_ref(), |pct| {
+        if crate::udf::available() && !crate::udf_portable::forced() {
+            let payload: u64 = parts
+                .iter()
+                .map(|p| crate::udf::tree_size(&p.join("BDMV")))
+                .sum();
+            let size = crate::udf::image_size(payload);
+            on_progress(AuthorProgress {
+                percent: 71.0,
+                message: format!("creating UDF 2.50 image ({} MiB)", size / (1024 * 1024)),
+                done: false,
+            });
+            crate::udf::with_image(dest, size, &label, |mount| {
+                crate::bdmv::merge(&parts, mount, menu.as_ref(), |pct| {
+                    on_progress(AuthorProgress {
+                        percent: 74.0 + pct * 0.24,
+                        message: "writing titles".into(),
+                        done: false,
+                    });
+                })
+            })?;
+        } else {
+            let stage = std::env::temp_dir().join(format!(
+                "keepsake-udf-stage-{}-{}",
+                std::process::id(),
+                dest.file_name()
+                    .map(|n| n.to_string_lossy().replace(['/', ' '], "_"))
+                    .unwrap_or_default()
+            ));
+            let _ = std::fs::remove_dir_all(&stage);
+            on_progress(AuthorProgress {
+                percent: 71.0,
+                message: "merging titles".into(),
+                done: false,
+            });
+            crate::bdmv::merge(&parts, &stage, menu.as_ref(), |pct| {
                 on_progress(AuthorProgress {
-                    percent: 74.0 + pct * 0.24,
-                    message: "writing titles".into(),
+                    percent: 72.0 + pct * 0.22,
+                    message: "merging titles".into(),
                     done: false,
                 });
-            })
-        })?;
+            })?;
+            on_progress(AuthorProgress {
+                percent: 95.0,
+                message: "packaging UDF 2.50 image".into(),
+                done: false,
+            });
+            let result = crate::udf_portable::create_from_tree(&stage, dest, &label);
+            let _ = std::fs::remove_dir_all(&stage);
+            result?;
+        }
     } else {
         crate::bdmv::merge(&parts, dest, menu.as_ref(), |pct| {
             on_progress(AuthorProgress {

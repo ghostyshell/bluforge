@@ -77,6 +77,14 @@ fn which(bin: &str) -> Option<PathBuf> {
 /// missing the main movie.
 fn build_iso(dir: &Path, dest: &Path, label: &str) -> Result<(), CoreError> {
     let _ = std::fs::remove_file(dest);
+
+    // Prefer the portable UDF 2.50 writer: it is the Blu-ray profile, streams
+    // file data, and works on every platform. The hdiutil/mkisofs path below
+    // stays as a fallback for an image the writer rejects.
+    if crate::udf_portable::create_from_tree(dir, dest, label).is_ok() {
+        return Ok(());
+    }
+
     let mut last_error: Option<String> = None;
 
     if which("hdiutil").is_some() {

@@ -187,6 +187,7 @@ core/           keepsake-core - framework-agnostic engine (Rust)
   assets/menu/    the generic menu Xlet (00000.jar) and its source
   bdmv.rs         multi-title index/MovieObject writer, menu install
   udf.rs          native UDF 2.50 images with newfs_udf and hdiutil
+  udf_portable.rs portable UDF 2.50 images (hadris-cd) for Linux and Windows
   burn.rs         hdiutil burn / growisofs orchestration
   rip.rs          ffmpeg orchestration (remux / encode) with progress
   dvd.rs          DVD-Video title parse and rip

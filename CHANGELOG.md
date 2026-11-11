@@ -6,6 +6,14 @@ All notable changes to Keepsake Atelier. Newest first.
 
 ### Added
 
+- **Portable UDF 2.50 authoring.** Linux and Windows can now merge multi-title
+  discs into a UDF 2.50 ISO instead of stopping at a BDMV folder. A pure-Rust
+  writer (`hadris-cd`) streams the staged tree from disk and emits the BD-R
+  profile. Verified by authoring two titles, mounting the image and reading both
+  with libbluray. macOS keeps `newfs_udf`, which adds the metadata partition
+  that BD-RE needs; `KEEPSAKE_PORTABLE_UDF=1` forces the portable path for
+  testing. Decrypted ISO export now tries the portable writer first on every
+  platform, so it no longer depends on `hdiutil` or `mkisofs`.
 - **Windows burning through IMAPI2.** `burn` now drives Windows' own COM writer
   stack from PowerShell, so no extra tool is required. It picks the first
   compatible recorder or the drive letter passed as `--device D:`, sets the

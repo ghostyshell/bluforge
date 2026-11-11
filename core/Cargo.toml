@@ -10,6 +10,10 @@ libc.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+
+# portable UDF 2.50 image creation (Linux/Windows; macOS uses newfs_udf)
+hadris-cd = { version = "2.2", default-features = false, features = ["std", "sync"] }
+hadris-udf = { version = "2.2", default-features = false, features = ["std", "write"] }
 tracing.workspace = true
 
 # key database fetching / storage

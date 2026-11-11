@@ -103,6 +103,8 @@ jobs:
           sudo apt-get install -y pkg-config libbluray-dev libaacs-dev libbdplus-dev
       - name: Build CLI
         run: cargo build --release -p keepsake-atelier
+      - name: Test core
+        run: cargo test -p keepsake-core --lib
       - name: Package
         run: |
           V=$(python3 -c 'import json; print(json.load(open("app/src-tauri/tauri.conf.json"))["version"])')

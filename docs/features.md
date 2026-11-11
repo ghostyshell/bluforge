@@ -83,9 +83,11 @@ keepsake-atelier covers save /path/to/folder --from hirescovers:12345
   disc, with generated `index.bdmv` and `MovieObject.bdmv` and renumbered clips.
 - Chapter marks are carried from the inputs; `--auto-chapters N` forces one
   every N minutes and `--no-chapters` drops them.
-- Output can be a BDMV folder or a native UDF 2.50 image. The ISO path uses
-  macOS's `newfs_udf` (UDF 2.50 with a metadata partition) and `hdiutil`, not a
-  third-party UDF writer.
+- Output can be a BDMV folder or a UDF 2.50 image. macOS uses `newfs_udf` and
+  `hdiutil`, which write the metadata partition that BD-RE expects. Linux and
+  Windows use a portable pure-Rust writer with the BD-R profile (no metadata
+  partition), streaming the tree from disk. `KEEPSAKE_PORTABLE_UDF=1` forces the
+  portable path on macOS for testing.
 - `--split GB` packs whole inputs onto BD-25 or BD-50 sized discs. A title is
   never cut across discs.
 - Splitting to ISOs writes `set/Disc1.iso`, `set/Disc2.iso`, and so on.

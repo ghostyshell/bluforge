@@ -12,7 +12,7 @@ interfaces, so each platform is at a different stage.
 | Native AACS key recovery | yes | yes | no (use KEYDB) | no (KEYDB via bundled libaacs) |
 | Rip and encode | yes | yes | yes, with a system ffmpeg | yes, with ffmpeg on `PATH` |
 | Author to a BDMV folder | yes | yes | yes, with tsMuxeR | yes, with tsMuxeR |
-| Author a UDF 2.50 ISO | yes (`newfs_udf`) | yes | no | no |
+| Author a UDF 2.50 ISO | yes (`newfs_udf`) | yes | yes (portable, BD-R) | yes (portable, BD-R) |
 | Authored BD-J menu | yes | yes | yes (writer) | yes (writer) |
 | DVD-Video | yes (bundled ffmpeg) | yes (bundled ffmpeg) | needs an ffmpeg with `dvdvideo` | yes (bundled ffmpeg) |
 | Verify, menu documents, KEYDB | yes | yes | yes | yes |
@@ -64,8 +64,9 @@ and with the x86_64 CI artifact under an Ubuntu 22.04 container:
 What does not work yet:
 
 - Native AACS key recovery. Use a KEYDB entry or libaacs.
-- UDF 2.50 ISO authoring. `newfs_udf` and `hdiutil` are macOS tools; write a
-  BDMV folder instead and let your authoring tool make the image.
+- BD-RE authoring. The portable writer builds a mastered UDF 2.50 image, which
+  is the BD-R profile: it has no metadata partition. BD-RE still wants the
+  macOS `newfs_udf` path.
 - A full interactive pass on a real Linux desktop. The AppImage and deb build
   and package correctly, and the AppImage launches under Xvfb here without
   crashing; the headless WebKit surface did not paint for a screenshot, so
@@ -113,10 +114,14 @@ CI executes both artifacts on `windows-latest`: the zip runs `--version` and
 and launched. The app has to stay alive for 15 seconds. That covers install and
 startup, not a click-through of the UI.
 
+Multi-title ISOs are written with the portable UDF 2.50 writer (pure Rust,
+streams file data). The image is the BD-R profile; BD-RE media still wants the
+macOS `newfs_udf` path.
+
 What does not work yet:
 
 - Native AACS key recovery.
-- UDF 2.50 ISO authoring.
+- BD-RE authoring.
 - A full interactive pass through the installer and UI on a Windows desktop.
 
 ## Building everything
@@ -140,7 +145,7 @@ The shape of the work is the same for each:
 1. `device.rs`: implement `list()` (drive discovery) and `eject()`.
 2. `disc.rs`: add the library search paths and the raw-device naming.
 3. `native.rs`: implement or explicitly disable native key recovery.
-4. `udf.rs`: use a native UDF 2.50 writer, or keep folder-only authoring.
+4. `udf.rs` / `udf_portable.rs`: native `newfs_udf`, or the portable writer.
 5. `burn.rs`: add the writer front-end.
 6. `doctor.rs`: make the messages and capability matrix truthful.
 7. Add a CI runner and publish the artifact.
