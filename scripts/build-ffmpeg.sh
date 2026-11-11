@@ -157,6 +157,7 @@ Name: dvdread
 Description: DVD read library
 Version: $DVDREAD_VER
 Libs: -L\${libdir} -ldvdread
+Libs.private: -lm -ldl
 Cflags: -I\${includedir}
 EOF
 fi
@@ -180,6 +181,7 @@ Description: DVD navigation library
 Version: $DVDNAV_VER
 Requires.private: dvdread
 Libs: -L\${libdir} -ldvdnav
+Libs.private: -lm -ldl -lpthread
 Cflags: -I\${includedir}
 EOF
 fi
@@ -187,6 +189,8 @@ fi
 # ---------------------------------------------------------------- ffmpeg
 clone https://github.com/FFmpeg/FFmpeg.git "$SRC/ffmpeg" n9.0.2
 if [ ! -x "$PREFIX/bin/ffmpeg" ] || [ "$FORCE" = 1 ]; then
+    echo "== pkg-config dvdnav: $(pkg-config --modversion dvdnav 2>&1)"
+    pkg-config --cflags --libs --static dvdnav 2>&1 || true
     echo "== building ffmpeg"
     cd "$SRC/ffmpeg"
     make distclean >/dev/null 2>&1 || true
