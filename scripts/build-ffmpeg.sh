@@ -141,12 +141,6 @@ if [ ! -f "$PREFIX/lib/libdvdread.a" ] || [ "$FORCE" = 1 ]; then
     tar -xJf "$SRC/libdvdread-$DVDREAD_VER.tar.xz" -C "$SRC"
     meson_build "$SRC/libdvdread-$DVDREAD_VER" -Dlibdvdcss=disabled
 fi
-if [ ! -f "$PREFIX/lib/libdvdnav.a" ] || [ "$FORCE" = 1 ]; then
-    echo "== building libdvdnav"
-    rm -rf "$SRC/libdvdnav-$DVDNAV_VER"
-    tar -xJf "$SRC/libdvdnav-$DVDNAV_VER.tar.xz" -C "$SRC"
-    meson_build "$SRC/libdvdnav-$DVDNAV_VER" -Denable_examples=false
-fi
 
 # Neither release installs a pkg-config file, and libdvdnav's meson build
 # otherwise falls back to a subproject that is not in the tarball. FFmpeg's
@@ -166,6 +160,14 @@ Libs: -L\${libdir} -ldvdread
 Cflags: -I\${includedir}
 EOF
 fi
+
+if [ ! -f "$PREFIX/lib/libdvdnav.a" ] || [ "$FORCE" = 1 ]; then
+    echo "== building libdvdnav"
+    rm -rf "$SRC/libdvdnav-$DVDNAV_VER"
+    tar -xJf "$SRC/libdvdnav-$DVDNAV_VER.tar.xz" -C "$SRC"
+    meson_build "$SRC/libdvdnav-$DVDNAV_VER" -Denable_examples=false
+fi
+
 if [ ! -f "$PREFIX/lib/pkgconfig/dvdnav.pc" ]; then
     cat > "$PREFIX/lib/pkgconfig/dvdnav.pc" <<EOF
 prefix=$PREFIX
