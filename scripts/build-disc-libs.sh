@@ -118,7 +118,7 @@ PY
 if [ ! -f "$PREFIX/lib/libgpg-error.0.dylib" ] || [ "$FORCE" = 1 ]; then
     echo "== libgpg-error $GPG_VER"
     ( cd "$SRC/libgpg-error-$GPG_VER"
-      ./configure --prefix="$PREFIX" --disable-doc --disable-tests
+      ./configure --prefix="$PREFIX" --disable-doc --disable-tests --disable-nls
       make -j"$JOBS"
       make install )
 fi
@@ -126,7 +126,7 @@ fi
 if [ ! -f "$PREFIX/lib/libgcrypt.20.dylib" ] || [ "$FORCE" = 1 ]; then
     echo "== libgcrypt $GCRYPT_VER"
     ( cd "$SRC/libgcrypt-$GCRYPT_VER"
-      ./configure --prefix="$PREFIX" --disable-doc --disable-tests
+      ./configure --prefix="$PREFIX" --disable-doc --disable-tests --disable-nls
       make -j"$JOBS"
       make install )
 fi
@@ -144,7 +144,7 @@ fi
 if [ ! -f "$PREFIX/lib/libaacs.0.dylib" ] || [ "$FORCE" = 1 ]; then
     echo "== libaacs $AACS_VER"
     ( cd "$SRC/libaacs-$AACS_VER"
-      ./configure --prefix="$PREFIX"
+      ./configure --prefix="$PREFIX" --disable-nls
       make -j"$JOBS"
       make install )
 fi
@@ -152,7 +152,7 @@ fi
 if [ ! -f "$PREFIX/lib/libbdplus.0.dylib" ] || [ "$FORCE" = 1 ]; then
     echo "== libbdplus $BDPLUS_VER"
     ( cd "$SRC/libbdplus-$BDPLUS_VER"
-      ./configure --prefix="$PREFIX"
+      ./configure --prefix="$PREFIX" --disable-nls
       make -j"$JOBS"
       make install )
 fi
@@ -177,4 +177,10 @@ for f in libgpg-error.0.dylib libgcrypt.20.dylib libudfread.3.dylib \
     [ -f "$PREFIX/lib/$f" ] || { echo "missing $f" >&2; exit 1; }
     printf '%-24s minos %s\n' "$f" \
         "$(otool -l "$PREFIX/lib/$f" | awk '/LC_BUILD_VERSION/{f=1} f&&/minos/{print $2; exit}')"
+    refs=$(otool -L "$PREFIX/lib/$f" | grep -E '/(opt/homebrew|usr/local)/' || true)
+    if [ -n "$refs" ]; then
+        echo "$f still references Homebrew:" >&2
+        echo "$refs" >&2
+        exit 1
+    fi
 done
