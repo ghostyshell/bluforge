@@ -41,7 +41,8 @@ The CLI builds against the distribution's libbluray, libaacs, libbdplus and
 libgcrypt.
 
 ```sh
-sudo apt install pkg-config libbluray-dev libaacs-dev libbdplus-dev ffmpeg
+sudo apt install pkg-config libbluray-dev libaacs-dev libbdplus-dev \
+  libgcrypt20-dev libgpg-error-dev ffmpeg
 cargo build --release -p keepsake-atelier
 ./target/release/keepsake-atelier doctor
 ```

@@ -63,7 +63,8 @@ export KEEPSAKE_FFMPEG="/Applications/Keepsake Atelier.app/Contents/Resources/ff
   `libwebkit2gtk-4.1-0`, `libgtk-3-0`, `libbluray2`, `libaacs0`, `libbdplus0`
   and `ffmpeg`.
 - **CLI tarball:** unpack and run `./keepsake-atelier doctor`. Install
-  `libbluray`, `libaacs`, `libbdplus` and `ffmpeg` from the distribution.
+  `libbluray`, `libaacs`, `libbdplus`, `libgcrypt` and `ffmpeg` from the
+  distribution.
 
 Drive discovery uses sysfs and eject uses `CDROMEJECT`. Encrypted discs need a
 KEYDB entry and libaacs; there is no native AACS recovery on Linux yet.
