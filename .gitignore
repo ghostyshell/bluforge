@@ -16,3 +16,6 @@ app/src-tauri/resources/ffprobe
 .release-refresh.log
 .gofile-io-token
 dist/
+
+# file.kiwi uploader scratch files
+filekiwi.tmp.*.json
