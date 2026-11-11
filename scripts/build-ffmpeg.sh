@@ -148,6 +148,40 @@ if [ ! -f "$PREFIX/lib/libdvdnav.a" ] || [ "$FORCE" = 1 ]; then
     meson_build "$SRC/libdvdnav-$DVDNAV_VER" -Denable_examples=false
 fi
 
+# Neither release installs a pkg-config file, and libdvdnav's meson build
+# otherwise falls back to a subproject that is not in the tarball. FFmpeg's
+# configure also looks these up by pkg-config name.
+mkdir -p "$PREFIX/lib/pkgconfig"
+if [ ! -f "$PREFIX/lib/pkgconfig/dvdread.pc" ]; then
+    cat > "$PREFIX/lib/pkgconfig/dvdread.pc" <<EOF
+prefix=$PREFIX
+exec_prefix=\${prefix}
+libdir=\${prefix}/lib
+includedir=\${prefix}/include
+
+Name: dvdread
+Description: DVD read library
+Version: $DVDREAD_VER
+Libs: -L\${libdir} -ldvdread
+Cflags: -I\${includedir}
+EOF
+fi
+if [ ! -f "$PREFIX/lib/pkgconfig/dvdnav.pc" ]; then
+    cat > "$PREFIX/lib/pkgconfig/dvdnav.pc" <<EOF
+prefix=$PREFIX
+exec_prefix=\${prefix}
+libdir=\${prefix}/lib
+includedir=\${prefix}/include
+
+Name: dvdnav
+Description: DVD navigation library
+Version: $DVDNAV_VER
+Requires.private: dvdread
+Libs: -L\${libdir} -ldvdnav
+Cflags: -I\${includedir}
+EOF
+fi
+
 # ---------------------------------------------------------------- ffmpeg
 clone https://github.com/FFmpeg/FFmpeg.git "$SRC/ffmpeg" n9.0.2
 if [ ! -x "$PREFIX/bin/ffmpeg" ] || [ "$FORCE" = 1 ]; then
