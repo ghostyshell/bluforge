@@ -41,15 +41,15 @@ Windows from one Rust engine.
 <!-- downloads:start -->
 | Build | GoFile (primary) | file.kiwi (backup) | Size |
 | --- | --- | --- | --- |
-| `Keepsake-Atelier-0.1.0-arm64.dmg` | [Download](https://gofile.io/d/ZtVxpuOQ) | [Mirror](https://file.kiwi/43d2a1a5#6iNl67-I8iMPbxnJr7gXfA) | 34.3 MiB |
-| `Keepsake-Atelier-0.1.0-x64.dmg` | [Download](https://gofile.io/d/BEsEn4p8) | [Mirror](https://file.kiwi/af99cc3c#YvBILlL6yZRCLRZqx0YCUQ) | 38.6 MiB |
-| `keepsake-atelier-0.1.0-macos-arm64.tar.gz` | [Download](https://gofile.io/d/pt4ULjQ0) | [Mirror](https://file.kiwi/036c919d#m2zJsHcGrZekARPlVIqtTQ) | 2.1 MiB |
-| `keepsake-atelier-0.1.0-macos-x64.tar.gz` | [Download](https://gofile.io/d/2kBlpQ7u) | [Mirror](https://file.kiwi/4d146f5e#do9_-f49rsbno2-K_g3ZEA) | 2.2 MiB |
-| `keepsake-atelier-0.1.0-linux-x64.tar.gz` | [Download](https://gofile.io/d/IxuUauOM) | [Mirror](https://file.kiwi/0ac4cbfd#ODRjWeSu2SgG-1CSnmlDrA) | 2.2 MiB |
-| `Keepsake-Atelier-0.1.0-linux-x64.AppImage` | [Download](https://gofile.io/d/z6zxH2ym) | [Mirror](https://file.kiwi/d293222b#U6_LQXRic7C1mnsFH6keDg) | 144.1 MiB |
-| `Keepsake-Atelier-0.1.0-linux-x64.deb` | [Download](https://gofile.io/d/DLTBcnry) | [Mirror](https://file.kiwi/bec0b3a9#XYrxOva4vC1NH9FEsNobkg) | 6.3 MiB |
-| `keepsake-atelier-0.1.0-windows-x64.zip` | [Download](https://gofile.io/d/7d7zrbyj) | [Mirror](https://file.kiwi/b4d63969#D7T2-p5nqOjW2LoB29QpEw) | 7.3 MiB |
-| `Keepsake-Atelier-0.1.0-windows-x64-setup.exe` | [Download](https://gofile.io/d/zXOGVUHy) | [Mirror](https://file.kiwi/a41a2f8e#Ce5YLr9dwgipx_UBuB48Gg) | 59.4 MiB |
+| `Keepsake-Atelier-0.1.0-arm64.dmg` | [Download](https://gofile.io/d/ORx08J3h) | [Mirror](https://file.kiwi/70f7ef39#r94JVG5P4ea_BNiz-XTj2Q) | 34.4 MiB |
+| `Keepsake-Atelier-0.1.0-x64.dmg` | [Download](https://gofile.io/d/wXJXHKBO) | [Mirror](https://file.kiwi/3a083be8#aL7h_Z0_pYV9Fw8uelV8uw) | 38.8 MiB |
+| `keepsake-atelier-0.1.0-macos-arm64.tar.gz` | [Download](https://gofile.io/d/TfdhYtK7) | [Mirror](https://file.kiwi/8f31b2b9#dOc452urhG7zj5LmlSkLaA) | 2.1 MiB |
+| `keepsake-atelier-0.1.0-macos-x64.tar.gz` | [Download](https://gofile.io/d/baVB7cwC) | [Mirror](https://file.kiwi/4153de75#nUDpn3brMtA2M60HA_lTbQ) | 2.2 MiB |
+| `keepsake-atelier-0.1.0-linux-x64.tar.gz` | [Download](https://gofile.io/d/MhcFISYg) | [Mirror](https://file.kiwi/98b96d9e#iPHVGWtRO-xCVX1LtX1weA) | 2.3 MiB |
+| `Keepsake-Atelier-0.1.0-linux-x64.AppImage` | [Download](https://gofile.io/d/ZHFy4LMK) | [Mirror](https://file.kiwi/067449cf#IUFG3-2XiuHsSSouhI17PA) | 144.1 MiB |
+| `Keepsake-Atelier-0.1.0-linux-x64.deb` | [Download](https://gofile.io/d/vCv6Cz8D) | [Mirror](https://file.kiwi/a4130e28#wIAVS3gt-QN05ZKQwK0UjQ) | 6.3 MiB |
+| `keepsake-atelier-0.1.0-windows-x64.zip` | [Download](https://gofile.io/d/EAGiLCF8) | [Mirror](https://file.kiwi/160e3e1c#TxoRLR3cLxUl2iNly6lfNQ) | 8.3 MiB |
+| `Keepsake-Atelier-0.1.0-windows-x64-setup.exe` | [Download](https://gofile.io/d/w33X9noD) | [Mirror](https://file.kiwi/74ea57ed#pZ3fmuIZE7PKhs0iRVAA1A) | 60.2 MiB |
 <!-- downloads:end -->
 
 Apple Silicon or Intel on macOS 15 or newer, plus Linux x86_64 and Windows

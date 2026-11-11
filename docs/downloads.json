@@ -8,10 +8,10 @@
       "version": "0.1.0",
       "os": "macOS",
       "arch": "arm64",
-      "gofile": "https://gofile.io/d/ZtVxpuOQ",
-      "kiwi": "https://file.kiwi/43d2a1a5#6iNl67-I8iMPbxnJr7gXfA",
-      "size": "34.3 MiB",
-      "sha256": "9065305381a67d79389b4dd902dc7a481288353618042e2f33cdc04d62d1207c"
+      "gofile": "https://gofile.io/d/ORx08J3h",
+      "kiwi": "https://file.kiwi/70f7ef39#r94JVG5P4ea_BNiz-XTj2Q",
+      "size": "34.4 MiB",
+      "sha256": "6056b83829d45cea1c6d2aa158ec0892b49f74c538fe4dbae63e0223d3ca46de"
     },
     {
       "label": "macOS (Intel)",
@@ -19,10 +19,10 @@
       "version": "0.1.0",
       "os": "macOS",
       "arch": "x64",
-      "gofile": "https://gofile.io/d/BEsEn4p8",
-      "kiwi": "https://file.kiwi/af99cc3c#YvBILlL6yZRCLRZqx0YCUQ",
-      "size": "38.6 MiB",
-      "sha256": "e21cab6a239f81f3e7888af0828262423555dcf5a4bc0c46c0e4c594d48c732a"
+      "gofile": "https://gofile.io/d/wXJXHKBO",
+      "kiwi": "https://file.kiwi/3a083be8#aL7h_Z0_pYV9Fw8uelV8uw",
+      "size": "38.8 MiB",
+      "sha256": "bf7d3df7036fd83ff775ee572b6d74a027dff6710f904dce16b30da01378c7e2"
     },
     {
       "label": "macOS (Apple Silicon, CLI)",
@@ -30,10 +30,10 @@
       "version": "0.1.0",
       "os": "macOS",
       "arch": "arm64",
-      "gofile": "https://gofile.io/d/pt4ULjQ0",
-      "kiwi": "https://file.kiwi/036c919d#m2zJsHcGrZekARPlVIqtTQ",
+      "gofile": "https://gofile.io/d/TfdhYtK7",
+      "kiwi": "https://file.kiwi/8f31b2b9#dOc452urhG7zj5LmlSkLaA",
       "size": "2.1 MiB",
-      "sha256": "b213213d5579415b472724bf036515a21f12308cc0616ffca863caedbecbc2eb"
+      "sha256": "4fe6ddcc6ca849763f52c7155f213bbc52b806c050a2d5f202d4fa57f6ba4583"
     },
     {
       "label": "macOS (Intel, CLI)",
@@ -41,10 +41,10 @@
       "version": "0.1.0",
       "os": "macOS",
       "arch": "x64",
-      "gofile": "https://gofile.io/d/2kBlpQ7u",
-      "kiwi": "https://file.kiwi/4d146f5e#do9_-f49rsbno2-K_g3ZEA",
+      "gofile": "https://gofile.io/d/baVB7cwC",
+      "kiwi": "https://file.kiwi/4153de75#nUDpn3brMtA2M60HA_lTbQ",
       "size": "2.2 MiB",
-      "sha256": "d20d4b349653f7fa59c5dd148bd57631a61c9efe52feaa31cc2ce4d40eb1e06a"
+      "sha256": "7b68d24369bf90ae53bdb34f0d79d39a8c599da1e64cda85da5a3f8f3b232c87"
     },
     {
       "label": "Linux (x86_64, CLI)",
@@ -52,10 +52,10 @@
       "version": "0.1.0",
       "os": "Linux",
       "arch": "x86_64",
-      "gofile": "https://gofile.io/d/IxuUauOM",
-      "kiwi": "https://file.kiwi/0ac4cbfd#ODRjWeSu2SgG-1CSnmlDrA",
-      "size": "2.2 MiB",
-      "sha256": "4f2ce0dc9f87932353f383bb7c4468caf5e3686b4eb9d2617b41d7a18a67f59d"
+      "gofile": "https://gofile.io/d/MhcFISYg",
+      "kiwi": "https://file.kiwi/98b96d9e#iPHVGWtRO-xCVX1LtX1weA",
+      "size": "2.3 MiB",
+      "sha256": "a60f6f9532f2ea76b3cb4bbaeb2b73abf215210da31fccc0c0d2108977f84345"
     },
     {
       "label": "Linux (x86_64, AppImage)",
@@ -63,10 +63,10 @@
       "version": "0.1.0",
       "os": "Linux",
       "arch": "x86_64",
-      "gofile": "https://gofile.io/d/z6zxH2ym",
-      "kiwi": "https://file.kiwi/d293222b#U6_LQXRic7C1mnsFH6keDg",
+      "gofile": "https://gofile.io/d/ZHFy4LMK",
+      "kiwi": "https://file.kiwi/067449cf#IUFG3-2XiuHsSSouhI17PA",
       "size": "144.1 MiB",
-      "sha256": "8f79fc262b8018fc343d16610337404c4bf954e8a57f8e9f6153cf60ceeae09a"
+      "sha256": "0ce21b122cbcc8a1dc717b39713a91246b0d8c8411046895234f19364f2ddd80"
     },
     {
       "label": "Linux (x86_64, deb)",
@@ -74,10 +74,10 @@
       "version": "0.1.0",
       "os": "Linux",
       "arch": "x86_64",
-      "gofile": "https://gofile.io/d/DLTBcnry",
-      "kiwi": "https://file.kiwi/bec0b3a9#XYrxOva4vC1NH9FEsNobkg",
+      "gofile": "https://gofile.io/d/vCv6Cz8D",
+      "kiwi": "https://file.kiwi/a4130e28#wIAVS3gt-QN05ZKQwK0UjQ",
       "size": "6.3 MiB",
-      "sha256": "a3f6a5667a20bff0e0dbf48ae8f34a1200cf26c047df3c97a5bbfe16f33fe18c"
+      "sha256": "821a930fa4605d1b493f180e6a35b1be9b350e81a609660e6860b4dff8377f15"
     },
     {
       "label": "Windows (x86_64, CLI)",
@@ -85,10 +85,10 @@
       "version": "0.1.0",
       "os": "Windows",
       "arch": "x86_64",
-      "gofile": "https://gofile.io/d/7d7zrbyj",
-      "kiwi": "https://file.kiwi/b4d63969#D7T2-p5nqOjW2LoB29QpEw",
-      "size": "7.3 MiB",
-      "sha256": "e65e7aa5a9f6bc8236df1654cdc080520effe468c049960067d297cd38bd4ac8"
+      "gofile": "https://gofile.io/d/EAGiLCF8",
+      "kiwi": "https://file.kiwi/160e3e1c#TxoRLR3cLxUl2iNly6lfNQ",
+      "size": "8.3 MiB",
+      "sha256": "0b96ece758650ceaaf26e551ca86331af26eb068690c9f0304dc4c26b8f38145"
     },
     {
       "label": "Windows (x86_64, installer)",
@@ -96,10 +96,10 @@
       "version": "0.1.0",
       "os": "Windows",
       "arch": "x86_64",
-      "gofile": "https://gofile.io/d/zXOGVUHy",
-      "kiwi": "https://file.kiwi/a41a2f8e#Ce5YLr9dwgipx_UBuB48Gg",
-      "size": "59.4 MiB",
-      "sha256": "31c8afe04f152fb8144a1fd3885273aa31342d72273bb8dec368217fe3fa62d3"
+      "gofile": "https://gofile.io/d/w33X9noD",
+      "kiwi": "https://file.kiwi/74ea57ed#pZ3fmuIZE7PKhs0iRVAA1A",
+      "size": "60.2 MiB",
+      "sha256": "cee996784da5f8f63c7c05cc686ff9c709be6764bee85ebf9b391c69aba43f16"
     }
   ]
 }
