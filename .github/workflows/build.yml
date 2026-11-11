@@ -247,6 +247,31 @@ jobs:
           $nsis = Get-ChildItem target/release/bundle/nsis -Filter *.exe | Select-Object -First 1
           Copy-Item $nsis.FullName "dist/Keepsake-Atelier-$V-windows-x64-setup.exe"
           Get-ChildItem dist | Format-Table
+      - name: Smoke test the installer
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem target/release/bundle/nsis -Filter *.exe | Select-Object -First 1
+          Start-Process -FilePath $setup.FullName -ArgumentList "/S" -Wait
+          $roots = @(
+            "$env:LOCALAPPDATA\Keepsake Atelier",
+            "$env:LOCALAPPDATA\Programs\Keepsake Atelier",
+            "$env:ProgramFiles\Keepsake Atelier",
+            "${env:ProgramFiles(x86)}\Keepsake Atelier"
+          )
+          $exe = $null
+          foreach ($root in $roots) {
+            if (Test-Path $root) {
+              $exe = Get-ChildItem $root -Recurse -Filter "keepsake-atelier-app.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+              if ($exe) { break }
+            }
+          }
+          if (-not $exe) { throw "the installer did not place keepsake-atelier-app.exe" }
+          Write-Host "installed at $($exe.FullName)"
+          $app = Start-Process -FilePath $exe.FullName -PassThru
+          Start-Sleep -Seconds 15
+          if ($app.HasExited) { throw "the app exited during startup (code $($app.ExitCode))" }
+          Write-Host "app still running after 15s (pid $($app.Id))"
+          Stop-Process -Id $app.Id -Force
       - uses: actions/upload-artifact@v4
         with:
           name: windows-app
@@ -321,7 +346,13 @@ jobs:
           done
           cd dist && zip -9 "keepsake-atelier-${V}-windows-x64.zip" *
           ls -lh
-          ls -lh
+      - name: Smoke test the CLI
+        shell: pwsh
+        run: |
+          & dist\keepsake-atelier.exe --version
+          if ($LASTEXITCODE -ne 0) { throw "keepsake-atelier.exe --version failed" }
+          & dist\keepsake-atelier.exe doctor
+          Write-Host "doctor exit: $LASTEXITCODE"
       - uses: actions/upload-artifact@v4
         with:
           name: windows-x64
