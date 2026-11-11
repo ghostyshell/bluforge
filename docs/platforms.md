@@ -31,6 +31,9 @@ Homebrew libraries.
 - **Intel:** built in CI on an Intel runner (`x86_64-apple-darwin`). The same
   source, a separate DMG. The published DMG was checked: x86_64 executable,
   bundled ffmpeg/ffprobe, the menu JAR and the app resources are present.
+- Both CI DMGs were mounted and checked for a clean library closure (no
+  `/opt/homebrew` or `/usr/local` references), and the arm64 build was launched
+  against a real drive.
 
 ## Linux
 
@@ -63,8 +66,10 @@ What does not work yet:
 - Native AACS key recovery. Use a KEYDB entry or libaacs.
 - UDF 2.50 ISO authoring. `newfs_udf` and `hdiutil` are macOS tools; write a
   BDMV folder instead and let your authoring tool make the image.
-- Interactive UI validation on a Linux desktop. The AppImage and deb build and
-  package correctly, but the window has not been exercised end to end.
+- A full interactive pass on a real Linux desktop. The AppImage and deb build
+  and package correctly, and the AppImage launches under Xvfb here without
+  crashing; the headless WebKit surface did not paint for a screenshot, so
+  pointer and keyboard behaviour still needs a monitor.
 
 ## Windows
 
