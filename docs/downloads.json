@@ -63,10 +63,10 @@
       "version": "0.1.0",
       "os": "Linux",
       "arch": "x86_64",
-      "gofile": "https://gofile.io/d/s2335WNP",
-      "kiwi": "https://file.kiwi/f45a624b#T7PmO4_Tf6wa4mnhcabo1A",
-      "size": "144.3 MiB",
-      "sha256": "81cac977ef8541da1567f87bc73fb5c2e7fcf4d7895807c50ed3c37d52d952ec"
+      "gofile": "https://gofile.io/d/o9gJucAt",
+      "kiwi": "https://file.kiwi/a3bfc8fe#dwHj5v8beXDVc9pdPfIHGw",
+      "size": "107.7 MiB",
+      "sha256": "13d2027094c635c1eb485b50c9cb391c6a8f05ef7db9926cd414b89a81e8d468"
     },
     {
       "label": "Linux (x86_64, deb)",
@@ -74,10 +74,10 @@
       "version": "0.1.0",
       "os": "Linux",
       "arch": "x86_64",
-      "gofile": "https://gofile.io/d/V4BMQLNB",
-      "kiwi": "https://file.kiwi/c8718370#5gIk3UoLczfKYPEMUVbUTA",
-      "size": "6.5 MiB",
-      "sha256": "db97c7d4c99c42dab0bb0eba8913dc1c56c303108d951d23b39feda194acf5e5"
+      "gofile": "https://gofile.io/d/wvP79XDU",
+      "kiwi": "https://file.kiwi/eade16f0#JInMn84Ad4GBim4CocChDw",
+      "size": "35.7 MiB",
+      "sha256": "22fa48f12b1052b50834e20d1b3968ea7d947336c94de8f57e82913bd59893a7"
     },
     {
       "label": "Windows (x86_64, CLI)",
