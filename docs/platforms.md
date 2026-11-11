@@ -8,7 +8,7 @@ interfaces, so each platform is at a different stage.
 | --- | --- | --- | --- | --- |
 | Desktop app | yes | yes | preview (AppImage/deb) | preview (installer) |
 | CLI | yes | yes | yes | preview |
-| Optical drive discovery | IOKit | IOKit | sysfs (`/dev/sr*`) | not yet |
+| Optical drive discovery | IOKit | IOKit | sysfs (`/dev/sr*`) | WMI (`Win32_CDROMDrive`) |
 | Native AACS key recovery | yes | yes | no (use KEYDB) | no (use KEYDB) |
 | Rip and encode | yes | yes | yes, with a system ffmpeg | yes, with ffmpeg on `PATH` |
 | Author to a BDMV folder | yes | yes | yes, with tsMuxeR | yes, with tsMuxeR |
@@ -91,12 +91,18 @@ same desktop UI and can read an ISO or BDMV folder you point it at. It does not
 bundle libaacs/libbdplus, so encrypted discs need the CLI zip (which does) or a
 system install.
 
+The app discovers drives through WMI (`Win32_CDROMDrive`), ejects through
+`Shell.Application`, and understands drive letters as sources. It can open an
+ISO or a BDMV folder. The installer job also copies the MinGW libaacs and
+libbdplus DLLs into `resources/windows-libs` and points `LIBAACS_PATH` and
+`LIBBDPLUS_PATH` there, so a KEYDB entry can decrypt a disc. The published
+installer predates that change; the next Windows build carries it.
+
 What does not work yet:
 
-- Drive discovery and eject. There is no WMI/DeviceIoControl backend.
-- Native AACS and burning.
+- Native AACS key recovery and burning.
 - UDF ISO authoring.
-- The desktop app.
+- Interactive validation of the installer on a Windows desktop.
 
 ## Building everything
 
@@ -104,8 +110,8 @@ What does not work yet:
 
 - `macos-14` builds the Apple Silicon DMG and CLI.
 - `macos-15-intel` builds the Intel DMG and CLI.
-- `ubuntu-22.04` builds the Linux CLI.
-- `windows-latest` builds the Windows CLI zip.
+- `ubuntu-24.04` builds the Linux CLI, the AppImage and the deb.
+- `windows-latest` builds the Windows CLI zip and the NSIS installer.
 
 Run it from the Actions tab or `gh workflow run build.yml`. The local
 `scripts/publish-release.sh` and the weekly launchd job still build the macOS

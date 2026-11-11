@@ -5,7 +5,7 @@
 <h1 align="center">Keepsake Atelier</h1>
 
 <p align="center">
-  <b>Blu-ray ripping, authoring, menus and burning for macOS.</b><br>
+  <b>Blu-ray ripping, authoring, menus and burning.</b><br>
   Native AACS keys. UDF 2.50 images. Authored BD-J menus. No MakeMKV, no subscription.
 </p>
 
@@ -22,14 +22,19 @@ what is on a Blu-ray or DVD, takes it apart without re-encoding when you do not
 want to, puts a new disc together when you do, and checks the result before it
 reaches a writer.
 
-It is built on macOS's own tooling wherever possible: libbluray for navigation,
-libaacs for decryption, `newfs_udf` and `hdiutil` for UDF 2.50 images and burns,
-and a bundled ffmpeg for muxing and encoding.
+It uses native tooling wherever possible: libbluray for navigation, libaacs for
+decryption, `newfs_udf` and `hdiutil` for UDF 2.50 images and burns on macOS,
+and a bundled ffmpeg for muxing and encoding. The app runs on macOS, Linux and
+Windows from one Rust engine.
 
 - **Site:** https://ghostyshell.github.io/keepsake-atelier/
 - **Guides:** [docs/guides/index.md](docs/guides/index.md)
 - **Features:** [docs/features.md](docs/features.md)
 - **Roadmap:** [docs/roadmap.md](docs/roadmap.md)
+
+<p align="center">
+  <img src="docs/site/app.jpg" width="900" alt="Keepsake Atelier: the disc page with the drive, title list and live session panel">
+</p>
 
 ## Download
 
@@ -47,8 +52,9 @@ and a bundled ffmpeg for muxing and encoding.
 | `Keepsake-Atelier-0.1.0-windows-x64-setup.exe` | [Download](https://gofile.io/d/zXOGVUHy) | [Mirror](https://file.kiwi/a41a2f8e#Ce5YLr9dwgipx_UBuB48Gg) | 59.4 MiB |
 <!-- downloads:end -->
 
-Apple Silicon or Intel, macOS 15 or newer. The links are refreshed weekly because GoFile
-expires free-tier files. The [project site](https://ghostyshell.github.io/keepsake-atelier/#downloads)
+Apple Silicon or Intel on macOS 15 or newer, plus Linux x86_64 and Windows
+x86_64 builds. The links are refreshed weekly because GoFile expires free-tier
+files. The [project site](https://ghostyshell.github.io/keepsake-atelier/#downloads)
 reads the same manifest.
 
 The DMG is self-contained: libbluray, libaacs, libbdplus and their dependencies
@@ -61,8 +67,9 @@ xattr -dr com.apple.quarantine "/Applications/Keepsake Atelier.app"
 ```
 
 The tarball is the CLI only. Unpack it and put `keepsake-atelier` on your
-`PATH` if you want the command line without the app. Linux and Windows rows in
-the table are CLI previews; the macOS DMG is the full app. See
+`PATH` if you want the command line without the app. Linux also ships an
+AppImage and a deb; Windows ships a CLI zip and an NSIS installer. Both desktop
+builds are previews, and the macOS DMG is the reference app. See
 [docs/platforms.md](docs/platforms.md) for what works on each platform.
 
 ## Support
@@ -236,14 +243,17 @@ The test suite runs with `cargo test`.
 - [ffmpeg](docs/ffmpeg.md) - how the bundled build is made.
 - [Platforms](docs/platforms.md) - what works on macOS, Linux and Windows.
 - [Roadmap](docs/roadmap.md) - phases and known limits.
+- [Interface design](DESIGN.md) - direction, tokens, motion and accessibility.
+- [Design skills](docs/design-skills.md) - the skill routing used for the UI.
 - [Site source](docs/site/README.md) - the GitHub Pages landing page.
 - [Contributing](CONTRIBUTING.md) - build, tests, style and the release process.
 
 ## Notes and limits
 
-- macOS first. The macOS app is the reference build; the Linux CLI is built and
-  tested, and the Windows CLI is a preview. See
-  [docs/platforms.md](docs/platforms.md) for the per-platform matrix.
+- macOS first. The macOS app is the reference build. Linux ships a tested CLI
+  plus AppImage and deb previews; Windows ships a CLI zip and an NSIS installer
+  preview. See [docs/platforms.md](docs/platforms.md) for the per-platform
+  matrix.
 - Cinavia is a proprietary audio watermark. There is no open detector or
   remover, and none is bundled.
 - Authored BD-J menus are verified in a JVM harness and by libbluray's parser,

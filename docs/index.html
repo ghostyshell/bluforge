@@ -3,19 +3,19 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Keepsake Atelier - Blu-ray ripping and authoring for macOS</title>
-<meta name="description" content="Rip, author, verify and burn Blu-ray discs on macOS with native tools. AACS key recovery, UDF 2.50 images, authored BD-J menus, DVD-Video, 1:1 clones and an MCP server.">
+<title>Keepsake Atelier - Blu-ray ripping and authoring</title>
+<meta name="description" content="Rip, author, verify and burn Blu-ray discs with native tools on macOS, Linux and Windows. AACS key recovery, UDF 2.50 images, authored BD-J menus, DVD-Video, 1:1 clones and an MCP server.">
 <meta name="theme-color" content="#070b13">
 <link rel="canonical" href="https://ghostyshell.github.io/keepsake-atelier/">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Keepsake Atelier">
-<meta property="og:title" content="Keepsake Atelier - Blu-ray ripping and authoring for macOS">
-<meta property="og:description" content="Rip, author, verify and burn Blu-ray discs on macOS with native tooling. No MakeMKV, no subscription.">
+<meta property="og:title" content="Keepsake Atelier - Blu-ray ripping and authoring">
+<meta property="og:description" content="Rip, author, verify and burn Blu-ray discs with native tooling on macOS, Linux and Windows. No MakeMKV, no subscription.">
 <meta property="og:url" content="https://ghostyshell.github.io/keepsake-atelier/">
 <meta property="og:image" content="https://ghostyshell.github.io/keepsake-atelier/site/og.png">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Keepsake Atelier">
-<meta name="twitter:description" content="Blu-ray ripping and authoring for macOS, built on native tools.">
+<meta name="twitter:description" content="Blu-ray ripping and authoring, built on native tools.">
 <meta name="twitter:image" content="https://ghostyshell.github.io/keepsake-atelier/site/og.png">
 <link rel="icon" href="site/icon.png">
 <link rel="apple-touch-icon" href="site/icon.png">
@@ -275,19 +275,19 @@
   <section class="hero">
     <div class="wrap hero-grid">
       <div>
-        <p class="eyebrow">Blu-ray ripping and authoring for macOS</p>
+        <p class="eyebrow">Blu-ray ripping and authoring</p>
         <h1>Your discs, kept like they <em>matter</em>.</h1>
         <p class="lede">
-          Rip, author, verify and burn Blu-ray discs with macOS's own tooling.
-          Native AACS key recovery, UDF 2.50 images, authored BD-J menus, DVD-Video
-          and 1:1 clones. No MakeMKV, no subscription.
+          Rip, author, verify and burn Blu-ray discs with native tooling, on macOS,
+          Linux and Windows. Native AACS key recovery, UDF 2.50 images, authored
+          BD-J menus, DVD-Video and 1:1 clones. No MakeMKV, no subscription.
         </p>
         <div class="actions" id="hero-actions">
-          <a class="btn primary" href="#downloads">Download for macOS</a>
+          <a class="btn primary" href="#downloads">Get a build</a>
           <a class="btn ghost" href="#guides">Read the guides</a>
           <a class="btn ghost" href="https://discord.gg/SUaUrVGj5f">Discord</a>
         </div>
-        <p class="meta" id="hero-meta">Apple Silicon or Intel &middot; macOS 15+ &middot; <b>MIT</b> &middot; builds on GoFile and file.kiwi</p>
+        <p class="meta" id="hero-meta">macOS 15+ &middot; Linux x86_64 &middot; Windows x86_64 &middot; <b>MIT</b> &middot; builds on GoFile and file.kiwi</p>
       </div>
       <div class="hero-art">
         <img src="site/icon.png" alt="Keepsake Atelier app icon: a small blue keepsake box holding a Blu-ray disc">
@@ -381,7 +381,6 @@
         <div class="artifact">
           <h3>macOS (Apple Silicon)</h3>
           <p class="file">Keepsake-Atelier-0.1.0-arm64.dmg</p>
-          <p class="file">Universal builds are not published yet.</p>
         </div>
         <div class="artifact">
           <h3>Source</h3>
@@ -394,7 +393,8 @@
         <code>xattr -dr com.apple.quarantine "/Applications/Keepsake Atelier.app"</code>.
         The DMG bundles <code>libbluray libaacs libbdplus</code>; the CLI tarballs need
         <code>brew install libbluray libaacs libbdplus</code>.
-        The Linux and Windows builds are CLI previews; see the platform matrix in the docs.
+        Linux ships a CLI, an AppImage and a deb; Windows ships a CLI zip and an
+        NSIS installer. Both desktop builds are previews; see the platform matrix in the docs.
         Read <a href="https://github.com/ghostyshell/keepsake-atelier/blob/main/docs/guides/install.md">the install guide</a>.
       </p>
     </div>
@@ -468,7 +468,7 @@
       <details><summary>Are the authored menus verified?</summary><p>The BDJO, the JAR and the menu rows are checked, and the Xlet is run in a real JVM harness. Hardware playback is still untested, so menus are opt-in with <code>author --menu</code>.</p></details>
       <details><summary>Can it burn?</summary><p>Yes, with macOS's own <code>hdiutil burn</code>, or growisofs when you pass a device. Dry run is the default and a write needs an explicit confirmation. A blank BD-RE or BD-R is required.</p></details>
       <details><summary>Where are keys and settings stored?</summary><p>Under <code>~/Library/Application Support/keepsake-atelier</code>. The KEYDB file stays local and is never uploaded.</p></details>
-      <details><summary>Is there a Windows or Linux build?</summary><p>Not yet. The device and drive layer is macOS-specific; everything above it is portable Rust.</p></details>
+      <details><summary>Is there a Windows or Linux build?</summary><p>Yes. Linux ships a tested CLI plus AppImage and deb builds; Windows ships a CLI zip and an NSIS installer. Both desktop builds are previews, and drive discovery, ripping and authoring work there. Burning and native AACS recovery remain macOS features.</p></details>
     </div>
   </section>
 </main>
@@ -480,7 +480,7 @@
         <img src="site/icon.png" alt="">
         <span>Keepsake Atelier</span>
       </a>
-      <p>Blu-ray ripping and authoring for macOS. MIT licensed. Not affiliated with any disc, studio or drive vendor.</p>
+      <p>Blu-ray ripping and authoring for the discs you own. MIT licensed. Not affiliated with any disc, studio or drive vendor.</p>
     </div>
     <nav aria-label="Footer">
       <a href="https://github.com/ghostyshell/keepsake-atelier">GitHub</a>

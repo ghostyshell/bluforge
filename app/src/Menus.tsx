@@ -196,21 +196,22 @@ export function Menus({ source, busy: driveBusy, onError, onToast }: Props) {
 
   return (
     <section className="card">
-      <div className="row between">
-        <h2>Disc menu</h2>
-        <span className="sub">parse, edit, save, reuse on another disc</span>
-      </div>
-
-      <div className="row wrap" style={{ marginTop: 10, gap: 8 }}>
+      <div className="panel-head">
+        <div>
+          <h2>Disc menu</h2>
+          <p className="sub">Parse the navigation table, rename what plays, and reuse the result.</p>
+        </div>
         <button onClick={parseDisc} disabled={!!busy || !!driveBusy || !source}>
           {busy === "parse" ? "Parsing…" : "Parse this disc"}
         </button>
+      </div>
+
+      <div className="row wrap" style={{ gap: 8 }}>
         <select
           value={pick}
           onChange={(e) => setPick(e.target.value)}
-          style={{ minWidth: 200 }}
-        >
-          <option value="">saved templates…</option>
+          style={{ flex: "1 1 220px", maxWidth: 340 }}>
+          <option value="">Saved templates…</option>
           {entries.map((e) => (
             <option key={e.name} value={e.name}>
               {e.name} · {e.titles} titles

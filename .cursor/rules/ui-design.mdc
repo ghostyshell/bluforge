@@ -1,0 +1,24 @@
+---
+description: Keepsake Atelier interface rules (tokens, motion, accessibility, preview)
+globs: app/src/**/*.{tsx,ts,css}
+alwaysApply: false
+---
+
+# Interface rules
+
+Read `DESIGN.md` before changing the shell, tokens or motion. The token block in
+`app/src/styles.css` is the only place raw colours belong.
+
+- One job per page. The rail is the table of contents; the inspector always
+  carries the current session, primary action, progress and queue.
+- Use the existing tokens and component classes (`.card`, `.panel`, `.chip`,
+  `.pill`, `.title`, `.progress`, `.mode`, `.field`, `.mini`). Do not invent a
+  parallel scale.
+- Every interactive control needs hover, active, `:focus-visible` and disabled
+  states. Icon-only controls need an `aria-label`.
+- Animate transform and opacity only. Progress width is the single exception.
+  Add a reduced-motion path for anything new.
+- Copy is short and specific. No em or en dashes, no promises the code does not
+  keep.
+- Preview with `cd app && npm run dev:mock` and screenshot 1440x900 and
+  1000x760 layouts. `npm run build` must pass before committing.

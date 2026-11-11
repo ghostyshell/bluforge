@@ -159,9 +159,8 @@ implemented in Phase 18; the saved menu documents from Phase 6 feed its names.
   that the disc may be partially written. The app's Decrypted ISO panel has a
   confirmed **Burn ISO to disc** button.
 - Unit tests cover the command builders, progress parser and image validation.
-- Not testable here (no writer drive) and not yet possible for **multi-title**
-  discs: macOS has no UDF 2.50 image writer (`hdiutil` caps at 1.50, `mkisofs`
-  rejects `-udf-version 2.50`), so those stay folder-only.
+- Not testable here (no writer drive). Multi-title images are covered by the
+  native UDF 2.50 work in Phase 17.
 
 ## Phase 17 - Multi-title ISO (native UDF 2.50) - done
 
@@ -173,8 +172,20 @@ implemented in Phase 18; the saved menu documents from Phase 6 feed its names.
   and passes, and libbluray lists both.
 - Burning now prefers macOS's native `hdiutil burn`; an explicit `--device
   /dev/rdiskN` selects growisofs instead.
-- What remains blocked is only authored menus (no Java runtime, no IG muxer or
-  player) and Cinavia (proprietary).
+- What remains open is hardware verification of the authored BD-J menu and
+  Cinavia (proprietary).
+
+## Phase 18 - Authored BD-J title menu - done, hardware untested
+
+- One generic BD-J Xlet (`00000.jar`) renders a 1080p title menu with one row
+  per title, a background image, arrow keys, digits and mouse hit testing. It
+  reads the disc's own `menu.txt`, so the same JAR works on every authored
+  disc.
+- `author --menu` installs the JAR and the menu data, wires first play and top
+  menu to it, and keeps HDMV navigation as the fallback.
+- Verified in a JVM harness and by libbluray's parser. No standalone player has
+  run it, so the app labels it as checked with libbluray rather than
+  hardware-proven.
 
 ## Parity with DVDFab-class apps
 
@@ -215,23 +226,17 @@ What the app covers today, against the ripping-suite feature set:
 Everything in the parity matrix above is implemented. These four are the
 remaining gaps, and each is blocked on something outside the codebase:
 
-- **Authored graphical menus.** A Blu-ray menu is an HDMV Interactive Graphics
-  stream (PDS/ODS/ICS segments inside the M2TS) or a BD-J application. tsMuxeR
-  does not write IG streams, ffmpeg cannot mux them, and a BD-J app needs the
-  BD-J API stubs plus a player to verify. There is no player here that renders
-  HDMV IG, so this would ship unverified. The menu *documents* (parse/edit/save/
-  apply) and multi-title authoring are the parts that are ready for it.
+- **Hardware verification of the authored BD-J menu.** The Xlet, the JAR and
+  the navigation entries are checked by a JVM harness and libbluray. A
+  standalone Blu-ray player has not run the disc yet.
 - **Burning.** Implemented with native `hdiutil burn` (growisofs when an
   explicit device is given), but the write is untested here because no writer
   drive is attached. Multi-title ISOs work via native UDF 2.50 (`newfs_udf`).
 - **Cinavia.** A proprietary audio watermark. There is no open detector or
   remover; "removal" would need the secret pattern and is legally fraught.
-- **Multi-title ISO.** The folder output is complete and verified; packaging it
-  as an ISO is blocked on the same UDF 2.50 limitation as burning.
 
-What would unblock each: an IG encoder (and a player to test), a UDF 2.50 image
-writer plus a BD writer drive, and a Cinavia implementation from licensed
-material, respectively.
+What would unblock each: a standalone player for the menu, a writer drive and a
+blank BD-RE for the burn check, and licensed material for Cinavia.
 
 ## Deliberately out of scope
 

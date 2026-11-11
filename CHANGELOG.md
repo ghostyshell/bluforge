@@ -4,7 +4,29 @@ All notable changes to Keepsake Atelier. Newest first.
 
 ## Unreleased
 
+### Added
+
+- **Browser fixture for interface work.** `cd app && npm run dev:mock` answers
+  the Tauri commands with fixtures, so the shell can be laid out, clicked and
+  screenshotted without a disc drive. It is loaded behind `import.meta.env.DEV`
+  and never reaches a release bundle.
+- `DESIGN.md` and `docs/design-skills.md` record the interface direction, the
+  token set, the motion inventory and the skill routing used for UI work.
+
 ### Changed
+
+- **New desktop interface.** The app is now a sectioned shell: a rail for the
+  eight stages, a focused workspace, a persistent session inspector with the
+  primary action, progress and queue, and a status bar. Output settings, keys,
+  episodes, authoring, artwork and menus each have their own page instead of
+  sharing one long column. The disc page shows a three-step start panel before
+  a disc is read.
+- **Motion and input pass.** Page, panel and rail entrances, primary-button
+  sheen, live progress and a command palette. `Cmd/Ctrl+K` opens the palette,
+  `Alt+1..8` jumps between sections, and title rows and artwork tiles are
+  keyboard operable. Every animation has a `prefers-reduced-motion` path.
+- `app/src/styles.css` is rebuilt around a single token set (ink surfaces,
+  laser spectrum, brass accent, mono data) instead of ad hoc colours.
 
 - The GitHub repository and the local folder are now `keepsake-atelier`
   (`github.com/ghostyshell/keepsake-atelier`). The Cargo `repository` field and
