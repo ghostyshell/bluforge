@@ -6,7 +6,7 @@ on:
       platforms:
         description: "all, macos, linux or windows"
         type: choice
-        options: [all, macos, linux, windows]
+        options: [all, macos, macos-x64, linux, windows]
         default: all
   push:
     tags: ["v*"]
@@ -75,7 +75,7 @@ jobs:
 
   macos-x64:
     name: macOS x64 (DMG + CLI)
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.platforms == 'all' || inputs.platforms == 'macos' }}
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.platforms == 'all' || inputs.platforms == 'macos' || inputs.platforms == 'macos-x64' }}
     runs-on: macos-15-intel
     steps:
       - uses: actions/checkout@v4
