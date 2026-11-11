@@ -46,6 +46,10 @@ def label_for(name):
         return "Linux (x86_64, AppImage)"
     if low.endswith(".deb"):
         return "Linux (x86_64, deb)"
+    if low.endswith(".exe") and "windows" in low:
+        if "setup" in low or "installer" in low:
+            return "Windows (x86_64, installer)"
+        return "Windows (x86_64)"
     return name
 
 
@@ -63,6 +67,8 @@ def identity(name):
         kind, osname = "appimage", "linux"
     elif low.endswith(".deb"):
         kind, osname = "deb", "linux"
+    elif low.endswith(".exe") and "windows" in low:
+        kind, osname = "installer", "windows"
     else:
         return name
     arch = "arm64" if ("arm64" in low or "aarch64" in low) else "x64"
@@ -83,6 +89,8 @@ def order(name):
         return (5, name)
     if low.endswith(".deb"):
         return (6, name)
+    if low.endswith(".exe") and "windows" in low:
+        return (8, name)
     return (9, name)
 
 
@@ -129,6 +137,8 @@ def os_arch(name):
         return "Windows", "x86_64"
     if low.endswith(".appimage") or low.endswith(".deb"):
         return "Linux", "x86_64"
+    if low.endswith(".exe") and "windows" in low:
+        return "Windows", "x86_64"
     return "macOS", "arm64"
 
 
