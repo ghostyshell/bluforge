@@ -91,11 +91,13 @@ if [ ! -f "$PREFIX/lib/libx265.a" ] || [ "$FORCE" = 1 ]; then
     rm -rf build
     CMAKE_OSX=()
     [ "$OS" = "Darwin" ] && CMAKE_OSX=(-DCMAKE_OSX_DEPLOYMENT_TARGET="$MACOS_MIN")
+    CMAKE_NUMA=()
+    [ "$OS" = "Linux" ] && CMAKE_NUMA=(-DENABLE_LIBNUMA=OFF)
     cmake -S source -B build -G Ninja \
         -DCMAKE_INSTALL_PREFIX="$PREFIX" \
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
-        "${CMAKE_OSX[@]}" \
+        "${CMAKE_OSX[@]}" "${CMAKE_NUMA[@]}" \
         -DENABLE_SHARED=OFF -DENABLE_CLI=OFF -DENABLE_ASSEMBLY=ON
     cmake --build build -j "$JOBS"
     cmake --install build
