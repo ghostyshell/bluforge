@@ -38,7 +38,8 @@ from the disc's MKB, and stores the result. No MakeMKV required.
 
 The volume ID step uses the LibreDrive vendor READ BUFFER when the firmware
 provides it. If it does not, a host certificate from KEYDB is used for the
-standard AACS authentication. The drive transport is IOKit on macOS, `SG_IO` on
+standard AACS authentication. The Windows MSVC app ships only the LibreDrive
+path; the Windows CLI, Linux and macOS carry both. The drive transport is IOKit on macOS, `SG_IO` on
 Linux and `IOCTL_SCSI_PASS_THROUGH_DIRECT` on Windows.
 
 If neither the vendor read nor a usable host certificate works, you get an

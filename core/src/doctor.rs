@@ -335,6 +335,8 @@ pub fn run() -> DoctorReport {
             "IOKit + LibreDrive drive or KEYDB host certificate; VUK and AACS2 unit keys from the disc"
         } else if cfg!(target_os = "linux") {
             "SG_IO + LibreDrive drive or KEYDB host certificate; VUK and AACS2 unit keys from the disc"
+        } else if cfg!(target_env = "msvc") {
+            "SCSI pass-through + LibreDrive vendor read; the host-certificate fallback is in the CLI"
         } else {
             "SCSI pass-through + LibreDrive drive or KEYDB host certificate; VUK and AACS2 unit keys from the disc"
         },

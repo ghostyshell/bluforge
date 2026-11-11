@@ -97,7 +97,9 @@ What works: reading an ISO, BDMV folder or authored disc image; `disc`,
 ffmpeg and tsMuxeR are on `PATH`; `burn` through IMAPI2; and native AACS key
 recovery over `IOCTL_SCSI_PASS_THROUGH_DIRECT` (LibreDrive vendor read first,
 KEYDB host certificate fallback). The MSVC app loads `keepsake-aacs.dll` from
-`windows-libs` for the crypto; the GNU CLI links it directly.
+`windows-libs` for the crypto; the GNU CLI links it directly. The MSVC app's
+native recovery uses the LibreDrive vendor read; the GNU CLI also carries the
+host-certificate fallback.
 
 There is also an **NSIS installer** built in CI with MSVC, statically linked
 libbluray from vcpkg, and Windows ffmpeg/ffprobe in the bundle. It launches the
