@@ -141,6 +141,15 @@ jobs:
           app/src-tauri/resources/ffmpeg -hide_banner -demuxers | grep -q dvdvideo
           app/src-tauri/resources/ffmpeg -hide_banner -encoders | grep -q libx265
           app/src-tauri/resources/ffmpeg -version | head -1
+          if ldd app/src-tauri/resources/ffmpeg | grep -q "not found"; then
+            echo "the bundled ffmpeg has unresolved runtime libraries" >&2
+            ldd app/src-tauri/resources/ffmpeg >&2
+            exit 1
+          fi
+          if ldd app/src-tauri/resources/ffmpeg | grep -q libnuma; then
+            echo "the bundled ffmpeg still depends on libnuma" >&2
+            exit 1
+          fi
       - name: Build app
         working-directory: app
         run: |
