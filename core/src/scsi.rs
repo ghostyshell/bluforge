@@ -30,6 +30,7 @@ const SK_HOST_KEY: u8 = 0x02;
 
 const LIBREDRIVE_BUFFER: u32 = 0x4410;
 
+#[cfg(not(all(target_os = "windows", target_env = "msvc")))]
 extern "C" {
     fn crypto_create_nonce(buf: *mut u8, len: usize);
     fn crypto_create_host_key_pair(key: *mut u8, key_point: *mut u8);
@@ -170,6 +171,23 @@ fn libredrive_vid_from<T: Transport>(t: &mut T) -> Result<[u8; 16], CoreError> {
 }
 
 /// Authenticate with a host certificate and read the VID.
+///
+/// The MSVC app deliberately ships only the LibreDrive path: exporting the
+/// libaacs EC helpers through the helper DLL would grow its ABI, and the
+/// LibreDrive vendor read is the path that works on the drives this targets.
+/// The GNU CLI, Linux and macOS builds have the full fallback.
+#[cfg(all(target_os = "windows", target_env = "msvc"))]
+pub fn auth_vid(
+    _device: &str,
+    _host_priv: &[u8],
+    _host_cert: &[u8],
+) -> Result<[u8; 16], CoreError> {
+    Err(CoreError::Disc(
+        "host-certificate AACS authentication is not built into the MSVC app; use a LibreDrive drive or the CLI".into(),
+    ))
+}
+
+#[cfg(not(all(target_os = "windows", target_env = "msvc")))]
 pub fn auth_vid(device: &str, host_priv: &[u8], host_cert: &[u8]) -> Result<[u8; 16], CoreError> {
     if host_priv.len() < 20 || host_cert.len() < 92 {
         return Err(CoreError::Disc(
