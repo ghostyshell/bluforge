@@ -58,6 +58,28 @@
       "sha256": "4f2ce0dc9f87932353f383bb7c4468caf5e3686b4eb9d2617b41d7a18a67f59d"
     },
     {
+      "label": "Linux (x86_64, AppImage)",
+      "name": "Keepsake-Atelier-0.1.0-linux-x64.AppImage",
+      "version": "0.1.0",
+      "os": "Linux",
+      "arch": "x86_64",
+      "gofile": "https://gofile.io/d/z6zxH2ym",
+      "kiwi": "https://file.kiwi/d293222b#U6_LQXRic7C1mnsFH6keDg",
+      "size": "144.1 MiB",
+      "sha256": "8f79fc262b8018fc343d16610337404c4bf954e8a57f8e9f6153cf60ceeae09a"
+    },
+    {
+      "label": "Linux (x86_64, deb)",
+      "name": "Keepsake-Atelier-0.1.0-linux-x64.deb",
+      "version": "0.1.0",
+      "os": "Linux",
+      "arch": "x86_64",
+      "gofile": "https://gofile.io/d/DLTBcnry",
+      "kiwi": "https://file.kiwi/bec0b3a9#XYrxOva4vC1NH9FEsNobkg",
+      "size": "6.3 MiB",
+      "sha256": "a3f6a5667a20bff0e0dbf48ae8f34a1200cf26c047df3c97a5bbfe16f33fe18c"
+    },
+    {
       "label": "Windows (x86_64, CLI)",
       "name": "keepsake-atelier-0.1.0-windows-x64.zip",
       "version": "0.1.0",
