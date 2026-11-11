@@ -138,9 +138,9 @@ jobs:
       - name: Build bundled ffmpeg
         run: |
           scripts/build-ffmpeg.sh
-          vendor/ffmpeg/ffmpeg -hide_banner -demuxers | grep -q dvdvideo
-          vendor/ffmpeg/ffmpeg -hide_banner -encoders | grep -q libx265
-          vendor/ffmpeg/ffmpeg -version | head -1
+          app/src-tauri/resources/ffmpeg -hide_banner -demuxers | grep -q dvdvideo
+          app/src-tauri/resources/ffmpeg -hide_banner -encoders | grep -q libx265
+          app/src-tauri/resources/ffmpeg -version | head -1
       - name: Build app
         working-directory: app
         run: |
