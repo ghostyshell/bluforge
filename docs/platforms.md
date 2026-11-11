@@ -6,7 +6,7 @@ interfaces, so each platform is at a different stage.
 
 | Capability | macOS arm64 | macOS x64 | Linux x64 | Windows x64 |
 | --- | --- | --- | --- | --- |
-| Desktop app | yes | yes | preview (AppImage/deb) | not yet |
+| Desktop app | yes | yes | preview (AppImage/deb) | preview (installer) |
 | CLI | yes | yes | yes | preview |
 | Optical drive discovery | IOKit | IOKit | sysfs (`/dev/sr*`) | not yet |
 | Native AACS key recovery | yes | yes | no (use KEYDB) | no (use KEYDB) |
@@ -84,6 +84,12 @@ libbluray and its dependencies. Unpack it and run
 What works: reading an ISO, BDMV folder or authored disc image; `disc`,
 `verify`, `menu`, `rip` and `author` to a folder, provided ffmpeg and tsMuxeR
 are on `PATH`.
+
+There is also an **NSIS installer** built in CI with MSVC, statically linked
+libbluray from vcpkg, and Windows ffmpeg/ffprobe in the bundle. It launches the
+same desktop UI and can read an ISO or BDMV folder you point it at. It does not
+bundle libaacs/libbdplus, so encrypted discs need the CLI zip (which does) or a
+system install.
 
 What does not work yet:
 

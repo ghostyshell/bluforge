@@ -25,7 +25,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-log()  { printf '[%s] %s\n' "$(date '+%F %T')" "$*"; }
+log()  { printf '[%s] %s\n' "$(date '+%F %T')" "$*" >&2; }
 die()  { log "FAILED: $*"; exit 1; }
 notify() { osascript -e "display notification \"$1\" with title \"Keepsake release\"" >/dev/null 2>&1 || true; }
 

@@ -89,6 +89,17 @@
       "kiwi": "https://file.kiwi/b4d63969#D7T2-p5nqOjW2LoB29QpEw",
       "size": "7.3 MiB",
       "sha256": "e65e7aa5a9f6bc8236df1654cdc080520effe468c049960067d297cd38bd4ac8"
+    },
+    {
+      "label": "Windows (x86_64, installer)",
+      "name": "Keepsake-Atelier-0.1.0-windows-x64-setup.exe",
+      "version": "0.1.0",
+      "os": "Windows",
+      "arch": "x86_64",
+      "gofile": "https://gofile.io/d/zXOGVUHy",
+      "kiwi": "https://file.kiwi/a41a2f8e#Ce5YLr9dwgipx_UBuB48Gg",
+      "size": "59.4 MiB",
+      "sha256": "31c8afe04f152fb8144a1fd3885273aa31342d72273bb8dec368217fe3fa62d3"
     }
   ]
 }

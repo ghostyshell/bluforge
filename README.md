@@ -44,6 +44,7 @@ and a bundled ffmpeg for muxing and encoding.
 | `Keepsake-Atelier-0.1.0-linux-x64.AppImage` | [Download](https://gofile.io/d/z6zxH2ym) | [Mirror](https://file.kiwi/d293222b#U6_LQXRic7C1mnsFH6keDg) | 144.1 MiB |
 | `Keepsake-Atelier-0.1.0-linux-x64.deb` | [Download](https://gofile.io/d/DLTBcnry) | [Mirror](https://file.kiwi/bec0b3a9#XYrxOva4vC1NH9FEsNobkg) | 6.3 MiB |
 | `keepsake-atelier-0.1.0-windows-x64.zip` | [Download](https://gofile.io/d/7d7zrbyj) | [Mirror](https://file.kiwi/b4d63969#D7T2-p5nqOjW2LoB29QpEw) | 7.3 MiB |
+| `Keepsake-Atelier-0.1.0-windows-x64-setup.exe` | [Download](https://gofile.io/d/zXOGVUHy) | [Mirror](https://file.kiwi/a41a2f8e#Ce5YLr9dwgipx_UBuB48Gg) | 59.4 MiB |
 <!-- downloads:end -->
 
 Apple Silicon or Intel, macOS 15 or newer. The links are refreshed weekly because GoFile
