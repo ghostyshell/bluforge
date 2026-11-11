@@ -208,7 +208,7 @@ jobs:
       - name: Windows ffmpeg
         shell: pwsh
         run: |
-          Invoke-WebRequest -Uri "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip" -OutFile ffmpeg.zip
+          Invoke-WebRequest -Uri "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip" -OutFile ffmpeg.zip
           Expand-Archive ffmpeg.zip -DestinationPath ffmpeg
           $ff = Get-ChildItem ffmpeg -Recurse -Filter ffmpeg.exe | Select-Object -First 1
           $fp = Get-ChildItem ffmpeg -Recurse -Filter ffprobe.exe | Select-Object -First 1
