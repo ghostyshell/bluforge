@@ -39,3 +39,6 @@ toolkit (`install-frontend-skills.sh`, `install-ui-skills.sh`,
 4. Motion is transform and opacity only, with a reduced-motion path.
 5. Preview with the fixture (`cd app && npm run dev:mock`) and screenshot both
    the 1440 and 1000 width layouts before shipping.
+6. Run `cd app && npm run test:ui` before a UI change lands. It drives the same
+   fixture with Playwright and fails on a broken skip link, palette, focus
+   handoff or reduced-motion path.

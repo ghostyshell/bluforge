@@ -1,8 +1,9 @@
 # Platforms
 
 The macOS app and the macOS CLI tarball both support macOS 12 or newer. Their
-disc libraries are built from source with a 12.0 deployment target. The CLI
-tarball also carries ffmpeg, ffprobe and the menu JAR.
+disc libraries are built from source with a 12.0 deployment target. Every
+released CLI package (macOS tarball, Linux tarball, Windows zip) carries its
+disc-library closure, ffmpeg, ffprobe and the menu JAR beside the binary.
 
 Keepsake Atelier is macOS-first. The engine and CLI are portable Rust, but the
 optical drive, native AACS and disc-burning layers talk to operating-system
@@ -14,7 +15,7 @@ interfaces, so each platform is at a different stage.
 | CLI | yes | yes | yes | yes (CI smoke) |
 | Optical drive discovery | IOKit | IOKit | sysfs (`/dev/sr*`) | WMI (`Win32_CDROMDrive`) |
 | Native AACS key recovery | yes | yes | yes (LibreDrive/auth) | yes (LibreDrive/auth) |
-| Rip and encode | yes | yes | yes, with a system ffmpeg | yes, with ffmpeg on `PATH` |
+| Rip and encode | yes | yes | yes (released CLI bundles ffmpeg) | yes (released CLI bundles ffmpeg) |
 | Author to a BDMV folder | yes | yes | yes, with tsMuxeR | yes, with tsMuxeR |
 | Author a UDF 2.50 ISO | yes (`newfs_udf`) | yes | yes (portable, BD-R) | yes (portable, BD-R) |
 | Authored BD-J menu | yes | yes | yes (writer) | yes (writer) |
@@ -43,8 +44,10 @@ and `00000.jar`.
 
 ## Linux
 
-The CLI builds against the distribution's libbluray, libaacs, libbdplus and
-libgcrypt.
+The released CLI tarball is self-contained: the linked library closure,
+libaacs, libbdplus, ffmpeg, ffprobe and the menu JAR are in `lib/` and beside
+the binary, with an `$ORIGIN/lib` rpath. Building from source still uses the
+distribution's libbluray, libaacs, libbdplus and libgcrypt.
 
 ```sh
 sudo apt install pkg-config libbluray-dev libaacs-dev libbdplus-dev \
@@ -104,8 +107,8 @@ libbluray and its dependencies. Unpack it and run
 `keepsake-atelier.exe doctor`.
 
 What works: reading an ISO, BDMV folder or authored disc image; `disc`,
-`verify`, `menu`, `rip`, and `author` to a folder or a UDF 2.50 ISO, provided
-ffmpeg and tsMuxeR are on `PATH`; `burn` through IMAPI2; and native AACS key
+`verify`, `menu`, `rip`, and `author` to a folder or a UDF 2.50 ISO. The zip
+carries ffmpeg and ffprobe; tsMuxeR must still be on `PATH`. `burn` through IMAPI2; and native AACS key
 recovery over `IOCTL_SCSI_PASS_THROUGH_DIRECT` (LibreDrive vendor read first,
 KEYDB host certificate fallback). The MSVC app loads `keepsake-aacs.dll` from
 `windows-libs` for the crypto; the GNU CLI links it directly. The MSVC app's
@@ -148,11 +151,16 @@ What does not work yet:
 
 - `macos-15` builds the Apple Silicon DMG and CLI.
 - `macos-15-intel` builds the Intel DMG and CLI.
-- `ubuntu-22.04` builds the Linux CLI with an older glibc floor.
+- `ubuntu-22.04` builds the Linux CLI with an older glibc floor, then runs the
+  extracted tarball in a bare `ubuntu:24.04` container to prove it needs no
+  system disc libraries or ffmpeg.
 - `ubuntu-24.04` builds the Linux AppImage and deb.
 - `windows-latest` builds the Windows CLI zip and the NSIS installer.
 - A non-blocking `ubuntu-24.04` job renders the BD-J menu under Xvfb and
   uploads the frames.
+- `ubuntu-24.04` runs the Playwright interaction checks against the dev mock
+  (`app/tests/ui.spec.ts`) and uploads the screenshots. These cover the webview
+  content, not the native window.
 
 Run it from the Actions tab or `gh workflow run build.yml`. The local
 `scripts/publish-release.sh` and the weekly launchd job still build the macOS

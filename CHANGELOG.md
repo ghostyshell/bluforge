@@ -6,6 +6,19 @@ All notable changes to Keepsake Atelier. Newest first.
 
 ### Added
 
+- **The Linux CLI tarball and Windows CLI zip are self-contained.** The Linux
+  package copies the linked library closure, libaacs and libbdplus into `lib/`
+  with an `$ORIGIN/lib` rpath and carries the bundled ffmpeg, ffprobe and menu
+  JAR. The Windows zip now also carries ffmpeg, ffprobe and the menu JAR.
+  `bundled_lib` resolves the platform-specific backend names (`.so`, `.dylib`,
+  `.dll`, including a flat next-to-the-exe layout), so `doctor` and `libs`
+  report the shipped backends on every platform, and the default backend is
+  now `libaacs` whenever a bundled copy exists even without a system install.
+  CI extracts the Linux tarball and runs it in a bare `ubuntu:24.04` container.
+- **Headless UI interaction checks.** `npm run test:ui` runs Playwright against
+  the `?mock=1` fixture: landmarks, the skip link and focus handoff, reading a
+  disc, title selection, the command palette, the shortcuts sheet, the compact
+  rail and the reduced-motion path. Linux CI uploads the screenshot.
 - **The macOS CLI tarball is self-contained and macOS 12 compatible.** It is
   built against the same source-built disc libraries, bundled with
   `@executable_path/lib`, and carries ffmpeg, ffprobe and the menu JAR. The
@@ -16,8 +29,7 @@ All notable changes to Keepsake Atelier. Newest first.
   libudfread, libaacs, libbdplus and libbluray from source with
   `MACOSX_DEPLOYMENT_TARGET=12.0`, without freetype, fontconfig or libxml2.
   The app, the bundled libraries and the ffmpeg all report `minos 12.0`, and CI
-  refuses a DMG with any bundled item above 12.0. The CLI tarball still links
-  Homebrew and remains macOS 15+.
+  refuses a DMG with any bundled item above 12.0.
 - **A self-contained Linux ffmpeg.** The Linux app now builds the same
   ffmpeg n9.0.2 as macOS, with libdvdread, libdvdnav, libx264 and libx265, and
   bundles it. DVD-Video works without installing a newer system ffmpeg. CI

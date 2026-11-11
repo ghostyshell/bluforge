@@ -60,14 +60,20 @@ reads the same manifest.
 The DMG and the macOS CLI tarball are self-contained: libbluray, libaacs,
 libbdplus and their dependencies are inside, built with a macOS 12.0 deployment
 target. The CLI tarball also carries ffmpeg, ffprobe and the menu JAR. Both
-support macOS 12 or newer. The app is not notarized. On first launch, right-click the app,
+support macOS 12 or newer.
+
+The Linux CLI tarball and the Windows CLI zip carry the same library closure
+plus ffmpeg, ffprobe and the menu JAR, so neither needs a system ffmpeg.
+
+The app is not notarized. On first launch, right-click the app,
 choose **Open**, then confirm. Or clear the quarantine flag:
 
 ```sh
 xattr -dr com.apple.quarantine "/Applications/Keepsake Atelier.app"
 ```
 
-The tarball is the CLI only. Unpack it and put `keepsake-atelier` on your
+The tarballs are the CLI only. Unpack one and keep its `lib/`, `ffmpeg`,
+`ffprobe` and `00000.jar` beside `keepsake-atelier`; put the binary on your
 `PATH` if you want the command line without the app. Linux also ships an
 AppImage and a deb; Windows ships a CLI zip and an NSIS installer. Both desktop
 builds are previews, and the macOS DMG is the reference app. See
@@ -169,7 +175,14 @@ cd app
 npm install
 npm run tauri dev       # development
 npm run tauri build     # app and DMG
+npm run test:ui         # Playwright checks against the mock bridge
 ```
+
+`npm run dev:mock` opens the shell in a plain browser with a fixture drive,
+disc and KEYDB, so the layout and interactions can be exercised without a
+drive. `npm run test:ui` runs the same fixture headlessly: landmarks, the skip
+link, reading a disc, the command palette, the shortcuts sheet, the compact
+rail and reduced motion.
 
 `BLURAY_PREFIX` overrides the libbluray prefix. `KEEPSAKE_FFMPEG` points at a
 specific ffmpeg. The pre-rename `BLUFORGE_*` environment names are still

@@ -42,14 +42,18 @@ The downloads table also carries a CLI tarball. It contains the same engine
 without the desktop shell:
 
 ```sh
-tar -xzf keepsake-atelier-0.1.0-arm64.tar.gz
-sudo install -m 755 keepsake-atelier /usr/local/bin/
-keepsake-atelier doctor
+tar -xzf keepsake-atelier-0.1.0-macos-arm64.tar.gz
+./keepsake-atelier doctor
 ```
 
-The macOS tarball is self-contained. Unpack it and keep `keepsake-atelier` next
+Every CLI package is self-contained. Unpack it and keep `keepsake-atelier` next
 to `lib/`, `ffmpeg`, `ffprobe` and `00000.jar`; it finds all of them beside the
-binary. No Homebrew libraries are needed.
+binary. No Homebrew libraries or system ffmpeg are needed. To put the command
+on your `PATH`, add the unpacked directory:
+
+```sh
+export PATH="$PWD:$PATH"
+```
 
 ## Linux
 
@@ -58,12 +62,13 @@ binary. No Homebrew libraries are needed.
 - **deb:** `sudo apt install ./Keepsake-Atelier-0.1.0-linux-x64.deb`. It pulls
   `libwebkit2gtk-4.1-0`, `libgtk-3-0`, `libbluray2`, `libaacs0`, `libbdplus0`,
   `libgcrypt20` and `libgpg-error0`; ffmpeg is bundled.
-- **CLI tarball:** unpack and run `./keepsake-atelier doctor`. Install
-  `libbluray`, `libaacs`, `libbdplus`, `libgcrypt` and `ffmpeg` from the
-  distribution.
+- **CLI tarball:** unpack and run `./keepsake-atelier doctor`. The tarball
+  carries libbluray, libaacs, libbdplus, libgcrypt, ffmpeg, ffprobe and the menu
+  JAR; no distribution packages are needed.
 
-Drive discovery uses sysfs and eject uses `CDROMEJECT`. Encrypted discs need a
-KEYDB entry and libaacs; there is no native AACS recovery on Linux yet.
+Drive discovery uses sysfs and eject uses `CDROMEJECT`. Encrypted discs use the
+native AACS path (`SG_IO` with a LibreDrive vendor read, then a KEYDB host
+certificate) with libaacs as the fallback.
 
 ## Windows
 
@@ -71,21 +76,19 @@ KEYDB entry and libaacs; there is no native AACS recovery on Linux yet.
   **Run anyway** because the build is not signed. The app carries ffmpeg and
   the libaacs/libbdplus DLL closure.
 - **CLI zip:** unpack anywhere and run `keepsake-atelier.exe doctor`. libbluray
-  is linked into the executable, and the zip carries libaacs, libbdplus and
-  their dependency closure for KEYDB decryption.
+  is linked into the executable, and the zip carries libaacs, libbdplus, their
+  dependency closure, ffmpeg, ffprobe and the menu JAR. tsMuxeR must be on
+  `PATH` for authored menus.
 
 Drives are found through WMI and ejected through `Shell.Application`. Native
-AACS and burning are not implemented on Windows.
+AACS uses `IOCTL_SCSI_PASS_THROUGH_DIRECT`, and burning uses IMAPI2.
 
 ## Runtime libraries
 
 The DMG is self-contained: libbluray, libaacs, libbdplus and their dependencies
-are bundled in `Contents/Resources/lib`. The CLI tarballs are not bundled; they
-need the Homebrew libraries:
-
-```sh
-brew install libbluray libaacs libbdplus
-```
+are bundled in `Contents/Resources/lib`. The macOS CLI tarball keeps the same
+libraries in `lib/`, and the Linux tarball and Windows zip carry their own
+closure. None needs Homebrew.
 
 `keepsake-atelier doctor` reports the exact library it is missing.
 

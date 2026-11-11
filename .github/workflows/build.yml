@@ -6,7 +6,7 @@ on:
       platforms:
         description: "all, macos, linux or windows"
         type: choice
-        options: [all, macos, macos-x64, linux, windows]
+        options: [all, macos, macos-x64, linux, ui, windows]
         default: all
   push:
     tags: ["v*"]
@@ -138,7 +138,20 @@ jobs:
       - name: Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y pkg-config libbluray-dev libaacs-dev libbdplus-dev libgcrypt20-dev libgpg-error-dev openjdk-17-jdk xvfb
+          sudo apt-get install -y pkg-config libbluray-dev libaacs-dev libbdplus-dev \
+            libgcrypt20-dev libgpg-error-dev openjdk-17-jdk xvfb patchelf \
+            build-essential nasm meson ninja-build cmake libtool autoconf automake
+      - name: Build bundled ffmpeg
+        run: |
+          scripts/build-ffmpeg.sh
+          app/src-tauri/resources/ffmpeg -hide_banner -demuxers | grep -q dvdvideo
+          app/src-tauri/resources/ffmpeg -hide_banner -encoders | grep -q libx265
+          app/src-tauri/resources/ffmpeg -version | head -1
+          if ldd app/src-tauri/resources/ffmpeg | grep -q "not found"; then
+            echo "the bundled ffmpeg has unresolved runtime libraries" >&2
+            ldd app/src-tauri/resources/ffmpeg >&2
+            exit 1
+          fi
       - name: Build CLI
         run: cargo build --release -p keepsake-atelier
       - name: Test core
@@ -147,8 +160,27 @@ jobs:
         run: |
           V=$(python3 -c 'import json; print(json.load(open("app/src-tauri/tauri.conf.json"))["version"])')
           mkdir -p dist
-          tar -czf "dist/keepsake-atelier-${V}-linux-x64.tar.gz" -C target/release keepsake-atelier
+          scripts/bundle-cli-linux.sh target/release/keepsake-atelier dist/cli \
+            app/src-tauri/resources
+          tar -czf "dist/keepsake-atelier-${V}-linux-x64.tar.gz" -C dist/cli \
+            keepsake-atelier lib ffmpeg ffprobe 00000.jar ffmpeg-LICENSES.txt
           ls -lh dist
+      - name: Smoke test the package
+        run: |
+          rm -rf /tmp/cli-check && mkdir /tmp/cli-check
+          tar -xzf dist/*.tar.gz -C /tmp/cli-check
+          /tmp/cli-check/keepsake-atelier --version
+          /tmp/cli-check/keepsake-atelier libs
+          /tmp/cli-check/keepsake-atelier doctor
+          docker run --rm -v /tmp/cli-check:/p:ro ubuntu:24.04 bash -c '
+            set -e
+            /p/keepsake-atelier --version
+            /p/keepsake-atelier doctor | tee /tmp/doctor.txt
+            grep -q "dvdvideo: yes" /tmp/doctor.txt
+            /p/keepsake-atelier libs | tee /tmp/libs.txt
+            grep -q "/p/lib/libaacs.so.0" /tmp/libs.txt
+            grep -q "/p/lib/libbdplus.so.0" /tmp/libs.txt
+          '
       - uses: actions/upload-artifact@v4
         with:
           name: linux-x64
@@ -231,6 +263,34 @@ jobs:
         with:
           name: menu-frames
           path: /tmp/keepsake-menu-test/menu-*.png
+          if-no-files-found: warn
+
+  ui-check:
+    name: UI interaction (Playwright)
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.platforms == 'all' || inputs.platforms == 'linux' || inputs.platforms == 'ui' }}
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: Install the app
+        run: npm ci
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Run the interaction checks
+        run: npm run test:ui
+      - name: Upload the screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-screenshots
+          path: app/test-results
           if-no-files-found: warn
 
   windows-app:
@@ -420,6 +480,18 @@ jobs:
         run: |
           export PATH="$(cygpath "$USERPROFILE")/.cargo/bin:$PATH"
           cargo build --release --target x86_64-pc-windows-gnu -p keepsake-atelier
+      - name: Windows ffmpeg
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip" -OutFile ffmpeg.zip
+          Expand-Archive ffmpeg.zip -DestinationPath ffmpeg
+          $ff = Get-ChildItem ffmpeg -Recurse -Filter ffmpeg.exe | Select-Object -First 1
+          $fp = Get-ChildItem ffmpeg -Recurse -Filter ffprobe.exe | Select-Object -First 1
+          Copy-Item $ff.FullName app/src-tauri/resources/ffmpeg.exe
+          Copy-Item $fp.FullName app/src-tauri/resources/ffprobe.exe
+          $demuxers = & app/src-tauri/resources/ffmpeg.exe -hide_banner -demuxers 2>&1 | Out-String
+          if (-not ($demuxers -match "dvdvideo")) { throw "the bundled ffmpeg lacks the dvdvideo demuxer" }
+          & app/src-tauri/resources/ffmpeg.exe -version 2>&1 | Select-Object -First 1
       - name: Package
         shell: msys2 {0}
         run: |
@@ -458,6 +530,14 @@ jobs:
           for dll in libaacs.dll libbdplus.dll; do
             [ -f "dist/$dll" ] || { echo "::error::missing $dll"; exit 1; }
           done
+          # ffmpeg/ffprobe decode and probe every title; the menu JAR authors
+          # the BD-J menu. Both sit beside the exe, like the macOS/Linux CLI.
+          cp app/src-tauri/resources/ffmpeg.exe app/src-tauri/resources/ffprobe.exe \
+             app/src-tauri/resources/00000.jar app/src-tauri/resources/ffmpeg-LICENSES.txt \
+             dist/
+          for f in ffmpeg.exe ffprobe.exe 00000.jar ffmpeg-LICENSES.txt; do
+            [ -f "dist/$f" ] || { echo "::error::missing $f"; exit 1; }
+          done
           cd dist && zip -9 "keepsake-atelier-${V}-windows-x64.zip" *
           ls -lh
       - name: Smoke test the CLI
@@ -465,8 +545,17 @@ jobs:
         run: |
           & dist\keepsake-atelier.exe --version
           if ($LASTEXITCODE -ne 0) { throw "keepsake-atelier.exe --version failed" }
-          & dist\keepsake-atelier.exe doctor
-          Write-Host "doctor exit: $LASTEXITCODE"
+          & dist\keepsake-atelier.exe doctor | Tee-Object -FilePath doctor.txt
+          if (-not (Select-String -Path doctor.txt -Pattern "dvdvideo: yes")) {
+            throw "doctor does not report a bundled ffmpeg with dvdvideo"
+          }
+          if (-not (Select-String -Path doctor.txt -Pattern "libaacs\s+ok\s+.*libaacs\.dll")) {
+            throw "doctor does not report the bundled libaacs"
+          }
+          & dist\keepsake-atelier.exe libs
+          foreach ($f in @("ffmpeg.exe", "ffprobe.exe", "00000.jar")) {
+            if (-not (Test-Path "dist\$f")) { throw "missing dist\$f" }
+          }
       - uses: actions/upload-artifact@v4
         with:
           name: windows-x64

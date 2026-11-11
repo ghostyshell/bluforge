@@ -19,3 +19,7 @@ dist/
 
 # file.kiwi uploader scratch files
 filekiwi.tmp.*.json
+
+# Playwright UI checks (app/tests/ui.spec.ts)
+app/test-results/
+app/playwright-report/

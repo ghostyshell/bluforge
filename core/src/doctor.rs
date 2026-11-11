@@ -96,7 +96,7 @@ pub fn run() -> DoctorReport {
     // libaacs. Prefer LIBAACS_PATH: the bundled CLI/app sets it to a full path.
     let aacs = std::env::var("LIBAACS_PATH")
         .ok()
-        .or_else(|| crate::disc::bundled_lib("libaacs.0.dylib").map(|p| p.display().to_string()))
+        .or_else(|| crate::disc::bundled_libaacs().map(|p| p.display().to_string()))
         .or_else(|| {
             crate::disc::libaacs_path().map(|p| {
                 format!(
@@ -123,8 +123,19 @@ pub fn run() -> DoctorReport {
     // libbdplus + VM data
     let bdplus = std::env::var("LIBBDPLUS_PATH")
         .ok()
-        .or_else(|| crate::disc::bundled_lib("libbdplus.0.dylib").map(|p| p.display().to_string()))
-        .or_else(|| crate::disc::libbdplus_path().map(|p| format!("{p}.dylib")));
+        .or_else(|| crate::disc::bundled_libbdplus().map(|p| p.display().to_string()))
+        .or_else(|| {
+            crate::disc::libbdplus_path().map(|p| {
+                format!(
+                    "{p}{}",
+                    if cfg!(target_os = "macos") {
+                        ".dylib"
+                    } else {
+                        ".so"
+                    }
+                )
+            })
+        });
     let bdplus_detail = bdplus.clone();
     let vm = crate::bdplus::installed();
     r.checks.push(check(

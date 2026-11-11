@@ -279,6 +279,9 @@ pub fn bundled_lib(name: &str) -> Option<std::path::PathBuf> {
     let exe = std::env::current_exe().ok()?;
     let dir = exe.parent()?;
     let mut candidates = vec![dir.join("lib").join(name)];
+    // A flat CLI package (the Windows zip) keeps the DLLs beside the exe.
+    #[cfg(target_os = "windows")]
+    candidates.insert(0, dir.join(name));
     if let Some(parent) = dir.parent() {
         // bin/../lib for a package layout, Contents/Resources/lib for the app.
         candidates.push(parent.join("lib").join(name));
@@ -287,11 +290,34 @@ pub fn bundled_lib(name: &str) -> Option<std::path::PathBuf> {
     candidates.into_iter().find(|p| p.is_file())
 }
 
+/// Filenames of the bundled AACS/BD+ backends for this platform.
+fn bundled_aacs_names() -> (&'static str, &'static str) {
+    if cfg!(target_os = "macos") {
+        ("libaacs.0.dylib", "libbdplus.0.dylib")
+    } else if cfg!(target_os = "windows") {
+        ("libaacs.dll", "libbdplus.dll")
+    } else {
+        ("libaacs.so.0", "libbdplus.so.0")
+    }
+}
+
+/// The bundled libaacs, when the package ships one.
+pub fn bundled_libaacs() -> Option<std::path::PathBuf> {
+    bundled_lib(bundled_aacs_names().0)
+}
+
+/// The bundled libbdplus, when the package ships one.
+pub fn bundled_libbdplus() -> Option<std::path::PathBuf> {
+    bundled_lib(bundled_aacs_names().1)
+}
+
 /// Point libbluray at the libraries bundled with the app, when present.
 ///
 /// The app links libbluray directly (rebased by dylibbundler), but libaacs and
 /// libbdplus are `dlopen`ed by name. Setting these before the first `bd_open`
-/// makes a clean Mac that has never seen Homebrew decrypt and play discs.
+/// makes a clean machine that has never seen Homebrew or apt decrypt and play
+/// discs. Linux packages keep the libraries in `lib/` with an `$ORIGIN` rpath;
+/// the Windows CLI zip keeps them next to the executable.
 pub fn use_bundled_libs() {
     #[cfg(target_os = "windows")]
     {
@@ -329,10 +355,8 @@ pub fn use_bundled_libs() {
             }
         }
     }
-    for (var, file) in [
-        ("LIBAACS_PATH", "libaacs.0.dylib"),
-        ("LIBBDPLUS_PATH", "libbdplus.0.dylib"),
-    ] {
+    let (aacs, bdplus) = bundled_aacs_names();
+    for (var, file) in [("LIBAACS_PATH", aacs), ("LIBBDPLUS_PATH", bdplus)] {
         if std::env::var_os(var).is_some() {
             continue;
         }
@@ -438,7 +462,7 @@ impl Disc {
             "mmbd" | "makemkv" | "libmmbd" => return DecryptBackend::Mmbd,
             _ => {}
         }
-        if Self::libaacs_path().is_none() {
+        if Self::libaacs_path().is_none() && bundled_libaacs().is_none() {
             return DecryptBackend::Mmbd;
         }
         if Self::libmmbd_path().is_none() {
