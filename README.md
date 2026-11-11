@@ -37,7 +37,7 @@ and a bundled ffmpeg for muxing and encoding.
 | Build | GoFile (primary) | file.kiwi (backup) | Size |
 | --- | --- | --- | --- |
 | `Keepsake-Atelier-0.1.0-arm64.dmg` | [Download](https://gofile.io/d/KEHf5oc4) | [Mirror](https://file.kiwi/e3e4e955#_a1eillGrCT4YrPr6oBi6g) | 34.7 MiB |
-| `Keepsake-Atelier-0.1.0-x64.dmg` | [Download](https://gofile.io/d/5sHbDgph) | [Mirror](https://file.kiwi/96e13bec#x4prHPo7D23urilugOO7KQ) | 34.4 MiB |
+| `Keepsake-Atelier-0.1.0-x64.dmg` | [Download](https://gofile.io/d/503OSi4e) | [Mirror](https://file.kiwi/f30102c9#7n6UpRJRCcBXXt_XDIcDxg) | 38.7 MiB |
 | `keepsake-atelier-0.1.0-macos-arm64.tar.gz` | [Download](https://gofile.io/d/pt4ULjQ0) | [Mirror](https://file.kiwi/036c919d#m2zJsHcGrZekARPlVIqtTQ) | 2.1 MiB |
 | `keepsake-atelier-0.1.0-macos-x64.tar.gz` | [Download](https://gofile.io/d/2kBlpQ7u) | [Mirror](https://file.kiwi/4d146f5e#do9_-f49rsbno2-K_g3ZEA) | 2.2 MiB |
 | `keepsake-atelier-0.1.0-linux-x64.tar.gz` | [Download](https://gofile.io/d/IxuUauOM) | [Mirror](https://file.kiwi/0ac4cbfd#ODRjWeSu2SgG-1CSnmlDrA) | 2.2 MiB |
