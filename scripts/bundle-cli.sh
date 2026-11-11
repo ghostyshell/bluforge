@@ -25,6 +25,7 @@ done
 
 rm -rf "$OUT"
 mkdir -p "$OUT/lib"
+OUT=$(cd "$OUT" && pwd)
 cp "$BIN" "$OUT/keepsake-atelier"
 cp "$PREFIX/lib/libaacs.0.dylib" "$OUT/lib/"
 cp "$PREFIX/lib/libbdplus.0.dylib" "$OUT/lib/"
@@ -59,4 +60,4 @@ for f in ffmpeg ffprobe; do
 done
 
 echo "self-contained CLI in $OUT"
-du -sh "$OUT"
+du -sh .
