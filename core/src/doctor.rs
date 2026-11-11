@@ -317,14 +317,26 @@ pub fn run() -> DoctorReport {
             "needs libbdplus and the VM data"
         },
     ));
-    let native_keys = cfg!(target_os = "macos");
+    let helper_ok = if cfg!(all(target_os = "windows", target_env = "msvc")) {
+        std::env::current_exe()
+            .ok()
+            .and_then(|p| p.parent().map(|d| d.join("windows-libs").join("keepsake-aacs.dll")))
+            .is_some_and(|p| p.is_file())
+    } else {
+        true
+    };
+    let native_keys = helper_ok;
     r.capabilities.push(cap(
         "Native key recovery",
         native_keys,
-        if native_keys {
-            "LibreDrive drive + KEYDB device keys; VUK and AACS2 unit keys from the disc (no certificate, no MakeMKV)"
+        if !native_keys {
+            "keepsake-aacs.dll is missing from windows-libs; reinstall the app"
+        } else if cfg!(target_os = "macos") {
+            "IOKit + LibreDrive drive or KEYDB host certificate; VUK and AACS2 unit keys from the disc"
+        } else if cfg!(target_os = "linux") {
+            "SG_IO + LibreDrive drive or KEYDB host certificate; VUK and AACS2 unit keys from the disc"
         } else {
-            "macOS only; use a KEYDB entry or libaacs on this platform"
+            "SCSI pass-through + LibreDrive drive or KEYDB host certificate; VUK and AACS2 unit keys from the disc"
         },
     ));
     r.capabilities.push(cap(
