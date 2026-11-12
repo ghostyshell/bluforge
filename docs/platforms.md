@@ -89,14 +89,13 @@ What does not work yet:
 - BD-RE authoring. The portable writer builds a mastered UDF 2.50 image, which
   is the BD-R profile: it has no metadata partition. BD-RE still wants the
   macOS `newfs_udf` path.
-- A full interactive pass on a real Linux desktop. The AppImage and deb build
-  and package correctly, and the AppImage launches under Xvfb here without
-  crashing; the headless WebKit surface did not paint for a screenshot, so
-  pointer and keyboard behaviour still needs a monitor.
+- A full interactive pass on a real Linux monitor. CI drives the AppImage under
+  Xvfb (the window paints, a rail click changes the page, MCP answers), but the
+  desktop shell itself has not been used on a physical display.
 
 ## Windows
 
-The CLI is a preview. It is built with the GNU toolchain and MSYS2 libraries.
+The CLI is built with the GNU toolchain and MSYS2 libraries.
 
 ```powershell
 # in an MSYS2 MINGW64 shell
