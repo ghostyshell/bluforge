@@ -110,7 +110,9 @@ PY
 # the most portable proof that the webview accepts input; XTEST key delivery
 # depends on focus and a window manager, so the palette stays best-effort.
 changed_pixels() {
-    compare -metric AE "$OUT/shell.png" "$1" null: 2>&1 | awk '{print $1}'
+    # compare exits 1 when the images differ, which is the expected case.
+    { compare -metric AE "$OUT/shell.png" "$1" null: 2>&1 || true; } |
+        awk '{print $1}'
 }
 
 eval "$(xdotool getwindowgeometry --shell "$WID")"
