@@ -21,7 +21,8 @@ mkdir -p "$OUT"
 # The MCP server is off by default. Enable it for the check; the config has
 # serde defaults for every other field.
 mkdir -p "$HOME/.config/keepsake-atelier"
-printf '{"mcp_enabled":true,"mcp_port":8848}\n' \
+# Keep launch deterministic: no 66 MB KEYDB download and no update check.
+printf '{"mcp_enabled":true,"mcp_port":8848,"auto_update_keys":false,"auto_check_updates":false}\n' \
     > "$HOME/.config/keepsake-atelier/config.json"
 
 chmod +x "$APP"
@@ -46,8 +47,11 @@ cleanup() {
 trap cleanup EXIT
 
 WID=""
-for _ in $(seq 1 90); do
-    WID=$(xdotool search --onlyvisible --name "Keepsake Atelier" 2>/dev/null | head -1 || true)
+for _ in $(seq 1 120); do
+    WID=$(xdotool search --onlyvisible --name "Keepsake" 2>/dev/null | head -1 || true)
+    if [ -z "$WID" ]; then
+        WID=$(xdotool search --onlyvisible --class "keepsake" 2>/dev/null | head -1 || true)
+    fi
     [ -n "$WID" ] && break
     if ! kill -0 "$PID" 2>/dev/null; then
         echo "the app exited before opening a window" >&2
@@ -57,8 +61,10 @@ for _ in $(seq 1 90); do
     sleep 1
 done
 [ -n "$WID" ] || {
-    echo "no Keepsake Atelier window after 90s" >&2
+    echo "no Keepsake window after 120s" >&2
     tail -50 "$LOG" >&2 || true
+    xdotool search --onlyvisible --name "." 2>/dev/null |
+        while read -r w; do printf '%s %s\n' "$w" "$(xdotool getwindowname "$w" 2>/dev/null)"; done >&2
     exit 1
 }
 
@@ -114,7 +120,8 @@ sleep 1
 
 # The rail's second item ("Rip settings") sits near (60, 150) in the 1180x820
 # window. Hover first, then click; the first click may only take focus.
-xdotool mousemove $((X + 60)) $((Y + 150))
+# Window-relative moves avoid any frame offset from the window manager.
+xdotool mousemove --window "$WID" 60 150
 sleep 2
 import -window root "$OUT/hover.png" || true
 HOVER=$(changed_pixels "$OUT/hover.png")
@@ -132,7 +139,7 @@ done
 [ "${SECTION:-0}" -gt 2000 ] || { echo "the rail click did not change the page" >&2; exit 1; }
 
 # Best effort: the command palette, for the screenshot and the log.
-xdotool mousemove $((X + WIDTH / 2)) $((Y + HEIGHT / 2))
+xdotool mousemove --window "$WID" $((WIDTH / 2)) $((HEIGHT / 2))
 xdotool click 1
 sleep 1
 xdotool key --clearmodifiers ctrl+k 2>/dev/null || true
