@@ -156,6 +156,7 @@ The complete list, including limits and caveats, is in
 | [DVD-Video](docs/guides/dvd.md) | List and rip DVD titles |
 | [TV and anime](docs/guides/tv.md) | Episode split, naming, openings and endings |
 | [Burn and verify](docs/guides/burn.md) | Size query, dry run, write, read back |
+| [Automation](docs/guides/automation.md) | Auto-rip on insertion, watch folders, notifications |
 | [MCP](docs/guides/mcp.md) | Drive the app from Claude, Cursor or a script |
 | [Troubleshooting](docs/guides/troubleshooting.md) | The errors people actually hit |
 
@@ -271,7 +272,10 @@ The test suite runs with `cargo test`.
   preview. See [docs/platforms.md](docs/platforms.md) for the per-platform
   matrix.
 - Cinavia is a proprietary audio watermark. There is no open detector or
-  remover, and none is bundled.
+  remover, and none is bundled. Tools that claim it either re-encode or filter
+  the audio, or patch a console's player firmware; neither applies to a
+  desktop ripping pipeline. autoripdvd only substring-matches MakeMKV's own
+  "cinavia" output, and the PS3 tools patch the firmware's error path.
 - Authored BD-J menus are verified in a JVM harness and by libbluray's parser,
   not on a hardware player. They are opt-in.
 - Burning needs a writer and a blank BD-RE or BD-R. The drive and size query are

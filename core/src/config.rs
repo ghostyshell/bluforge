@@ -53,6 +53,41 @@ pub struct AppConfig {
     /// Port for the MCP server (localhost only).
     #[serde(default = "default_mcp_port")]
     pub mcp_port: u16,
+    /// Rip a disc automatically when it is inserted, or when a new file appears
+    /// in `watch_dir`.
+    #[serde(default)]
+    pub auto_rip: bool,
+    /// `main` rips the main feature; `all` rips every title at least
+    /// `auto_rip_min_secs` long.
+    #[serde(default = "default_auto_rip_mode")]
+    pub auto_rip_mode: String,
+    /// Shortest title `auto_rip_mode = "all"` will rip, in seconds.
+    #[serde(default = "default_auto_rip_min_secs")]
+    pub auto_rip_min_secs: u32,
+    /// Eject the drive after an automatic rip finishes.
+    #[serde(default)]
+    pub auto_rip_eject: bool,
+    /// Folder watched for new ISOs and BDMV folders (empty disables it).
+    #[serde(default)]
+    pub watch_dir: Option<PathBuf>,
+    /// Show a desktop notification when a job finishes or fails.
+    #[serde(default = "yes")]
+    pub notify_native: bool,
+    /// POST `{"title","body"}` here on completion or failure (Slack/Discord
+    /// compatible when the service accepts a generic JSON body).
+    #[serde(default)]
+    pub notify_webhook: Option<String>,
+    /// Keep the machine awake while a rip is running.
+    #[serde(default = "yes")]
+    pub prevent_sleep: bool,
+}
+
+pub fn default_auto_rip_mode() -> String {
+    "main".into()
+}
+
+pub fn default_auto_rip_min_secs() -> u32 {
+    600
 }
 
 pub fn default_mcp_port() -> u16 {
@@ -111,6 +146,14 @@ impl Default for AppConfig {
             hirescovers_cookie: None,
             mcp_enabled: false,
             mcp_port: default_mcp_port(),
+            auto_rip: false,
+            auto_rip_mode: default_auto_rip_mode(),
+            auto_rip_min_secs: default_auto_rip_min_secs(),
+            auto_rip_eject: false,
+            watch_dir: None,
+            notify_native: true,
+            notify_webhook: None,
+            prevent_sleep: true,
         }
     }
 }

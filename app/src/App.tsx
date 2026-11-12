@@ -855,6 +855,80 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  // Automation: opt-in auto-rip for a newly inserted disc. Polls the drive list
+  // so it works with the same backend the CLI watcher uses.
+  const autoSeen = useRef<string | null>(null);
+  const autoBusy = useRef(false);
+  useEffect(() => {
+    if (!cfg?.auto_rip) return;
+    let alive = true;
+    const tick = async () => {
+      if (!alive || autoBusy.current) return;
+      try {
+        const s = await api.snapshot();
+        const dev = s.optical[0];
+        if (!dev || (!dev.mount_point && !dev.media_name)) {
+          autoSeen.current = null;
+          return;
+        }
+        const path = dev.device_path ?? dev.mount_point;
+        if (!path) { autoSeen.current = null; return; }
+        // The device node survives an eject, so key on the media instead.
+        const key = `${path}|${dev.media_name ?? ""}|${dev.size_bytes}`;
+        if (autoSeen.current === key) return;
+        autoSeen.current = key;
+        autoBusy.current = true;
+        // Let the volume settle before opening it.
+        await new Promise((resolve) => setTimeout(resolve, 6000));
+        if (!alive) return;
+        const info = await api.openDisc(path);
+        setDisc(info);
+        setDiscPath(path);
+        setTitle(info.main_title ?? info.titles[0]?.index ?? null);
+        setMovie(info.name);
+        const floor = Math.max(60, cfg.auto_rip_min_secs || 600);
+        const picks = cfg.auto_rip_mode === "all"
+          ? info.titles.filter((t) => t.duration_secs >= floor).map((t) => t.index)
+          : (() => {
+              const marked = info.titles.find((t) => t.index === info.main_title)
+                ?? info.titles.find((t) => t.is_main)
+                ?? [...info.titles].sort((a, b) => b.duration_secs - a.duration_secs)[0];
+              return marked ? [marked.index] : [];
+            })();
+        if (picks.length === 0) { setToast("auto-rip: no title long enough"); return; }
+        for (const t of picks) {
+          await api.queueAdd({
+            source: path,
+            keydb: s.keys?.path ?? null,
+            title: t,
+            output: null,
+            mode, chapters, poster, movie: info.name, audio, subs, covers,
+            tv: false, series: null, episodes: null, start_episode: null,
+          });
+        }
+        await refreshQueue();
+        setToast(`auto-ripped ${picks.length} title(s) from ${info.name}`);
+      } catch {
+        // The drive is still mounting or has no readable disc; try again later.
+      } finally {
+        autoBusy.current = false;
+      }
+    };
+    void tick();
+    const id = setInterval(() => void tick(), 5000);
+    return () => { alive = false; clearInterval(id); };
+  }, [cfg?.auto_rip, cfg?.auto_rip_mode, cfg?.auto_rip_min_secs, mode, chapters, poster, audio, subs, covers, refreshQueue]);
+
+  // Eject once the queue drains when the operator asked for it.
+  const hadQueue = useRef(false);
+  useEffect(() => {
+    if (queue.length > 0) { hadQueue.current = true; return; }
+    if (hadQueue.current && cfg?.auto_rip_eject) {
+      hadQueue.current = false;
+      void api.eject().then((m) => setToast(m)).catch(() => {});
+    }
+  }, [queue.length, cfg?.auto_rip_eject]);
+
   const page = PAGE_META[section];
   const checksOk = doctor?.checks.filter((c) => c.ok).length ?? 0;
   const checksTotal = doctor?.checks.length ?? 0;
@@ -1784,6 +1858,56 @@ export default function App() {
 
             {section === "system" && (
               <>
+                <section className="card">
+                  <div className="panel-head">
+                    <div>
+                      <h2>Automation</h2>
+                      <p className="sub">Rip on insertion, notify when a job ends, and keep the machine awake.</p>
+                    </div>
+                  </div>
+                  <label className="row" style={{ gap: 8, alignItems: "center" }}>
+                    <input type="checkbox" checked={!!cfg?.auto_rip}
+                      onChange={(e) => cfg && void saveCfg({ auto_rip: e.target.checked })} />
+                    <span>Auto-rip a disc when it is inserted</span>
+                  </label>
+                  <div className="row wrap" style={{ gap: 12, marginTop: 10 }}>
+                    <label className="field" style={{ minWidth: 160 }}>Titles
+                      <select value={cfg?.auto_rip_mode ?? "main"}
+                        onChange={(e) => cfg && void saveCfg({ auto_rip_mode: e.target.value })}>
+                        <option value="main">Main feature</option>
+                        <option value="all">All long titles</option>
+                      </select>
+                    </label>
+                    <label className="field" style={{ minWidth: 160 }}>Minimum length (s)
+                      <input type="number" min={60} step={60} value={cfg?.auto_rip_min_secs ?? 600}
+                        onChange={(e) => cfg && void saveCfg({ auto_rip_min_secs: Number(e.target.value) || 600 })} />
+                    </label>
+                  </div>
+                  <label className="row" style={{ gap: 8, alignItems: "center", marginTop: 10 }}>
+                    <input type="checkbox" checked={!!cfg?.auto_rip_eject}
+                      onChange={(e) => cfg && void saveCfg({ auto_rip_eject: e.target.checked })} />
+                    <span>Eject when the queue finishes</span>
+                  </label>
+                  <label className="row" style={{ gap: 8, alignItems: "center", marginTop: 6 }}>
+                    <input type="checkbox" checked={!!cfg?.notify_native}
+                      onChange={(e) => cfg && void saveCfg({ notify_native: e.target.checked })} />
+                    <span>Desktop notification when a rip ends</span>
+                  </label>
+                  <label className="row" style={{ gap: 8, alignItems: "center", marginTop: 6 }}>
+                    <input type="checkbox" checked={!!cfg?.prevent_sleep}
+                      onChange={(e) => cfg && void saveCfg({ prevent_sleep: e.target.checked })} />
+                    <span>Keep the machine awake while ripping</span>
+                  </label>
+                  <label className="field" style={{ marginTop: 10 }}>Notification webhook
+                    <input className="mono" placeholder="https://hooks.slack.com/..." value={cfg?.notify_webhook ?? ""}
+                      onChange={(e) => cfg && void saveCfg({ notify_webhook: e.target.value || null })} />
+                  </label>
+                  <p className="sub" style={{ marginTop: 8 }}>
+                    The watcher also handles a folder: <code>keepsake-atelier watch</code> reads
+                    <code> watch_dir</code> from the config.
+                  </p>
+                </section>
+
                 <section className="card">
                   <div className="panel-head">
                     <div>

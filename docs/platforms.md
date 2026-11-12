@@ -23,6 +23,7 @@ interfaces, so each platform is at a different stage.
 | Verify, menu documents, KEYDB | yes | yes | yes | yes |
 | Burn to disc | `hdiutil` | `hdiutil` | `growisofs` | IMAPI2 (COM probed in CI) |
 | MCP server | yes | yes | yes (CI smoke) | yes (CI smoke) |
+| Automatic rip | app + `watch` | app + `watch` | app + `watch` | app + `watch` |
 
 ## macOS
 

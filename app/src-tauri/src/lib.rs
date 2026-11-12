@@ -236,7 +236,11 @@ fn pump_queue(app: AppHandle, state: &RpState) {
     let running = state.running.clone();
     let queue = state.queue.clone();
     std::thread::spawn(move || {
+        let mut dest: Option<std::path::PathBuf> = None;
         let res = rip::run(&request, &cancel, |p| {
+            if let Some(d) = p.dest.clone() {
+                dest = Some(d);
+            }
             if let Ok(mut q) = queue.lock() {
                 q.update(
                     id,
@@ -255,6 +259,12 @@ fn pump_queue(app: AppHandle, state: &RpState) {
         let cancelled = cancel.load(Ordering::Relaxed);
         if let Ok(mut q) = queue.lock() {
             q.finish(id, res.as_ref().err().map(|e| e.to_string()), cancelled);
+        }
+        let movie = request.movie.clone().unwrap_or_else(|| "disc".into());
+        match &res {
+            Ok(()) => keepsake_core::notify::rip_done(&movie, dest.as_deref()),
+            Err(e) if !cancelled => keepsake_core::notify::rip_failed(&movie, &e.to_string()),
+            _ => {}
         }
         if let Err(e) = &res {
             if !cancelled {

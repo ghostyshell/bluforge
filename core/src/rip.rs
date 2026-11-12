@@ -1506,6 +1506,11 @@ pub fn run<F>(
 where
     F: FnMut(RipProgress),
 {
+    let _awake = if crate::config::AppConfig::load().prevent_sleep {
+        Some(crate::sleep_guard::prevent())
+    } else {
+        None
+    };
     if let Some(dir) = req_in.output.as_ref().and_then(|p| p.parent()) {
         std::fs::create_dir_all(dir)?;
     }

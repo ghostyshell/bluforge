@@ -6,6 +6,15 @@ All notable changes to Keepsake Atelier. Newest first.
 
 ### Added
 
+- **Automatic ripping, notifications and sleep prevention.** The System page
+  gains an Automation card, and `keepsake-atelier watch` runs the same rules
+  headless: poll drives and `watch_dir`, wait for a disc to settle, pick the
+  main feature (or every title above a length floor), remux, and optionally
+  eject. Discs are keyed by name, title count and runtime so reinsertion does
+  not loop. Rips and queue jobs send a desktop notification (AppleScript,
+  `notify-send`, a Windows toast) and an optional JSON webhook. A sleep guard
+  holds `caffeinate`, `systemd-inhibit` or the Windows execution state for the
+  duration of the rip.
 - **Managed tsMuxeR.** `keepsake-atelier tsmuxer --install` downloads the
   pinned 2.7.0 release for this platform, checks its SHA-256, stores it in the
   data directory and refuses a binary that does not run. The app exposes the
@@ -17,6 +26,12 @@ All notable changes to Keepsake Atelier. Newest first.
   sequence was written at sector 19 instead of the standard sector 16, so
   libudfread refused every portable image. `disc` now opens the authored ISO
   without mounting it.
+- **Cinavia remains out of scope.** It is a proprietary audio watermark with
+  no open detector. The autoripdvd repository only substring-matches MakeMKV's
+  own `cinavia` line, and the PS3 "Cinavia" tools patch the console's player
+  firmware, not the media. The commercial removers filter and re-encode the
+  audio. None of that transfers to a desktop ripping pipeline, so the app
+  reports AACS/BD+ state and makes no Cinavia claim.
 - **Window-level desktop checks.** Linux CI boots the AppImage under Xvfb and
   openbox, waits for the Tauri window, checks that the frame is not blank,
   hovers and clicks a rail section (a 451k-pixel page change), and calls the MCP

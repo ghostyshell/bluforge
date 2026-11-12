@@ -5,6 +5,7 @@
 use std::path::PathBuf;
 
 pub mod author;
+pub mod automation;
 pub mod bdjo;
 pub mod bdmv;
 pub mod bdplus;
@@ -22,9 +23,11 @@ pub mod keys;
 pub mod menu;
 pub mod metadata;
 pub mod native;
+pub mod notify;
 pub mod rip;
 #[cfg(any(target_os = "linux", target_os = "windows"))]
 pub mod scsi;
+pub mod sleep_guard;
 pub mod template;
 pub mod tsmuxer;
 pub mod tv;

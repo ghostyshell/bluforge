@@ -179,6 +179,24 @@ enum Cmd {
         #[arg(long)]
         install: bool,
     },
+    /// Rip automatically when a disc is inserted, or process one new source.
+    Watch {
+        /// Process one source and exit (ISO, BDMV folder or device).
+        #[arg(long)]
+        source: Option<std::path::PathBuf>,
+        /// One scan, then exit.
+        #[arg(long)]
+        once: bool,
+        /// Print what would be ripped, without ripping.
+        #[arg(long)]
+        dry_run: bool,
+        /// Seconds to wait after a disc appears before opening it.
+        #[arg(long, default_value_t = 8)]
+        settle: u64,
+        /// Seconds between scans.
+        #[arg(long, default_value_t = 5)]
+        interval: u64,
+    },
     /// Export a decrypted ISO (or `--folder`): all AACS/BD+ removed.
     Iso {
         /// Disc source: mounted volume, BDMV folder, ISO, or /dev/rdiskN.
@@ -514,6 +532,193 @@ fn print_menu(doc: &keepsake_core::menu::DiscMenu) {
             t.name.as_deref().unwrap_or("")
         );
     }
+}
+
+/// Automatic rip loop used by `watch`.
+struct WatchOptions {
+    dry_run: bool,
+}
+
+fn watch(
+    source: Option<&std::path::Path>,
+    once: bool,
+    dry_run: bool,
+    settle: u64,
+    interval: u64,
+) -> Result<(), keepsake_core::CoreError> {
+    use std::collections::HashSet;
+
+    let cfg = AppConfig::load();
+    let opts = WatchOptions { dry_run };
+    let mut handled: HashSet<String> = HashSet::new();
+    let mut seen: HashSet<String> = HashSet::new();
+
+    if let Some(source) = source {
+        watch_source(source, &cfg, &opts, &mut handled)?;
+        return Ok(());
+    }
+
+    loop {
+        for dev in device::list_optical() {
+            let media = dev.media_name.clone().unwrap_or_default();
+            let mount = dev.mount_point.clone().unwrap_or_default();
+            if media.is_empty() && mount.is_empty() {
+                continue;
+            }
+            let signature = format!("{media}|{}|{mount}", dev.size_bytes);
+            if !seen.insert(signature) {
+                continue;
+            }
+            let path = dev
+                .device_path
+                .clone()
+                .or_else(|| dev.mount_point.clone())
+                .map(std::path::PathBuf::from);
+            let Some(path) = path else { continue };
+            if !path.exists() {
+                continue;
+            }
+            if settle > 0 && !once {
+                std::thread::sleep(std::time::Duration::from_secs(settle));
+            }
+            println!("watch: disc in {}: {media}", dev.bsd_name);
+            if let Err(e) = watch_source(&path, &cfg, &opts, &mut handled) {
+                eprintln!("watch: {}: {e}", path.display());
+            }
+        }
+
+        if let Some(dir) = cfg.watch_dir.as_deref().filter(|d| d.is_dir()) {
+            let entries = std::fs::read_dir(dir)?;
+            for entry in entries.flatten() {
+                let path = entry.path();
+                let is_iso = path
+                    .extension()
+                    .is_some_and(|e| e.eq_ignore_ascii_case("iso"));
+                if !is_iso && !keepsake_core::rip::is_bluray(&path) {
+                    continue;
+                }
+                // Ignore files still being copied in.
+                if let Ok(meta) = path.metadata() {
+                    if let Ok(modified) = meta.modified() {
+                        if modified.elapsed().unwrap_or_default().as_secs() < 10 {
+                            continue;
+                        }
+                    }
+                }
+                let key = path.display().to_string();
+                if !seen.insert(format!("file|{key}")) {
+                    continue;
+                }
+                println!("watch: {key}");
+                if let Err(e) = watch_source(&path, &cfg, &opts, &mut handled) {
+                    eprintln!("watch: {}: {e}", path.display());
+                }
+            }
+        }
+
+        if once {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_secs(interval.max(1)));
+    }
+    Ok(())
+}
+
+fn watch_source(
+    source: &std::path::Path,
+    cfg: &AppConfig,
+    opts: &WatchOptions,
+    handled: &mut std::collections::HashSet<String>,
+) -> Result<bool, keepsake_core::CoreError> {
+    use keepsake_core::automation::{disc_key, pick_titles, PickMode};
+    use keepsake_core::rip::{AudioSel, Container, RipMode, RipRequest, SubSel};
+
+    let disc = keepsake_core::Disc::open(source, Some(&keys::keydb_path()))?;
+    let info = disc.info()?;
+    let key = disc_key(&info);
+    if handled.contains(&key) {
+        return Ok(false);
+    }
+
+    let mode = PickMode::parse(&cfg.auto_rip_mode);
+    let titles = pick_titles(&info, mode, cfg.auto_rip_min_secs);
+    if titles.is_empty() {
+        println!("watch: {} has no rippable titles", info.name);
+        handled.insert(key);
+        return Ok(false);
+    }
+    println!(
+        "watch: {} - {} title(s), {} mode",
+        info.name,
+        titles.len(),
+        mode.as_str()
+    );
+
+    for index in titles {
+        let secs = info
+            .titles
+            .iter()
+            .find(|t| t.index == index)
+            .map(|t| t.duration_secs)
+            .unwrap_or(0.0);
+        if opts.dry_run {
+            println!("watch: would rip title {index} ({secs:.0}s)");
+            continue;
+        }
+        println!("watch: ripping title {index} ({secs:.0}s)");
+        let req = RipRequest {
+            source: source.to_path_buf(),
+            keydb: Some(keys::keydb_path()),
+            title: Some(index),
+            output: None,
+            mode: RipMode::Remux {
+                container: Container::Mkv,
+            },
+            chapters: true,
+            poster: true,
+            movie: Some(info.name.clone()),
+            audio: AudioSel::All,
+            subs: SubSel::All,
+            covers: true,
+            tv: false,
+            series: None,
+            episodes: None,
+            start_episode: None,
+        };
+        let cancel = std::sync::atomic::AtomicBool::new(false);
+        let mut dest: Option<std::path::PathBuf> = None;
+        let mut last = -1i64;
+        let result = keepsake_core::rip::run(&req, &cancel, |p| {
+            if let Some(d) = p.dest.clone() {
+                dest = Some(d);
+            }
+            let pct = p.percent as i64;
+            if pct / 5 != last / 5 {
+                last = pct;
+                eprintln!("  {}: {pct}% {}", info.name, p.message);
+            }
+        });
+        match result {
+            Ok(()) => {
+                keepsake_core::notify::rip_done(&info.name, dest.as_deref());
+                if let Some(d) = dest {
+                    println!("watch: wrote {}", d.display());
+                }
+            }
+            Err(e) => {
+                keepsake_core::notify::rip_failed(&info.name, &e.to_string());
+                eprintln!("watch: {} failed: {e}", info.name);
+            }
+        }
+    }
+
+    handled.insert(key);
+    if cfg.auto_rip_eject && !opts.dry_run && source.starts_with("/dev") {
+        if let Err(e) = device::eject() {
+            eprintln!("watch: eject: {e}");
+        }
+    }
+    Ok(true)
 }
 
 fn main() {
@@ -1041,6 +1246,15 @@ fn run(cli: &Cli) -> Result<(), keepsake_core::CoreError> {
                     println!("tsMuxeR : not installed (run `keepsake-atelier tsmuxer --install`)")
                 }
             }
+        }
+        Cmd::Watch {
+            source,
+            once,
+            dry_run,
+            settle,
+            interval,
+        } => {
+            watch(source.as_deref(), *once, *dry_run, *settle, *interval)?;
         }
         Cmd::Libs => {
             keepsake_core::Disc::init_env();

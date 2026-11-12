@@ -43,8 +43,19 @@ export type AppConfig = {
   last_update_check: number | null;
   auto_cover: boolean;
   hirescovers_dir: string;
+  hirescovers_user?: string | null;
+  hirescovers_pass?: string | null;
+  hirescovers_cookie?: string | null;
   mcp_enabled: boolean;
   mcp_port: number;
+  auto_rip: boolean;
+  auto_rip_mode: string;
+  auto_rip_min_secs: number;
+  auto_rip_eject: boolean;
+  watch_dir?: string | null;
+  notify_native: boolean;
+  notify_webhook?: string | null;
+  prevent_sleep: boolean;
 };
 
 export type Title = {

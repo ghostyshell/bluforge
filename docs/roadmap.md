@@ -234,6 +234,9 @@ remaining gaps, and each is blocked on something outside the codebase:
   drive is attached. Multi-title ISOs work via native UDF 2.50 (`newfs_udf`).
 - **Cinavia.** A proprietary audio watermark. There is no open detector or
   remover; "removal" would need the secret pattern and is legally fraught.
+  autoripdvd only substring-matches MakeMKV's "cinavia" output, and the PS3
+  tools patch the console's player firmware, not the media. The commercial
+  removers filter and re-encode the audio.
 
 What would unblock each: a standalone player for the menu, a writer drive and a
 blank BD-RE for the burn check, and licensed material for Cinavia.

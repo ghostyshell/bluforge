@@ -1255,6 +1255,35 @@ fn apply_config_patch(cfg: &mut AppConfig, patch: &Value) -> Result<(), String> 
                     .and_then(|p| u16::try_from(p).ok())
                     .ok_or("mcp_port must be 1..65535")?
             }
+            "auto_rip" => cfg.auto_rip = val.as_bool().ok_or("auto_rip must be a bool")?,
+            "auto_rip_mode" => {
+                let mode = val.as_str().ok_or("auto_rip_mode must be a string")?;
+                if mode != "main" && mode != "all" {
+                    return Err("auto_rip_mode must be main or all".into());
+                }
+                cfg.auto_rip_mode = mode.to_string();
+            }
+            "auto_rip_min_secs" => {
+                cfg.auto_rip_min_secs = val
+                    .as_u64()
+                    .and_then(|s| u32::try_from(s).ok())
+                    .ok_or("auto_rip_min_secs must be a number")?
+            }
+            "auto_rip_eject" => {
+                cfg.auto_rip_eject = val.as_bool().ok_or("auto_rip_eject must be a bool")?
+            }
+            "watch_dir" => {
+                cfg.watch_dir = val.as_str().filter(|s| !s.is_empty()).map(PathBuf::from)
+            }
+            "notify_native" => {
+                cfg.notify_native = val.as_bool().ok_or("notify_native must be a bool")?
+            }
+            "notify_webhook" => {
+                cfg.notify_webhook = val.as_str().filter(|s| !s.is_empty()).map(str::to_string)
+            }
+            "prevent_sleep" => {
+                cfg.prevent_sleep = val.as_bool().ok_or("prevent_sleep must be a bool")?
+            }
             _ => {}
         }
     }
@@ -1523,7 +1552,7 @@ fn tools() -> Vec<Value> {
         }),
         json!({
             "name": "config_set",
-            "description": "Patch settings (output_dir, output_template, tv_template, tv_subs, auto_update_keys, auto_check_updates, auto_cover, hirescovers_*, mcp_enabled, mcp_port).",
+            "description": "Patch settings (output_dir, output_template, tv_template, tv_subs, auto_update_keys, auto_check_updates, auto_cover, hirescovers_*, mcp_enabled, mcp_port, auto_rip, auto_rip_mode, auto_rip_min_secs, auto_rip_eject, watch_dir, notify_native, notify_webhook, prevent_sleep).",
             "inputSchema": { "type": "object", "properties": {
                 "output_dir": { "type": "string" },
                 "output_template": { "type": "string" },
