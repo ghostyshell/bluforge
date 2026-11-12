@@ -190,10 +190,12 @@ jobs:
           "$BIN" watch --source /tmp/tsmuxer.iso --dry-run | tee /tmp/watch-dry.txt
           grep -q "would rip title" /tmp/watch-dry.txt
           AUTO_HOME=$(mktemp -d)
-          mkdir -p "$AUTO_HOME/.config/keepsake-atelier"
+          export XDG_CONFIG_HOME="$AUTO_HOME/.config"
+          mkdir -p "$XDG_CONFIG_HOME/keepsake-atelier"
           printf '{"output_dir":"%s/out","notify_native":false,"prevent_sleep":false}\n' \
-            "$AUTO_HOME" > "$AUTO_HOME/.config/keepsake-atelier/config.json"
-          HOME="$AUTO_HOME" "$BIN" watch --source /tmp/tsmuxer.iso | tee /tmp/watch-run.txt
+            "$AUTO_HOME" > "$XDG_CONFIG_HOME/keepsake-atelier/config.json"
+          HOME="$AUTO_HOME" XDG_CONFIG_HOME="$XDG_CONFIG_HOME" \
+            "$BIN" watch --source /tmp/tsmuxer.iso | tee /tmp/watch-run.txt
           grep -q "watch: wrote" /tmp/watch-run.txt
           find "$AUTO_HOME/out" -name "*.mkv" | grep -q .
       - name: Package
