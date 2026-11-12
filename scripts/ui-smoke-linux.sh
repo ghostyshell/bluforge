@@ -69,9 +69,10 @@ echo "window ${WIDTH}x${HEIGHT} (id $WID)"
 [ "${WIDTH:-0}" -ge 900 ] || { echo "window too small: ${WIDTH:-0}" >&2; exit 1; }
 [ "${HEIGHT:-0}" -ge 600 ] || { echo "window too short: ${HEIGHT:-0}" >&2; exit 1; }
 
-# Let the first paint settle, then capture the shell.
+# Let the first paint settle, then capture the screen. The root window avoids
+# any reparenting differences between window managers.
 sleep 4
-import -window "$WID" "$OUT/shell.png"
+import -window root "$OUT/shell.png"
 MEAN=$(identify -format '%[fx:mean]' "$OUT/shell.png")
 echo "mean brightness: $MEAN"
 python3 - "$MEAN" <<'PY'
@@ -108,9 +109,10 @@ changed_pixels() {
 xdotool windowactivate --sync "$WID" 2>/dev/null ||
     xdotool windowfocus --sync "$WID" 2>/dev/null || true
 sleep 1
-xdotool key --clearmodifiers ctrl+k
+echo "active window: $(xdotool getactivewindow 2>/dev/null || echo none)"
+xdotool key --clearmodifiers ctrl+k || echo "xdotool key returned $?"
 sleep 2
-import -window "$WID" "$OUT/palette.png"
+import -window root "$OUT/palette.png" || echo "palette capture returned $?"
 CHANGED=$(changed_pixels "$OUT/palette.png")
 echo "changed pixels after ctrl+k: $CHANGED"
 
@@ -119,7 +121,7 @@ if [ "${CHANGED:-0}" -le 2000 ]; then
     eval "$(xdotool getwindowgeometry --shell "$WID")"
     xdotool mousemove $((X + WIDTH * 78 / 100)) $((Y + 29)) click 1
     sleep 2
-    import -window "$WID" "$OUT/palette.png"
+    import -window root "$OUT/palette.png" || echo "palette capture returned $?"
     CHANGED=$(changed_pixels "$OUT/palette.png")
     echo "changed pixels after the click fallback: $CHANGED"
 fi
