@@ -751,6 +751,7 @@ pub enum Codec {
     Ac3,
     Eac3,
     Dts,
+    #[serde(rename = "truehd", alias = "true_hd")]
     TrueHd,
     Flac,
     Aac,
@@ -763,7 +764,7 @@ impl Codec {
             "ac3" | "dolby" | "dd" => Codec::Ac3,
             "eac3" | "ddp" | "dolby-digital-plus" => Codec::Eac3,
             "dts" => Codec::Dts,
-            "truehd" => Codec::TrueHd,
+            "truehd" | "true_hd" => Codec::TrueHd,
             "flac" => Codec::Flac,
             "aac" => Codec::Aac,
             other => return Err(format!("unknown codec {other}")),
