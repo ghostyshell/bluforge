@@ -11,7 +11,7 @@ interfaces, so each platform is at a different stage.
 
 | Capability | macOS arm64 | macOS x64 | Linux x64 | Windows x64 |
 | --- | --- | --- | --- | --- |
-| Desktop app | yes | yes | preview (AppImage/deb) | preview (installer, CI smoke) |
+| Desktop app | yes | yes | preview (AppImage/deb, CI window smoke) | preview (installer, CI click-through) |
 | CLI | yes | yes | yes | yes (CI smoke) |
 | Optical drive discovery | IOKit | IOKit | sysfs (`/dev/sr*`) | WMI (`Win32_CDROMDrive`) |
 | Native AACS key recovery | yes | yes | yes (LibreDrive/auth) | yes (LibreDrive/auth) |
@@ -21,8 +21,8 @@ interfaces, so each platform is at a different stage.
 | Authored BD-J menu | yes | yes | yes (writer) | yes (writer) |
 | DVD-Video | yes (bundled ffmpeg) | yes (bundled ffmpeg) | yes (bundled ffmpeg) | yes (bundled ffmpeg) |
 | Verify, menu documents, KEYDB | yes | yes | yes | yes |
-| Burn to disc | `hdiutil` | `hdiutil` | `growisofs` | IMAPI2 (untested) |
-| MCP server | yes | yes | yes | preview |
+| Burn to disc | `hdiutil` | `hdiutil` | `growisofs` | IMAPI2 (COM probed in CI) |
+| MCP server | yes | yes | yes (CI smoke) | yes (CI smoke) |
 
 ## macOS
 
@@ -131,10 +131,14 @@ tool is needed. It picks the first compatible recorder, or the drive letter
 passed as `--device D:`. The write path is implemented and unit-tested at the
 script level, but has not been run on a physical writer here.
 
-CI executes both artifacts on `windows-latest`: the zip runs `--version` and
-`doctor` with its DLL closure, and the installer is silently installed, located,
-and launched. The app has to stay alive for 15 seconds. That covers install and
-startup, not a click-through of the UI.
+CI executes both artifacts on `windows-latest`. The zip runs `--version` and
+`doctor` with its DLL closure; `doctor` instantiates
+`IMAPI2.MsftDiscMaster2` and reports the recorder count, so the burn stack is
+probed rather than assumed. The installer is silently installed, then Windows
+UI Automation finds the main window, invokes the command-palette trigger,
+requires the palette dialog, and checks that the MCP server answers on loopback
+with its tool list. The run also captures the screen as an artifact. That is a
+real click-through of the shell; a physical writer is still untested.
 
 Multi-title ISOs are written with the portable UDF 2.50 writer (pure Rust,
 streams file data). The image is the BD-R profile; BD-RE media still wants the
@@ -143,7 +147,8 @@ macOS `newfs_udf` path.
 What does not work yet:
 
 - BD-RE authoring.
-- A full interactive pass through the installer and UI on a Windows desktop.
+- A physical writer pass on Windows (the IMAPI2 COM stack is probed, no disc is
+  burned).
 
 ## Building everything
 
@@ -155,7 +160,8 @@ What does not work yet:
   extracted tarball in a bare `ubuntu:24.04` container to prove it needs no
   system disc libraries or ffmpeg.
 - `ubuntu-24.04` builds the Linux AppImage and deb.
-- `windows-latest` builds the Windows CLI zip and the NSIS installer.
+- `windows-latest` builds the Windows CLI zip and the NSIS installer, then
+  drives the installed window through UI Automation and probes IMAPI2.
 - A non-blocking `ubuntu-24.04` job renders the BD-J menu under Xvfb and
   uploads the frames.
 - `ubuntu-24.04` runs the Playwright interaction checks against the dev mock

@@ -6,6 +6,16 @@ All notable changes to Keepsake Atelier. Newest first.
 
 ### Added
 
+- **Window-level desktop checks.** Linux CI boots the AppImage under Xvfb and
+  openbox, waits for the Tauri window, checks that the frame is not blank, and
+  calls the MCP server's `initialize` and `tools/list`. Windows CI installs the
+  NSIS build, finds the real window through UI Automation, invokes the
+  command-palette trigger, requires the palette dialog, and checks the same MCP
+  methods. Both seed a config that enables MCP and skips the launch-time KEYDB
+  download.
+- **Windows burning is probed, not assumed.** `doctor` instantiates
+  `IMAPI2.MsftDiscMaster2` and reports the recorder count or the COM error, and
+  the Windows CLI smoke requires that line.
 - **The Linux CLI tarball and Windows CLI zip are self-contained.** The Linux
   package copies the linked library closure, libaacs and libbdplus into `lib/`
   with an `$ORIGIN/lib` rpath and carries the bundled ffmpeg, ffprobe and menu
