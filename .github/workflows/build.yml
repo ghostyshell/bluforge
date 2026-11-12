@@ -253,7 +253,8 @@ jobs:
       - name: Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb xdotool imagemagick dbus-x11
+          sudo apt-get install -y xvfb xdotool imagemagick dbus-x11 \
+            libegl1 libgl1 libglx-mesa0 libgles2 libopengl0 libnss3 libasound2t64
       - name: Run the window smoke test
         run: |
           Xvfb :99 -screen 0 1440x900x24 >/dev/null 2>&1 &
@@ -470,8 +471,10 @@ jobs:
           Write-Host "AACS helper loaded (bf_media_key -> $rc)"
           Write-Host "installed at $($exe.FullName)"
 
-          # The app reads this before its window opens.
-          $cfgDir = Join-Path $env:APPDATA "keepsake-atelier"
+          # `ProjectDirs::config_dir()` on Windows is
+          # %APPDATA%\keepsake-atelier\config. The app reads this before its
+          # window opens.
+          $cfgDir = Join-Path $env:APPDATA "keepsake-atelier\config"
           New-Item -ItemType Directory -Force -Path $cfgDir | Out-Null
           '{"mcp_enabled":true,"mcp_port":8848}' |
             Set-Content -Path (Join-Path $cfgDir "config.json") -Encoding utf8
