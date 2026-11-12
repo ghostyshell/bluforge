@@ -2,8 +2,8 @@
 # Window-level smoke test for the Linux desktop app.
 #
 # Launches the AppImage under an existing X display, waits for the real Tauri
-# window, captures it, opens the command palette with the keyboard, and checks
-# that the MCP server answers. This exercises the GTK/WebKit window, not just
+# window, captures it, interacts with the rail, and checks that the MCP server
+# answers with its tool list. This exercises the GTK/WebKit window, not just
 # the web bundle.
 #
 # Usage: ui-smoke-linux.sh <appimage|app-binary> <out-dir>
@@ -13,7 +13,7 @@ APP=${1:?usage: ui-smoke-linux.sh <appimage> <out-dir>}
 OUT=${2:?}
 : "${DISPLAY:?DISPLAY must be set (start Xvfb first)}"
 
-for tool in xdotool import identify curl python3; do
+for tool in xdotool import identify compare curl python3; do
     command -v "$tool" >/dev/null 2>&1 || { echo "missing $tool" >&2; exit 1; }
 done
 
@@ -71,7 +71,7 @@ echo "window ${WIDTH}x${HEIGHT} (id $WID)"
 
 # Let the first paint settle, then capture the screen. The root window avoids
 # any reparenting differences between window managers.
-sleep 4
+sleep 5
 import -window root "$OUT/shell.png"
 MEAN=$(identify -format '%[fx:mean]' "$OUT/shell.png")
 echo "mean brightness: $MEAN"
@@ -100,33 +100,45 @@ if count < 10:
     raise SystemExit(f"expected at least 10 MCP tools, got {count}")
 PY
 
-# Keyboard: open the command palette, capture it, close it again. A scrim makes
-# the frame measurably different from the shell capture.
+# Interaction: hover and click a rail section. A pointer-driven page change is
+# the most portable proof that the webview accepts input; XTEST key delivery
+# depends on focus and a window manager, so the palette stays best-effort.
 changed_pixels() {
     compare -metric AE "$OUT/shell.png" "$1" null: 2>&1 | awk '{print $1}'
 }
 
+eval "$(xdotool getwindowgeometry --shell "$WID")"
 xdotool windowactivate --sync "$WID" 2>/dev/null ||
     xdotool windowfocus --sync "$WID" 2>/dev/null || true
 sleep 1
-echo "active window: $(xdotool getactivewindow 2>/dev/null || echo none)"
-xdotool key --clearmodifiers ctrl+k || echo "xdotool key returned $?"
-sleep 2
-import -window root "$OUT/palette.png" || echo "palette capture returned $?"
-CHANGED=$(changed_pixels "$OUT/palette.png")
-echo "changed pixels after ctrl+k: $CHANGED"
 
-if [ "${CHANGED:-0}" -le 2000 ]; then
-    # No window manager, or the key was swallowed: click the top-bar trigger.
-    eval "$(xdotool getwindowgeometry --shell "$WID")"
-    xdotool mousemove $((X + WIDTH * 78 / 100)) $((Y + 29)) click 1
+# The rail's second item ("Rip settings") sits near (60, 150) in the 1180x820
+# window. Hover first, then click; the first click may only take focus.
+xdotool mousemove $((X + 60)) $((Y + 150))
+sleep 2
+import -window root "$OUT/hover.png" || true
+HOVER=$(changed_pixels "$OUT/hover.png")
+echo "changed pixels after hovering the rail: $HOVER"
+
+SECTION=0
+for _ in 1 2 3; do
+    xdotool click 1
     sleep 2
-    import -window root "$OUT/palette.png" || echo "palette capture returned $?"
-    CHANGED=$(changed_pixels "$OUT/palette.png")
-    echo "changed pixels after the click fallback: $CHANGED"
-fi
-[ "${CHANGED:-0}" -gt 2000 ] || { echo "the command palette did not open" >&2; exit 1; }
-xdotool key --clearmodifiers Escape
+    import -window root "$OUT/section.png" || true
+    SECTION=$(changed_pixels "$OUT/section.png")
+    echo "changed pixels after clicking the rail: $SECTION"
+    [ "${SECTION:-0}" -gt 2000 ] && break
+done
+[ "${SECTION:-0}" -gt 2000 ] || { echo "the rail click did not change the page" >&2; exit 1; }
+
+# Best effort: the command palette, for the screenshot and the log.
+xdotool mousemove $((X + WIDTH / 2)) $((Y + HEIGHT / 2))
+xdotool click 1
+sleep 1
+xdotool key --clearmodifiers ctrl+k 2>/dev/null || true
+sleep 2
+import -window root "$OUT/palette.png" || true
+xdotool key --clearmodifiers Escape 2>/dev/null || true
 sleep 1
 
 kill -0 "$PID" 2>/dev/null || { echo "the app exited during the interaction" >&2; exit 1; }
