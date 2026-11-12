@@ -167,7 +167,9 @@ jobs:
       - name: Build CLI
         run: cargo build --release -p keepsake-atelier
       - name: Test core
-        run: cargo test -p keepsake-core --lib
+        run: cargo test -p keepsake-core
+        env:
+          KEEPSAKE_FFMPEG: ${{ github.workspace }}/app/src-tauri/resources/ffmpeg
       - name: Managed tsMuxeR and an authored ISO
         run: |
           BIN=./target/release/keepsake-atelier

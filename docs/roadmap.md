@@ -172,8 +172,8 @@ implemented in Phase 18; the saved menu documents from Phase 6 feed its names.
   and passes, and libbluray lists both.
 - Burning now prefers macOS's native `hdiutil burn`; an explicit `--device
   /dev/rdiskN` selects growisofs instead.
-- What remains open is hardware verification of the authored BD-J menu and
-  Cinavia (proprietary).
+- What remains open is hardware verification of the authored BD-J menu and of
+  the Cinavia stripper on a real player.
 
 ## Phase 18 - Authored BD-J title menu - done, hardware untested
 
@@ -209,7 +209,7 @@ What the app covers today, against the ripping-suite feature set:
 | 1:1 encrypted disc clone | done |
 | BD-25 / BD-50 splitting | done (whole titles per disc) |
 | Burning to disc | done (native hdiutil burn; untested without a writer) |
-| Cinavia detection/removal | not implemented |
+| Cinavia detection/removal | done (ridge-field detector + notch; untested on a player) |
 | UHD/AACS2 unit-key workflow | done (derived from Unit_Key_RO.inf with the VUK) |
 | Batch queue (one job at a time) | done |
 
@@ -232,14 +232,14 @@ remaining gaps, and each is blocked on something outside the codebase:
 - **Burning.** Implemented with native `hdiutil burn` (growisofs when an
   explicit device is given), but the write is untested here because no writer
   drive is attached. Multi-title ISOs work via native UDF 2.50 (`newfs_udf`).
-- **Cinavia.** A proprietary audio watermark. There is no open detector or
-  remover; "removal" would need the secret pattern and is legally fraught.
-  autoripdvd only substring-matches MakeMKV's "cinavia" output, and the PS3
-  tools patch the console's player firmware, not the media. The commercial
-  removers filter and re-encode the audio.
+- **Cinavia.** Implemented without decoding the payload: a ridge-field detector
+  over the quiet frames plus an adaptive notch, documented in
+  [guides/cinavia.md](guides/cinavia.md). The measurement separates a clean
+  control (2 ridges) from watermarked dubs (47-69) but has not been confirmed
+  against a Cinavia-aware player, and a stereo-only title is the weak case.
 
-What would unblock each: a standalone player for the menu, a writer drive and a
-blank BD-RE for the burn check, and licensed material for Cinavia.
+What would unblock each: a standalone player for the menu and for the Cinavia
+check, a writer drive and a blank BD-RE for the burn check.
 
 ## Deliberately out of scope
 

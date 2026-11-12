@@ -14,6 +14,7 @@ and the check that tells you it worked.
 | [TV and anime](tv.md) | Episode split, SxxExx names, openings and endings | A disc with episodes |
 | [Burn and verify](burn.md) | Size query, dry run, write, read back | A writer and blank BD-RE/BD-R |
 | [Automation](automation.md) | Auto-rip on insertion, watch folders, notifications |
+| [Cinavia](cinavia.md) | Measure and remove the Verance watermark |
 | [MCP](mcp.md) | Drive the app from Claude, Cursor or a script | The app running |
 | [Troubleshooting](troubleshooting.md) | The errors people actually hit | - |
 

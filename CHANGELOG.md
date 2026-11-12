@@ -31,12 +31,19 @@ All notable changes to Keepsake Atelier. Newest first.
   sequence was written at sector 19 instead of the standard sector 16, so
   libudfread refused every portable image. `disc` now opens the authored ISO
   without mounting it.
-- **Cinavia remains out of scope.** It is a proprietary audio watermark with
-  no open detector. The autoripdvd repository only substring-matches MakeMKV's
-  own `cinavia` line, and the PS3 "Cinavia" tools patch the console's player
-  firmware, not the media. The commercial removers filter and re-encode the
-  audio. None of that transfers to a desktop ripping pipeline, so the app
-  reports AACS/BD+ state and makes no Cinavia claim.
+- **Cinavia detection and removal.** The watermark is not decoded; it is
+  measured. `cinavia detect` averages the spectrum of the quietest minute of
+  each audio track, removes the spectral tilt and counts the narrow ridges the
+  watermark leaves behind. A clean control scores two ridges and a mass of one;
+  three independently dubbed tracks of one watermarked title scored 47-69
+  ridges and 80-93 mass, which is what calibrated the thresholds.
+  `cinavia strip` notches the detected band with raised-cosine edges, adds a
+  shallower cut across the rest of the 400-4000 Hz band and re-encodes the
+  audio (FLAC in MKV, AAC in MP4), deepening once if the band is still above
+  the clean level. It is wired into `rip --cinavia`, `watch --cinavia`, the Rip
+  page and the Automation card, and MCP accepts the flag. The pass costs level
+  and brightness and cannot be verified without a Cinavia-aware player; the
+  limits, and the measurement behind them, are in [guides/cinavia.md](docs/guides/cinavia.md).
 - **Window-level desktop checks.** Linux CI boots the AppImage under Xvfb and
   openbox, waits for the Tauri window, checks that the frame is not blank,
   hovers and clicks a rail section (a 451k-pixel page change), and calls the MCP

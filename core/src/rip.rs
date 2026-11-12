@@ -30,6 +30,9 @@ pub struct EncodeSettings {
     pub ten_bit: bool,
     /// Optional audio re-encode to AAC (default: copy).
     pub aac_audio: bool,
+    /// Strip the Cinavia watermark (re-encodes the audio to FLAC).
+    #[serde(default)]
+    pub cinavia: bool,
 }
 
 impl Default for EncodeSettings {
@@ -40,6 +43,7 @@ impl Default for EncodeSettings {
             preset: Some("medium".into()),
             ten_bit: true,
             aac_audio: false,
+            cinavia: false,
         }
     }
 }
@@ -137,6 +141,10 @@ pub struct RipRequest {
     /// First episode number on this disc (overrides the remembered mapping).
     #[serde(default)]
     pub start_episode: Option<u32>,
+    /// Strip the Cinavia watermark from the kept audio. Audio is re-encoded
+    /// (FLAC in MKV, AAC in MP4) because a copy cannot carry the filter.
+    #[serde(default)]
+    pub cinavia: bool,
 }
 
 fn yes() -> bool {
@@ -1272,7 +1280,54 @@ fn map_args(maps: &[String]) -> Vec<String> {
     v
 }
 
-fn build_args(req: &RipRequest, ctx: &TrackCtx) -> Vec<String> {
+/// Pump the selected title into an ffmpeg stdin. libbluray emits 192-byte
+/// m2ts packets with null-packet (0x1fff) padding; ffmpeg misdetects those as
+/// a phantom stream, so they are stripped on the way through.
+fn feed_title(
+    disc: crate::disc::Disc,
+    mut stdin: std::process::ChildStdin,
+) -> std::thread::JoinHandle<Result<(), CoreError>> {
+    std::thread::spawn(move || -> Result<(), CoreError> {
+        let mut reader = TitleReader::new(&disc);
+        let mut buf = vec![0u8; 1 << 20];
+        let mut out: Vec<u8> = Vec::with_capacity(1 << 20);
+        let mut stride = 0usize;
+        loop {
+            let n = reader.read(&mut buf)?;
+            if n == 0 {
+                break;
+            }
+            if stride == 0 {
+                stride = if n >= 5 && buf[4] == 0x47 { 192 } else { 188 };
+            }
+            out.clear();
+            let sync = if stride == 192 { 4 } else { 0 };
+            let mut i = 0;
+            while i + stride <= n {
+                if buf[i + sync] == 0x47 {
+                    let pid = (((buf[i + sync + 1] & 0x1f) as u16) << 8) | buf[i + sync + 2] as u16;
+                    if pid != 0x1fff {
+                        out.extend_from_slice(&buf[i..i + stride]);
+                    }
+                } else {
+                    out.extend_from_slice(&buf[i..i + stride]);
+                }
+                i += stride;
+            }
+            if i < n {
+                out.extend_from_slice(&buf[i..n]);
+            }
+            if stdin.write_all(&out).is_err() {
+                break;
+            }
+        }
+        let _ = stdin.flush();
+        drop(stdin);
+        Ok(())
+    })
+}
+
+fn build_args(req: &RipRequest, ctx: &TrackCtx, cinavia: &[(usize, PathBuf)]) -> Vec<String> {
     let mkv = matches!(
         &req.mode,
         RipMode::Remux {
@@ -1309,15 +1364,43 @@ fn build_args(req: &RipRequest, ctx: &TrackCtx) -> Vec<String> {
         maps.retain(|m| !m.starts_with("0:s:"));
     }
 
+    // Cinavia: each kept audio track is pre-filtered into its own input, so the
+    // map is re-pointed at that input and the audio gets re-encoded.
+    if !cinavia.is_empty() {
+        let first = a.iter().filter(|x| x.as_str() == "-i").count();
+        for (n, (_, path)) in cinavia.iter().enumerate() {
+            a.push("-i".into());
+            a.push(path.to_string_lossy().into_owned());
+            let _ = n;
+        }
+        for m in maps.iter_mut() {
+            if let Some(idx) = m.strip_prefix("0:a:").and_then(|x| x.parse::<usize>().ok()) {
+                if let Some(pos) = cinavia.iter().position(|(t, _)| *t == idx) {
+                    *m = format!("{}:a:0", first + pos);
+                }
+            }
+        }
+    }
+
     match &req.mode {
         RipMode::Remux { container } => match container {
             Container::Mkv => {
                 a.extend(map_args(&maps));
-                a.extend(["-c".into(), "copy".into()]);
+                if cinavia.is_empty() {
+                    a.extend(["-c".into(), "copy".into()]);
+                } else {
+                    a.extend(["-c:v".into(), "copy".into(), "-c:a".into(), "flac".into()]);
+                    a.extend(["-c:s".into(), "copy".into()]);
+                }
             }
             Container::Mp4 => {
                 a.extend(map_args(&maps));
-                a.extend(["-c".into(), "copy".into()]);
+                if cinavia.is_empty() {
+                    a.extend(["-c".into(), "copy".into()]);
+                } else {
+                    a.extend(["-c:v".into(), "copy".into(), "-c:a".into(), "aac".into()]);
+                    a.extend(["-b:a".into(), "640k".into()]);
+                }
             }
         },
         RipMode::Encode { settings, .. } => {
@@ -1329,7 +1412,13 @@ fn build_args(req: &RipRequest, ctx: &TrackCtx) -> Vec<String> {
                 a.push(m.clone());
             }
             a.extend(codec_args(settings));
-            if settings.aac_audio {
+            if !cinavia.is_empty() {
+                if mkv {
+                    a.extend(["-c:a".into(), "flac".into()]);
+                } else {
+                    a.extend(["-c:a".into(), "aac".into(), "-b:a".into(), "640k".into()]);
+                }
+            } else if settings.aac_audio {
                 a.extend(["-c:a".into(), "aac".into(), "-b:a".into(), "640k".into()]);
             } else {
                 a.extend(["-c:a".into(), "copy".into()]);
@@ -1496,6 +1585,95 @@ fn write_chapters(
     Ok(())
 }
 
+/// Decode every kept audio track, measure and strip the Cinavia watermark, and
+/// return the processed WAVs with their audio indices. The caller muxes them in
+/// place of the originals.
+#[allow(clippy::too_many_arguments)]
+fn prepare_cinavia(
+    source: &std::path::Path,
+    keydb: Option<&std::path::Path>,
+    backend: crate::disc::DecryptBackend,
+    title: u32,
+    req: &RipRequest,
+    ctx: &TrackCtx,
+    cancel: &std::sync::atomic::AtomicBool,
+) -> Result<(PathBuf, Vec<(usize, PathBuf)>), CoreError> {
+    let (maps, _) = plan_tracks(ctx, req.audio, req.subs);
+    let tracks: Vec<usize> = maps
+        .iter()
+        .filter_map(|m| m.strip_prefix("0:a:").and_then(|x| x.parse::<usize>().ok()))
+        .collect();
+    if tracks.is_empty() {
+        return Ok((PathBuf::new(), Vec::new()));
+    }
+
+    let dir = std::env::temp_dir().join(format!("keepsake-cinavia-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir)?;
+
+    // One read: decode every kept track to float WAV.
+    let raws: Vec<PathBuf> = tracks
+        .iter()
+        .map(|n| dir.join(format!("raw-{n}.wav")))
+        .collect();
+    let mut cmd = Command::new(ffmpeg_path());
+    cmd.args([
+        "-hide_banner",
+        "-nostdin",
+        "-y",
+        "-copyts",
+        "-start_at_zero",
+        "-i",
+        "pipe:0",
+    ]);
+    for (n, raw) in raws.iter().enumerate() {
+        cmd.args(["-map", &format!("0:a:{}", tracks[n])]);
+        cmd.args(["-vn", "-sn", "-dn", "-acodec", "pcm_f32le"]);
+        cmd.arg(raw);
+    }
+    cmd.stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::inherit());
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| CoreError::Disc(format!("cinavia ffmpeg: {e}")))?;
+    let stdin = child
+        .stdin
+        .take()
+        .ok_or_else(|| CoreError::Disc("cinavia stdin".into()))?;
+
+    let pre = Disc::open_with_backend(source, keydb, backend)?;
+    // Enumerate titles on the fresh handle before selecting; libbluray keeps
+    // that per handle.
+    let _ = pre.info()?;
+    pre.select(title)?;
+    let feed = feed_title(pre, stdin);
+    let status = child.wait()?;
+    let _ = feed.join();
+    if !status.success() {
+        return Err(CoreError::Disc("cinavia: audio decode failed".into()));
+    }
+
+    let mut out = Vec::new();
+    for (n, raw) in raws.iter().enumerate() {
+        let (channels, _) = crate::cinavia::probe(raw, 0).map_err(CoreError::Disc)?;
+        let report =
+            crate::cinavia::analyze(raw, 0, channels, Some(120)).map_err(CoreError::Disc)?;
+        if report.verdict == crate::cinavia::Verdict::Clean {
+            tracing::info!(track = tracks[n], "cinavia: track reads clean");
+        }
+        let mut spec = crate::cinavia::BandSpec::default_for(
+            report.band.unwrap_or(crate::cinavia::DEFAULT_BAND),
+        );
+        spec.depth_db = report.depth_db;
+        let dst = dir.join(format!("clean-{n}.wav"));
+        crate::cinavia::strip(raw, 0, &dst, spec, channels, cancel, |_| {})
+            .map_err(CoreError::Disc)?;
+        out.push((tracks[n], dst));
+    }
+    Ok((dir, out))
+}
+
 /// Run the rip. `on_progress` is called on the calling thread for each update.
 /// `cancel` is polled between progress lines; when set the ffmpeg child is killed.
 pub fn run<F>(
@@ -1527,6 +1705,11 @@ where
     let mut owned = req_in.clone();
     owned.source = source;
     let req: &RipRequest = &owned;
+
+    // Either the request flag or the encode setting asks for a strip; the app
+    // sets the setting because it renders next to the other audio options.
+    let want_cinavia =
+        req.cinavia || matches!(&req.mode, RipMode::Encode { settings, .. } if settings.cinavia);
 
     let disc = Disc::open_with_backend(&req.source, req.keydb.as_deref(), backend)?;
     let info = disc.info()?;
@@ -1716,7 +1899,37 @@ where
 
     disc.select(title)?;
 
-    let args = build_args(req, &ctx);
+    // Cinavia: pre-filter each kept audio track into a temp WAV. This reads the
+    // disc once more (audio only), so it is opt-in.
+    let mut cinavia_temps: Vec<(usize, PathBuf)> = Vec::new();
+    let mut cinavia_dir: Option<PathBuf> = None;
+    if want_cinavia {
+        match prepare_cinavia(
+            &req.source,
+            req.keydb.as_deref(),
+            backend,
+            title,
+            req,
+            &ctx,
+            cancel,
+        ) {
+            Ok((dir, temps)) => {
+                cinavia_dir = Some(dir);
+                cinavia_temps = temps;
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "cinavia: pre-pass failed, keeping the original audio");
+                on_progress(RipProgress {
+                    total_ms,
+                    message: format!("cinavia: {e}"),
+                    dest: Some(ctx.dest.clone()),
+                    ..Default::default()
+                });
+            }
+        }
+    }
+
+    let args = build_args(req, &ctx, &cinavia_temps);
     tracing::info!(?args, "spawning ffmpeg");
     let mut child = Command::new(ffmpeg_path())
         .args(&args)
@@ -1729,47 +1942,7 @@ where
     let mut stdin = child.stdin.take().expect("stdin");
     let stdout = child.stdout.take().expect("stdout");
 
-    // Feed disc -> ffmpeg stdin. libbluray emits 192-byte m2ts packets with
-    // null-packet (0x1fff) padding; ffmpeg misdetects those as a phantom
-    // stream, so we strip them on the way through.
-    let feed = std::thread::spawn(move || -> Result<(), CoreError> {
-        let mut reader = TitleReader::new(&disc);
-        let mut buf = vec![0u8; 1 << 20];
-        let mut out: Vec<u8> = Vec::with_capacity(1 << 20);
-        let mut stride = 0usize;
-        loop {
-            let n = reader.read(&mut buf)?;
-            if n == 0 {
-                break;
-            }
-            if stride == 0 {
-                stride = if n >= 5 && buf[4] == 0x47 { 192 } else { 188 };
-            }
-            out.clear();
-            let sync = if stride == 192 { 4 } else { 0 };
-            let mut i = 0;
-            while i + stride <= n {
-                if buf[i + sync] == 0x47 {
-                    let pid = (((buf[i + sync + 1] & 0x1f) as u16) << 8) | buf[i + sync + 2] as u16;
-                    if pid != 0x1fff {
-                        out.extend_from_slice(&buf[i..i + stride]);
-                    }
-                } else {
-                    out.extend_from_slice(&buf[i..i + stride]);
-                }
-                i += stride;
-            }
-            if i < n {
-                out.extend_from_slice(&buf[i..n]);
-            }
-            if stdin.write_all(&out).is_err() {
-                break;
-            }
-        }
-        let _ = stdin.flush();
-        drop(stdin);
-        Ok(())
-    });
+    let feed = feed_title(disc, stdin);
 
     let mut prog = RipProgress {
         total_ms,
@@ -1791,6 +1964,9 @@ where
 
     let status = child.wait()?;
     let _ = feed.join();
+    if let Some(dir) = &cinavia_dir {
+        let _ = std::fs::remove_dir_all(dir);
+    }
 
     if cancel.load(std::sync::atomic::Ordering::Relaxed) {
         prog.message = "cancelled".into();

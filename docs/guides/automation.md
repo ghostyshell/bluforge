@@ -49,6 +49,8 @@ The watcher:
 - Remuxes to MKV by default, keeping every audio and subtitle track.
 - Ejects after the rips when `auto_rip_eject` is set.
 - Sends the configured notifications.
+- Strips the Cinavia watermark when `cinavia` (or `--cinavia`) is set. This
+  re-encodes the audio, so it also removes any audio copy shortcut.
 
 Run it from `launchd` on macOS or a user service on Linux to get an
 always-on ripping station.
@@ -65,6 +67,7 @@ always-on ripping station.
 | `notify_native` | `true` | Desktop notification |
 | `notify_webhook` | unset | POST target for job events |
 | `prevent_sleep` | `true` | Inhibit sleep during rips |
+| `cinavia` | `false` | Strip the watermark on automatic rips |
 
 Set them in **System -> Automation**, or through MCP `patch_settings` with the
 same names.

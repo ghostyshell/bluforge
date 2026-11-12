@@ -1112,6 +1112,7 @@ mod tests {
             series: None,
             episodes: None,
             start_episode: None,
+            cinavia: false,
         }
     }
 

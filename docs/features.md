@@ -223,8 +223,8 @@ claude mcp add --transport http keepsake http://127.0.0.1:8765/mcp
   plus AppImage and deb previews; Windows ships a CLI zip and an NSIS installer
   preview with WMI drive discovery and IMAPI2 burning. CI executes the Windows
   CLI and installs and launches the app. See [Platforms](platforms.md).
-- Cinavia is a proprietary audio watermark. There is no open detector
-  or remover, and none is bundled.
+- Cinavia is a proprietary audio watermark. It can be measured and notched out,
+  at a cost in level and brightness. Nothing verifies the result but a player.
 - Authored BD-J menus are verified in a JVM harness and by libbluray's parser,
   not on a hardware player. They remain opt-in.
 - Burning has been exercised with a detected writer and a size query, but not

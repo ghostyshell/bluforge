@@ -24,6 +24,7 @@ interfaces, so each platform is at a different stage.
 | Burn to disc | `hdiutil` | `hdiutil` | `growisofs` | IMAPI2 (COM probed in CI) |
 | MCP server | yes | yes | yes (CI smoke) | yes (CI smoke) |
 | Automatic rip | app + `watch` | app + `watch` | app + `watch` | app + `watch` |
+| Cinavia detect/strip | yes | yes | yes | yes |
 
 ## macOS
 

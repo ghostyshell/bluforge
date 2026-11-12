@@ -102,7 +102,7 @@ export default function App() {
   const [container, setContainer] = useState<"mkv" | "mp4">("mkv");
   const [lossless, setLossless] = useState(true);
   const [enc, setEnc] = useState<EncodeSettings>({
-    codec: "x265", quality: 20, preset: "medium", ten_bit: true, aac_audio: false,
+    codec: "x265", quality: 20, preset: "medium", ten_bit: true, aac_audio: false, cinavia: false,
   });
   const [audio, setAudio] = useState<AudioSel>("all");
   const [subs, setSubs] = useState<SubSel>("all");
@@ -1349,6 +1349,11 @@ export default function App() {
                           onChange={(e) => setEnc({ ...enc, aac_audio: e.target.checked })} />
                         Re-encode audio to AAC
                       </label>
+                      <label className="check" title="Notch the Verance watermark band and re-encode the audio to FLAC">
+                        <input type="checkbox" checked={enc.cinavia}
+                          onChange={(e) => setEnc({ ...enc, cinavia: e.target.checked })} />
+                        Strip Cinavia
+                      </label>
                     </div>
                   </>
                 )}
@@ -1897,6 +1902,11 @@ export default function App() {
                     <input type="checkbox" checked={!!cfg?.prevent_sleep}
                       onChange={(e) => cfg && void saveCfg({ prevent_sleep: e.target.checked })} />
                     <span>Keep the machine awake while ripping</span>
+                  </label>
+                  <label className="row" style={{ gap: 8, alignItems: "center", marginTop: 6 }}>
+                    <input type="checkbox" checked={!!cfg?.cinavia}
+                      onChange={(e) => cfg && void saveCfg({ cinavia: e.target.checked })} />
+                    <span>Strip Cinavia from automatic rips</span>
                   </label>
                   <label className="field" style={{ marginTop: 10 }}>Notification webhook
                     <input className="mono" placeholder="https://hooks.slack.com/..." value={cfg?.notify_webhook ?? ""}

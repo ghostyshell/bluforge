@@ -117,6 +117,9 @@ enum Cmd {
         /// hiccups after a replug). Default 2.
         #[arg(long, default_value_t = 2)]
         retries: u32,
+        /// Strip the Cinavia watermark from the audio (re-encodes it to FLAC).
+        #[arg(long)]
+        cinavia: bool,
     },
     /// Cover art: search and download case/disc covers.
     Covers {
@@ -196,6 +199,9 @@ enum Cmd {
         /// Seconds between scans.
         #[arg(long, default_value_t = 5)]
         interval: u64,
+        /// Strip Cinavia from automatic rips (default: the config's `cinavia`).
+        #[arg(long)]
+        cinavia: bool,
     },
     /// Export a decrypted ISO (or `--folder`): all AACS/BD+ removed.
     Iso {
@@ -242,6 +248,11 @@ enum Cmd {
         /// Mounted disc, disc root, or BDMV folder.
         path: std::path::PathBuf,
     },
+    /// Detect or strip the Cinavia audio watermark.
+    Cinavia {
+        #[command(subcommand)]
+        action: CinaviaAction,
+    },
     /// Show what is installed and which capability each missing piece blocks.
     Doctor,
     /// Show effective configuration and paths.
@@ -250,6 +261,46 @@ enum Cmd {
     Menu {
         #[command(subcommand)]
         action: MenuAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum CinaviaAction {
+    /// Measure the watermark on a file: ridge density per audio track.
+    Detect {
+        /// Video or audio file.
+        path: std::path::PathBuf,
+        /// Audio track to measure (0-based). Default: every track.
+        #[arg(long)]
+        track: Option<usize>,
+        /// Seconds to analyse per track.
+        #[arg(long, default_value_t = 300)]
+        seconds: u32,
+        /// Machine-readable output.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Remove the watermark from one audio track into a new file.
+    Strip {
+        /// Input file.
+        path: std::path::PathBuf,
+        /// Output file (mkv, mp4 or an audio container).
+        out: std::path::PathBuf,
+        /// Audio track to strip (0-based).
+        #[arg(long, default_value_t = 0)]
+        track: usize,
+        /// Band-stop depth in dB (default: tuned from the measurement).
+        #[arg(long)]
+        depth: Option<f32>,
+        /// Cut this band in Hz, eg. 280-1300, instead of the detected one.
+        #[arg(long)]
+        band: Option<String>,
+        /// Cut the whole 280-4000 Hz watermark band.
+        #[arg(long)]
+        aggressive: bool,
+        /// Measure and print the plan, write nothing.
+        #[arg(long)]
+        dry_run: bool,
     },
 }
 
@@ -545,10 +596,14 @@ fn watch(
     dry_run: bool,
     settle: u64,
     interval: u64,
+    cinavia: bool,
 ) -> Result<(), keepsake_core::CoreError> {
     use std::collections::HashSet;
 
-    let cfg = AppConfig::load();
+    let mut cfg = AppConfig::load();
+    if cinavia {
+        cfg.cinavia = true;
+    }
     let opts = WatchOptions { dry_run };
     let mut handled: HashSet<String> = HashSet::new();
     let mut seen: HashSet<String> = HashSet::new();
@@ -684,6 +739,7 @@ fn watch_source(
             series: None,
             episodes: None,
             start_episode: None,
+            cinavia: cfg.cinavia,
         };
         let cancel = std::sync::atomic::AtomicBool::new(false);
         let mut dest: Option<std::path::PathBuf> = None;
@@ -719,6 +775,175 @@ fn watch_source(
         }
     }
     Ok(true)
+}
+
+fn cinavia_detect(
+    path: &std::path::Path,
+    only: Option<usize>,
+    seconds: u32,
+) -> Result<Vec<keepsake_core::cinavia::TrackReport>, keepsake_core::CoreError> {
+    use keepsake_core::cinavia;
+    let count = cinavia::track_count(path).map_err(keepsake_core::CoreError::Config)?;
+    if count == 0 {
+        return Err(keepsake_core::CoreError::Config(format!(
+            "{}: no audio tracks",
+            path.display()
+        )));
+    }
+    let tracks: Vec<usize> = match only {
+        Some(t) if t < count => vec![t],
+        Some(t) => {
+            return Err(keepsake_core::CoreError::Config(format!(
+                "track {t} out of range (0..{count})"
+            )))
+        }
+        None => (0..count).collect(),
+    };
+    let mut reports = Vec::new();
+    for t in tracks {
+        let (channels, _) = cinavia::probe(path, t).map_err(keepsake_core::CoreError::Config)?;
+        reports.push(
+            cinavia::analyze(path, t, channels, Some(seconds))
+                .map_err(keepsake_core::CoreError::Config)?,
+        );
+    }
+    Ok(reports)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn cinavia_strip(
+    path: &std::path::Path,
+    out: &std::path::Path,
+    track: usize,
+    depth: Option<f32>,
+    band: Option<&str>,
+    aggressive: bool,
+    dry_run: bool,
+) -> Result<(), keepsake_core::CoreError> {
+    use keepsake_core::cinavia;
+    let e = keepsake_core::CoreError::Config;
+    let (channels, codec) = cinavia::probe(path, track).map_err(e)?;
+    let report = cinavia::analyze(path, track, channels, Some(180)).map_err(e)?;
+    println!(
+        "track {track} ({channels} ch {codec}): {} ridges, {:.1} dB excess  -> {}",
+        report.density,
+        report.mean_excess_db,
+        report.verdict.label()
+    );
+
+    let mut spec = if aggressive {
+        cinavia::BandSpec::aggressive()
+    } else if let Some(detected) = report.band {
+        cinavia::BandSpec::default_for(detected)
+    } else {
+        cinavia::BandSpec::default_for(cinavia::DEFAULT_BAND)
+    };
+    if let Some(spec_band) = band {
+        let (lo, hi) = spec_band
+            .split_once('-')
+            .ok_or_else(|| e("--band expects LO-HI, eg. 280-1300".into()))?;
+        spec.lo = lo
+            .trim()
+            .parse()
+            .map_err(|_| e("bad --band lower bound".into()))?;
+        spec.hi = hi
+            .trim()
+            .parse()
+            .map_err(|_| e("bad --band upper bound".into()))?;
+        if spec.hi <= spec.lo {
+            return Err(e("--band upper bound must exceed the lower".into()));
+        }
+    }
+    spec.depth_db = depth.unwrap_or(report.depth_db);
+
+    let audio_codec = if out
+        .extension()
+        .and_then(|x| x.to_str())
+        .is_some_and(|x| matches!(x, "mp4" | "m4v" | "mov"))
+    {
+        "aac"
+    } else {
+        "flac"
+    };
+    println!(
+        "plan: notch {:.0}-{:.0} Hz at {:.0} dB, bed {:.0}-{:.0} Hz at {:.0} dB, re-encode {}",
+        spec.lo,
+        spec.hi,
+        spec.depth_db,
+        cinavia::BED.0,
+        cinavia::BED.1,
+        spec.bed_db,
+        audio_codec
+    );
+    if dry_run {
+        return Ok(());
+    }
+
+    let tmp = std::env::temp_dir().join(format!("keepsake-cinavia-{}.wav", std::process::id()));
+    let cancel = std::sync::atomic::AtomicBool::new(false);
+    let mut attempt = 0;
+    let mut density;
+    loop {
+        attempt += 1;
+        let start = std::time::Instant::now();
+        let mut last = 0u32;
+        cinavia::strip(path, track, &tmp, spec, channels, &cancel, |secs| {
+            if secs >= last + 15 {
+                last = secs;
+                eprintln!(
+                    "  {secs}s ({:.0}x)",
+                    secs as f32 / start.elapsed().as_secs_f32().max(0.01)
+                );
+            }
+        })
+        .map_err(e)?;
+        let check = cinavia::analyze(&tmp, 0, channels, Some(120)).map_err(e)?;
+        density = check.density;
+        println!(
+            "  pass {attempt}: notch at {:.0} dB -> {density} ridges, mass {:.0}",
+            spec.depth_db, check.score
+        );
+        // Auto-tune: keep deepening until the cleaned track reads clean again.
+        if depth.is_some()
+            || aggressive
+            // Good enough: the band has fallen to the clean level.
+            || check.band_ratio_db <= keepsake_core::cinavia::RATIO_CLEAN + 1.0
+            || spec.depth_db >= 18.0
+            || attempt >= 2
+        {
+            break;
+        }
+        spec.depth_db = (spec.depth_db + 3.0).min(18.0);
+    }
+
+    let mkv = audio_codec == "flac";
+    let mut cmd = std::process::Command::new(keepsake_core::rip::ffmpeg_path());
+    cmd.args(["-v", "error", "-y", "-i"])
+        .arg(path)
+        .arg("-i")
+        .arg(&tmp);
+    cmd.args(["-map", "0:v?", "-map", "1:a:0"]);
+    if mkv {
+        cmd.args(["-map", "0:s?", "-map", "0:d?", "-c:s", "copy"]);
+    }
+    cmd.args(["-map_metadata", "0", "-map_chapters", "0", "-c:v", "copy"]);
+    if mkv {
+        cmd.args(["-c:a", "flac"]);
+    } else {
+        cmd.args(["-c:a", "aac", "-b:a", "640k"]);
+    }
+    cmd.args(["-disposition:a:0", "default"]).arg(out);
+    let status = cmd.status().map_err(|err| e(format!("ffmpeg: {err}")))?;
+    let _ = std::fs::remove_file(&tmp);
+    if !status.success() {
+        return Err(e(format!("ffmpeg failed writing {}", out.display())));
+    }
+    println!(
+        "wrote {} ({density} ridges left, was {})",
+        out.display(),
+        report.density
+    );
+    Ok(())
 }
 
 fn main() {
@@ -1247,14 +1472,80 @@ fn run(cli: &Cli) -> Result<(), keepsake_core::CoreError> {
                 }
             }
         }
+        Cmd::Cinavia { action } => match action {
+            CinaviaAction::Detect {
+                path,
+                track,
+                seconds,
+                json,
+            } => {
+                let reports = cinavia_detect(path, *track, *seconds)?;
+                if *json {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&serde_json::json!({
+                            "file": path,
+                            "tracks": reports,
+                        }))
+                        .map_err(|e| keepsake_core::CoreError::Config(e.to_string()))?
+                    );
+                    return Ok(());
+                }
+                println!("{}", path.display());
+                for r in &reports {
+                    println!(
+                        "  track {} ({} ch): {} ridges 300-600 Hz, {} to 4000 Hz, {:.1} dB excess  -> {}",
+                        r.track, r.channels, r.density, r.wide_density, r.mean_excess_db, r.verdict.label()
+                    );
+                }
+                let any = reports
+                    .iter()
+                    .any(|r| r.verdict != keepsake_core::cinavia::Verdict::Clean);
+                println!(
+                    "{}",
+                    if any {
+                        "verdict: watermarked - `cinavia strip` will remove it"
+                    } else {
+                        "verdict: clean - no ridge field found"
+                    }
+                );
+            }
+            CinaviaAction::Strip {
+                path,
+                out,
+                track,
+                depth,
+                band,
+                aggressive,
+                dry_run,
+            } => {
+                cinavia_strip(
+                    path,
+                    out,
+                    *track,
+                    *depth,
+                    band.as_deref(),
+                    *aggressive,
+                    *dry_run,
+                )?;
+            }
+        },
         Cmd::Watch {
             source,
             once,
             dry_run,
             settle,
             interval,
+            cinavia,
         } => {
-            watch(source.as_deref(), *once, *dry_run, *settle, *interval)?;
+            watch(
+                source.as_deref(),
+                *once,
+                *dry_run,
+                *settle,
+                *interval,
+                *cinavia,
+            )?;
         }
         Cmd::Libs => {
             keepsake_core::Disc::init_env();
@@ -1320,6 +1611,7 @@ fn run(cli: &Cli) -> Result<(), keepsake_core::CoreError> {
             tv_subs,
             start_episode,
             retries,
+            cinavia,
         } => {
             use keepsake_core::{
                 Container, EncodeSettings, RipMode, RipProgress, RipRequest, VideoCodec,
@@ -1344,6 +1636,7 @@ fn run(cli: &Cli) -> Result<(), keepsake_core::CoreError> {
                         preset: Some(preset.clone()),
                         ten_bit: *ten_bit,
                         aac_audio: false,
+                        cinavia: *cinavia,
                     },
                 }
             } else {
@@ -1375,6 +1668,7 @@ fn run(cli: &Cli) -> Result<(), keepsake_core::CoreError> {
                 series: series.clone(),
                 episodes: episodes.clone(),
                 start_episode: *start_episode,
+                cinavia: *cinavia,
             };
             if tv_subs != "all" {
                 let mut c = AppConfig::load();

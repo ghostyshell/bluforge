@@ -56,6 +56,7 @@ export type AppConfig = {
   notify_native: boolean;
   notify_webhook?: string | null;
   prevent_sleep: boolean;
+  cinavia: boolean;
 };
 
 export type Title = {
@@ -108,6 +109,7 @@ export type EncodeSettings = {
   preset: string | null;
   ten_bit: boolean;
   aac_audio: boolean;
+  cinavia: boolean;
 };
 
 export type RipMode =

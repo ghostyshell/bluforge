@@ -695,6 +695,8 @@ struct RipArgs {
     #[serde(default)]
     start_episode: Option<u32>,
     #[serde(default)]
+    cinavia: Option<bool>,
+    #[serde(default)]
     chapters: Option<bool>,
     #[serde(default)]
     poster: Option<bool>,
@@ -746,6 +748,7 @@ fn start_rip(args: Value) -> Result<Value, String> {
                 preset: a.preset.clone().or_else(|| Some("medium".into())),
                 ten_bit: a.ten_bit.unwrap_or(true),
                 aac_audio: a.aac_audio.unwrap_or(false),
+                cinavia: a.cinavia.unwrap_or(false),
             },
         }
     } else {
@@ -776,6 +779,7 @@ fn start_rip(args: Value) -> Result<Value, String> {
         series: a.series,
         episodes: a.episodes,
         start_episode: a.start_episode,
+        cinavia: a.cinavia.unwrap_or(false),
     };
 
     let id = NEXT_JOB.fetch_add(1, Ordering::SeqCst);
@@ -1249,6 +1253,7 @@ fn apply_config_patch(cfg: &mut AppConfig, patch: &Value) -> Result<(), String> 
             "hirescovers_pass" => cfg.hirescovers_pass = val.as_str().map(|s| s.to_string()),
             "hirescovers_cookie" => cfg.hirescovers_cookie = val.as_str().map(|s| s.to_string()),
             "mcp_enabled" => cfg.mcp_enabled = val.as_bool().ok_or("mcp_enabled must be a bool")?,
+            "cinavia" => cfg.cinavia = val.as_bool().ok_or("cinavia must be a bool")?,
             "mcp_port" => {
                 cfg.mcp_port = val
                     .as_u64()
@@ -1448,7 +1453,8 @@ fn tools() -> Vec<Value> {
                 "quality": { "type": "integer", "description": "CRF / q 1..51 (encode only)." },
                 "preset": { "type": "string" },
                 "ten_bit": { "type": "boolean" },
-                "aac_audio": { "type": "boolean" }
+                "aac_audio": { "type": "boolean" },
+                "cinavia": { "type": "boolean", "description": "Strip the Cinavia watermark (re-encodes the audio to FLAC)." }
             }, "required": ["source"] }
         }),
         json!({

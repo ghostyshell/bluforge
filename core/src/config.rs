@@ -80,6 +80,9 @@ pub struct AppConfig {
     /// Keep the machine awake while a rip is running.
     #[serde(default = "yes")]
     pub prevent_sleep: bool,
+    /// Strip the Cinavia watermark from the audio on automatic rips.
+    #[serde(default)]
+    pub cinavia: bool,
 }
 
 pub fn default_auto_rip_mode() -> String {
@@ -154,6 +157,7 @@ impl Default for AppConfig {
             notify_native: true,
             notify_webhook: None,
             prevent_sleep: true,
+            cinavia: false,
         }
     }
 }

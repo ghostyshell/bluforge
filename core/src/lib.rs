@@ -11,6 +11,7 @@ pub mod bdmv;
 pub mod bdplus;
 pub mod binaries;
 pub mod burn;
+pub mod cinavia;
 pub mod clone;
 pub mod config;
 pub mod covers;
@@ -35,6 +36,7 @@ pub mod udf;
 pub mod udf_portable;
 pub mod verify;
 
+pub use cinavia::{BandSpec, TrackReport, Verdict};
 pub use clone::{CloneProgress, CloneRequest};
 pub use config::AppConfig;
 pub use covers::{CoverHit, CoverSource};
