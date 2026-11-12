@@ -254,7 +254,12 @@ pub fn run() -> DoctorReport {
     let growisofs = in_path("growisofs");
     let cdrecord = in_path("cdrecord");
     let powershell = in_path("powershell.exe").or_else(|| in_path("powershell"));
-    let imapi = cfg!(target_os = "windows") && powershell.is_some();
+    let imapi_probe = if cfg!(target_os = "windows") {
+        Some(crate::burn::imapi2_probe())
+    } else {
+        None
+    };
+    let imapi = cfg!(target_os = "windows") && matches!(imapi_probe, Some(Ok(_)));
     let burning = native_burn || imapi || growisofs.is_some() || cdrecord.is_some();
     r.checks.push(check(
         "burning",
@@ -269,7 +274,16 @@ pub fn run() -> DoctorReport {
                 }
             )
         } else if imapi {
-            "IMAPI2 (native PowerShell)".into()
+            match &imapi_probe {
+                Some(Ok(0)) => "IMAPI2 (no recorder found)".into(),
+                Some(Ok(n)) => format!("IMAPI2 (native), {n} recorder(s)"),
+                _ => "IMAPI2 (native PowerShell)".into(),
+            }
+        } else if powershell.is_some() && cfg!(target_os = "windows") {
+            match &imapi_probe {
+                Some(Err(e)) => format!("IMAPI2 COM probe failed: {e}"),
+                _ => "IMAPI2 COM probe failed".into(),
+            }
         } else if let Some(g) = &growisofs {
             g.display().to_string()
         } else if let Some(c) = &cdrecord {

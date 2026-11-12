@@ -58,6 +58,48 @@ pub fn tool() -> Option<PathBuf> {
     }
 }
 
+/// Probe the IMAPI2 COM stack and return the recorder count.
+///
+/// Windows ships IMAPI2, but a broken COM registration or a blocked
+/// `powershell.exe` still breaks burning. The probe instantiates the disc
+/// master so `doctor` reports the real state instead of assuming the stack
+/// exists because `powershell.exe` is on `PATH`.
+#[cfg(target_os = "windows")]
+pub fn imapi2_probe() -> Result<usize, String> {
+    let ps = in_path("powershell.exe")
+        .or_else(|| in_path("powershell"))
+        .ok_or_else(|| "powershell.exe not found".to_string())?;
+    let script = concat!(
+        "try { ",
+        "$m = New-Object -ComObject IMAPI2.MsftDiscMaster2; ",
+        "$n = 0; foreach ($i in $m) { $n++ }; ",
+        "Write-Output \"ok:$n\" ",
+        "} catch { Write-Output \"err:$($_.Exception.Message)\" }"
+    );
+    let out = std::process::Command::new(ps)
+        .args(["-NoProfile", "-NonInteractive", "-Command", script])
+        .output()
+        .map_err(|e| format!("powershell: {e}"))?;
+    let text = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    match text.strip_prefix("ok:") {
+        Some(n) => n
+            .trim()
+            .parse::<usize>()
+            .map_err(|_| format!("unexpected IMAPI2 probe output: {text}")),
+        None => Err(text
+            .strip_prefix("err:")
+            .unwrap_or(&text)
+            .trim()
+            .to_string()),
+    }
+}
+
+/// IMAPI2 only exists on Windows.
+#[cfg(not(target_os = "windows"))]
+pub fn imapi2_probe() -> Result<usize, String> {
+    Err("IMAPI2 is Windows-only".into())
+}
+
 /// A PowerShell script that writes the image with Windows' own IMAPI2 stack.
 /// The placeholders are substituted by `windows_script`; keeping it as a raw
 /// string avoids doubling every PowerShell brace for `format!`.
