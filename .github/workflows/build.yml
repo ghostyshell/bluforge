@@ -6,7 +6,7 @@ on:
       platforms:
         description: "all, macos, linux or windows"
         type: choice
-        options: [all, macos, macos-x64, linux, linux-cli, ui, windows]
+        options: [all, macos, macos-x64, linux, linux-cli, linux-ui, ui, windows]
         default: all
   push:
     tags: ["v*"]
@@ -188,7 +188,7 @@ jobs:
 
   linux-app:
     name: Linux x64 (AppImage + deb)
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.platforms == 'all' || inputs.platforms == 'linux' }}
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.platforms == 'all' || inputs.platforms == 'linux' || inputs.platforms == 'linux-ui' }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -238,6 +238,35 @@ jobs:
         with:
           name: linux-app
           path: dist/*
+
+  linux-ui:
+    name: Linux desktop UI (Xvfb)
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.platforms == 'all' || inputs.platforms == 'linux' || inputs.platforms == 'linux-ui' }}
+    needs: linux-app
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-app
+          path: dist
+      - name: Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb xdotool imagemagick dbus-x11
+      - name: Run the window smoke test
+        run: |
+          Xvfb :99 -screen 0 1440x900x24 >/dev/null 2>&1 &
+          export DISPLAY=:99
+          sleep 2
+          dbus-run-session -- scripts/ui-smoke-linux.sh dist/*.AppImage /tmp/ui-linux
+      - name: Upload the screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-ui
+          path: /tmp/ui-linux
+          if-no-files-found: warn
 
   menu-check:
     name: BD-J menu render
@@ -440,11 +469,88 @@ jobs:
           if ($rc -ne 2) { throw "the AACS helper did not load or returned $rc instead of BF_ERR_MKB" }
           Write-Host "AACS helper loaded (bf_media_key -> $rc)"
           Write-Host "installed at $($exe.FullName)"
+
+          # The app reads this before its window opens.
+          $cfgDir = Join-Path $env:APPDATA "keepsake-atelier"
+          New-Item -ItemType Directory -Force -Path $cfgDir | Out-Null
+          '{"mcp_enabled":true,"mcp_port":8848}' |
+            Set-Content -Path (Join-Path $cfgDir "config.json") -Encoding utf8
+
           $app = Start-Process -FilePath $exe.FullName -PassThru
-          Start-Sleep -Seconds 15
-          if ($app.HasExited) { throw "the app exited during startup (code $($app.ExitCode))" }
-          Write-Host "app still running after 15s (pid $($app.Id))"
+          Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
+          $root = [System.Windows.Automation.AutomationElement]::RootElement
+
+          $deadline = (Get-Date).AddSeconds(90)
+          $win = $null
+          $cond = New-Object System.Windows.Automation.PropertyCondition(
+            [System.Windows.Automation.AutomationElement]::ProcessIdProperty, $app.Id)
+          while ((Get-Date) -lt $deadline -and -not $win) {
+            if ($app.HasExited) { throw "the app exited before opening a window (code $($app.ExitCode))" }
+            $win = $root.FindFirst([System.Windows.Automation.TreeScope]::Children, $cond)
+            if (-not $win) { Start-Sleep -Seconds 2 }
+          }
+          if (-not $win) { throw "the app opened no main window" }
+          Write-Host "window: $($win.Current.Name)"
+
+          # The webview content is a UIA subtree; the header trigger is a stable,
+          # user-facing control, so finding and invoking it proves the shell
+          # rendered and accepts input.
+          $btnCond = New-Object System.Windows.Automation.PropertyCondition(
+            [System.Windows.Automation.AutomationElement]::NameProperty, "Open the command palette")
+          $btn = $null
+          $deadline = (Get-Date).AddSeconds(90)
+          while ((Get-Date) -lt $deadline -and -not $btn) {
+            $btn = $win.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $btnCond)
+            if (-not $btn) { Start-Sleep -Seconds 2 }
+          }
+          if (-not $btn) { throw "the shell did not expose the command trigger" }
+          Write-Host "the shell rendered its command trigger"
+
+          $invoke = $btn.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
+          $invoke.Invoke()
+          Start-Sleep -Seconds 2
+          $dlgCond = New-Object System.Windows.Automation.PropertyCondition(
+            [System.Windows.Automation.AutomationElement]::NameProperty, "Command palette")
+          $dlg = $win.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $dlgCond)
+          if (-not $dlg) { throw "the command palette did not open" }
+          Write-Host "the command palette opened"
+
+          # MCP answers on loopback once the backend is up.
+          $init = $null
+          $deadline = (Get-Date).AddSeconds(60)
+          while ((Get-Date) -lt $deadline -and -not $init) {
+            try {
+              $init = Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8848/mcp" `
+                -ContentType "application/json" `
+                -Body '{"jsonrpc":"2.0","id":1,"method":"initialize"}'
+            } catch { Start-Sleep -Seconds 2 }
+          }
+          if (-not $init) { throw "the MCP server did not answer" }
+          $tools = Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8848/mcp" `
+            -ContentType "application/json" `
+            -Body '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
+          $count = @($tools.result.tools).Count
+          if ($count -lt 10) { throw "expected at least 10 MCP tools, got $count" }
+          Write-Host "mcp: $($init.result.serverInfo.name), $count tools"
+
+          try {
+            Add-Type -AssemblyName System.Drawing
+            $bmp = New-Object System.Drawing.Bitmap 1440, 900
+            $g = [System.Drawing.Graphics]::FromImage($bmp)
+            $g.CopyFromScreen(0, 0, 0, 0, $bmp.Size)
+            $bmp.Save("$env:GITHUB_WORKSPACE\ui-windows.png")
+            Write-Host "captured ui-windows.png"
+          } catch {
+            Write-Warning "screen capture failed: $_"
+          }
           Stop-Process -Id $app.Id -Force
+      - name: Upload the UI screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-ui
+          path: ui-windows.png
+          if-no-files-found: warn
       - uses: actions/upload-artifact@v4
         with:
           name: windows-app
