@@ -110,23 +110,26 @@ You want to see:
 
 ## Authoring helper: tsMuxeR
 
-Authoring uses tsMuxeR. Put a macOS build at:
-
-```
-~/Library/Application Support/keepsake-atelier/bin/tsMuxeR
-```
-
-and make it executable:
+Authoring uses tsMuxeR. The CLI installs the pinned upstream build (2.7.0) into
+the data directory, verifies its SHA-256 and checks that it runs:
 
 ```sh
-chmod +x "$HOME/Library/Application Support/keepsake-atelier/bin/tsMuxeR"
+keepsake-atelier tsmuxer --install
+keepsake-atelier tsmuxer           # print the path it will use
 ```
 
-Alternatively install it on `PATH` as `tsMuxeR`, or point at it explicitly:
+The app does the same from **System -> Installed tools -> tsMuxeR -> Install**.
+Upstream publishes an arm64 macOS build only, so an Intel Mac falls back to a
+manual install.
+
+Alternatives, in priority order: a `KEEPSAKE_TSMUXER` path, the managed copy in
+`bin/`, a copy beside the app or on `PATH`:
 
 ```sh
 export KEEPSAKE_TSMUXER=/path/to/tsMuxeR
 ```
+
+tsMuxeR is Apache-2.0 and is downloaded at your request, not bundled.
 
 ## Data directory
 

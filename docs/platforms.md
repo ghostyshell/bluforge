@@ -16,7 +16,7 @@ interfaces, so each platform is at a different stage.
 | Optical drive discovery | IOKit | IOKit | sysfs (`/dev/sr*`) | WMI (`Win32_CDROMDrive`) |
 | Native AACS key recovery | yes | yes | yes (LibreDrive/auth) | yes (LibreDrive/auth) |
 | Rip and encode | yes | yes | yes (released CLI bundles ffmpeg) | yes (released CLI bundles ffmpeg) |
-| Author to a BDMV folder | yes | yes | yes, with tsMuxeR | yes, with tsMuxeR |
+| Author to a BDMV folder | yes (managed tsMuxeR) | yes (tsMuxeR on `PATH`) | yes (managed tsMuxeR) | yes (managed tsMuxeR) |
 | Author a UDF 2.50 ISO | yes (`newfs_udf`) | yes | yes (portable, BD-R) | yes (portable, BD-R) |
 | Authored BD-J menu | yes | yes | yes (writer) | yes (writer) |
 | DVD-Video | yes (bundled ffmpeg) | yes (bundled ffmpeg) | yes (bundled ffmpeg) | yes (bundled ffmpeg) |

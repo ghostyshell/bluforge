@@ -1906,6 +1906,18 @@ export default function App() {
                                 <span className="dot" />{c.ok ? "ok" : "missing"}
                               </span>
                               <b>{c.name}</b> <span className="sub mono">{c.detail}</span>
+                              {!c.ok && c.name === "tsMuxeR" && (
+                                <button className="ghost sm" style={{ marginLeft: 7 }}
+                                  onClick={async () => {
+                                    try {
+                                      const p = await api.tsmuxerInstall();
+                                      setDoctor(await api.doctor());
+                                      setToast(`tsMuxeR installed at ${p}`);
+                                    } catch (e) { setError(String(e)); }
+                                  }}>
+                                  Install
+                                </button>
+                              )}
                               {!c.ok && c.fix && <div className="sub" style={{ marginLeft: 4 }}>fix: {c.fix}</div>}
                             </div>
                           ))}

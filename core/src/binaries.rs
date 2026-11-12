@@ -31,13 +31,33 @@ fn candidates(name: &str) -> Vec<PathBuf> {
             v.push(prefix.join("lib").join("keepsake-atelier").join(name));
         }
     }
-    v.push(crate::config_dir().join("bin").join(name));
+    let bin = crate::config_dir().join("bin").join(name);
+    v.push(bin.clone());
+    if cfg!(target_os = "windows") && Path::new(name).extension().is_none() {
+        v.push(bin.with_extension("exe"));
+    }
     v
 }
 
-/// First existing helper named `name`, if any.
+/// Look a helper up on `PATH`, including `.exe` on Windows.
+fn in_path(name: &str) -> Option<PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    let mut names = vec![name.to_string()];
+    if cfg!(target_os = "windows") && Path::new(name).extension().is_none() {
+        names.insert(0, format!("{name}.exe"));
+    }
+    std::env::split_paths(&path)
+        .flat_map(|dir| names.iter().map(move |n| dir.join(n)))
+        .find(|p| p.is_file())
+}
+
+/// First existing helper named `name`, if any. Bundled and data-directory
+/// copies win over `PATH`.
 pub fn helper(name: &str) -> Option<PathBuf> {
-    candidates(name).into_iter().find(|p| p.is_file())
+    candidates(name)
+        .into_iter()
+        .find(|p| p.is_file())
+        .or_else(|| in_path(name))
 }
 
 /// The helper's path as a string, for code that builds command lines.

@@ -743,6 +743,15 @@ fn bdplus_install() -> Result<String, String> {
 }
 
 #[tauri::command]
+async fn tsmuxer_install() -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(keepsake_core::tsmuxer::install)
+        .await
+        .map_err(|e| e.to_string())?
+        .map(|p| p.display().to_string())
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn start_rip(
     app: AppHandle,
     state: State<RpState>,
@@ -1042,6 +1051,7 @@ pub fn run() {
             keys_remove,
             keys_import,
             bdplus_install,
+            tsmuxer_install,
             disc_streams,
             queue_add,
             queue_list,

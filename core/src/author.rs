@@ -58,16 +58,14 @@ pub fn tsmuxer_path() -> Option<PathBuf> {
             return Some(PathBuf::from(p));
         }
     }
-    let managed = crate::config_dir().join("bin/tsMuxeR");
-    if managed.is_file() {
-        return Some(managed);
+    if let Some(p) = crate::binaries::helper("tsMuxeR") {
+        return Some(p);
     }
-    for c in ["/opt/homebrew/bin/tsMuxeR", "/usr/local/bin/tsMuxeR"] {
-        if Path::new(c).is_file() {
-            return Some(PathBuf::from(c));
-        }
-    }
-    None
+    // GUI launches can inherit a minimal PATH; keep the usual Homebrew spots.
+    ["/opt/homebrew/bin/tsMuxeR", "/usr/local/bin/tsMuxeR"]
+        .into_iter()
+        .map(PathBuf::from)
+        .find(|p| p.is_file())
 }
 
 fn ffprobe() -> String {
@@ -290,7 +288,7 @@ where
     }
     let bin = tsmuxer_path().ok_or_else(|| {
         CoreError::Disc(
-            "tsMuxeR is not installed (expected at ~/Library/Application Support/keepsake-atelier/bin/tsMuxeR)"
+            "tsMuxeR is not installed (run `keepsake-atelier tsmuxer --install`, or set KEEPSAKE_TSMUXER)"
                 .into(),
         )
     })?;

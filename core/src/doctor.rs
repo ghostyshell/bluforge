@@ -222,7 +222,7 @@ pub fn run() -> DoctorReport {
             Some(p) => format!("{} ({ts_version})", p.display()),
             None => "not installed".into(),
         },
-        Some("put tsMuxeR on PATH or in the keepsake-atelier data bin directory"),
+        Some("run `keepsake-atelier tsmuxer --install`, or put tsMuxeR on PATH"),
     ));
 
     // KEYDB

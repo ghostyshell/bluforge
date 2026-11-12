@@ -64,12 +64,55 @@ pub fn create_from_tree(tree: &Path, dest: &Path, volume: &str) -> Result<(), Co
         .finish(file_tree)
         .map_err(|e| CoreError::Disc(format!("UDF 2.50 image: {e}")))?;
 
+    // hadris lays the volume recognition sequence after the ISO descriptor
+    // slots, which lands at sector 19 for a UDF-only image. ECMA-167 readers
+    // (libudfread among them) look for it at sector 16, so move it there.
+    relocate_vrs(dest)?;
+
     let size = std::fs::metadata(dest).map(|m| m.len()).unwrap_or(0);
     if size == 0 {
         return Err(CoreError::Disc(
             "the UDF writer produced an empty image".into(),
         ));
     }
+    Ok(())
+}
+
+/// Copy the volume recognition sequence to the standard sector 16.
+///
+/// The sequence is three descriptors: BEA01, NSR02/03 and TEA01. It is left in
+/// place at its original offset too; readers stop at TEA01.
+fn relocate_vrs(image: &Path) -> Result<(), CoreError> {
+    use std::io::{Read, Seek, SeekFrom, Write};
+
+    const SECTOR: u64 = 2048;
+    const SLOTS: usize = 32;
+
+    let mut file = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(image)
+        .map_err(|e| CoreError::Disc(format!("open {}: {e}", image.display())))?;
+    let mut buf = vec![0u8; SECTOR as usize * SLOTS];
+    file.seek(SeekFrom::Start(16 * SECTOR))?;
+    file.read_exact(&mut buf)
+        .map_err(|e| CoreError::Disc(format!("read volume recognition area: {e}")))?;
+
+    let start =
+        (0..SLOTS).find(|i| buf[i * SECTOR as usize + 1..i * SECTOR as usize + 6] == *b"BEA01");
+    let Some(start) = start else {
+        return Err(CoreError::Disc(
+            "the UDF writer produced no volume recognition sequence".into(),
+        ));
+    };
+    if start == 0 {
+        return Ok(());
+    }
+    let from = start * SECTOR as usize;
+    let seq = buf[from..from + 3 * SECTOR as usize].to_vec();
+    file.seek(SeekFrom::Start(16 * SECTOR))?;
+    file.write_all(&seq)?;
+    file.flush()?;
     Ok(())
 }
 
@@ -89,6 +132,14 @@ mod tests {
         create_from_tree(&root, &dest, "KEEPSAKE TEST").unwrap();
         let size = std::fs::metadata(&dest).unwrap().len();
         assert!(size >= 2048 * 32, "image too small: {size}");
+
+        // ECMA-167 readers expect the volume recognition sequence at sector 16.
+        let image = std::fs::read(&dest).unwrap();
+        let vrs = &image[16 * 2048..16 * 2048 + 6];
+        assert_eq!(
+            vrs, b"\x00BEA01",
+            "volume recognition sequence is misplaced"
+        );
 
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_file(&dest);

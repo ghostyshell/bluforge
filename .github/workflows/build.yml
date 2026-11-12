@@ -68,6 +68,11 @@ jobs:
           tar -czf "dist/keepsake-atelier-${V}-macos-arm64.tar.gz" -C dist/cli \
             keepsake-atelier lib ffmpeg ffprobe 00000.jar ffmpeg-LICENSES.txt
           ls -lh dist
+      - name: Managed tsMuxeR
+        run: |
+          dist/cli/keepsake-atelier tsmuxer --install
+          dist/cli/keepsake-atelier doctor | tee /tmp/doctor.txt
+          grep -Eq "tsMuxeR +ok" /tmp/doctor.txt
       - uses: actions/upload-artifact@v4
         with:
           name: macos-arm64
@@ -123,6 +128,13 @@ jobs:
           tar -czf "dist/keepsake-atelier-${V}-macos-x64.tar.gz" -C dist/cli \
             keepsake-atelier lib ffmpeg ffprobe 00000.jar ffmpeg-LICENSES.txt
           ls -lh dist
+      - name: Managed tsMuxeR has no Intel build
+        run: |
+          if dist/cli/keepsake-atelier tsmuxer --install; then
+            echo "unexpected managed tsMuxeR install on Intel macOS" >&2
+            exit 1
+          fi
+          dist/cli/keepsake-atelier tsmuxer | grep -q "not installed"
       - uses: actions/upload-artifact@v4
         with:
           name: macos-x64
@@ -156,6 +168,23 @@ jobs:
         run: cargo build --release -p keepsake-atelier
       - name: Test core
         run: cargo test -p keepsake-core --lib
+      - name: Managed tsMuxeR and an authored ISO
+        run: |
+          BIN=./target/release/keepsake-atelier
+          "$BIN" tsmuxer --install
+          "$BIN" doctor | tee /tmp/doctor.txt
+          grep -Eq "tsMuxeR +ok" /tmp/doctor.txt
+          for name in a b; do
+            app/src-tauri/resources/ffmpeg -hide_banner -loglevel error \
+              -f lavfi -i testsrc2=size=320x240:rate=24 -t 3 \
+              -c:v libx264 -pix_fmt yuv420p "/tmp/$name.mkv"
+          done
+          "$BIN" author /tmp/a.mkv /tmp/b.mkv --out /tmp/tsmuxer.iso \
+            --label TSMUXER --menu
+          test -s /tmp/tsmuxer.iso
+          "$BIN" disc /tmp/tsmuxer.iso | tee /tmp/disc.txt
+          grep -q "titles    : 2" /tmp/disc.txt
+          "$BIN" tsmuxer | grep -q "$HOME/.config/keepsake-atelier/bin/tsMuxeR"
       - name: Package
         run: |
           V=$(python3 -c 'import json; print(json.load(open("app/src-tauri/tauri.conf.json"))["version"])')
@@ -668,6 +697,26 @@ jobs:
           & dist\keepsake-atelier.exe libs
           foreach ($f in @("ffmpeg.exe", "ffprobe.exe", "00000.jar")) {
             if (-not (Test-Path "dist\$f")) { throw "missing dist\$f" }
+          }
+
+          # The managed tsMuxeR makes authoring work without a system install.
+          & dist\keepsake-atelier.exe tsmuxer --install
+          if ($LASTEXITCODE -ne 0) { throw "tsmuxer --install failed" }
+          & dist\keepsake-atelier.exe doctor | Tee-Object -FilePath doctor2.txt
+          if (-not (Select-String -Path doctor2.txt -Pattern "tsMuxeR\s+ok")) {
+            throw "doctor does not report the managed tsMuxeR"
+          }
+          foreach ($name in @("a", "b")) {
+            & dist\ffmpeg.exe -hide_banner -loglevel error -f lavfi `
+              -i testsrc2=size=320x240:rate=24 -t 3 -c:v libx264 -pix_fmt yuv420p "$name.mkv"
+            if ($LASTEXITCODE -ne 0) { throw "ffmpeg could not make $name.mkv" }
+          }
+          & dist\keepsake-atelier.exe author a.mkv b.mkv --out tsmuxer.iso --label TSMUXER
+          if ($LASTEXITCODE -ne 0) { throw "author failed with the managed tsMuxeR" }
+          if (-not (Test-Path tsmuxer.iso)) { throw "author wrote no ISO" }
+          & dist\keepsake-atelier.exe disc tsmuxer.iso | Tee-Object -FilePath disc.txt
+          if (-not (Select-String -Path disc.txt -Pattern "titles\s+:\s+2")) {
+            throw "the authored ISO does not list two titles"
           }
       - uses: actions/upload-artifact@v4
         with:

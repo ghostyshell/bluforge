@@ -430,6 +430,7 @@ export const api = {
   keysNative: (source: string | null) =>
     invoke<NativeKeyResult>("keys_native", { source }),
   bdplusInstall: () => invoke<string>("bdplus_install"),
+  tsmuxerInstall: () => invoke<string>("tsmuxer_install"),
   verify: (path: string) => invoke<VerifyReport>("verify", { path }),
   doctor: () => invoke<DoctorReport>("doctor"),
   burnStart: (request: {

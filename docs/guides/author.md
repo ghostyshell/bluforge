@@ -5,7 +5,9 @@ title per input, as a BDMV folder or a native UDF 2.50 ISO.
 
 ## Before you start
 
-- tsMuxeR must be installed. See [Install](install.md).
+- tsMuxeR must be available. `keepsake-atelier tsmuxer --install` (or the
+  Install button under System -> Installed tools) gets the pinned build; see
+  [Install](install.md).
 - Inputs should already be in a Blu-ray compatible codec: H.264 or HEVC video,
   and AC-3, E-AC-3, DTS, TrueHD or LPCM audio. The app tells you what it can
   carry before muxing.

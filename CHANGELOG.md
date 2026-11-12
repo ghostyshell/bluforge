@@ -6,6 +6,17 @@ All notable changes to Keepsake Atelier. Newest first.
 
 ### Added
 
+- **Managed tsMuxeR.** `keepsake-atelier tsmuxer --install` downloads the
+  pinned 2.7.0 release for this platform, checks its SHA-256, stores it in the
+  data directory and refuses a binary that does not run. The app exposes the
+  same action from System -> Installed tools, `doctor` points at it, and helper
+  lookup now searches `PATH` (plus the data directory and the app bundle) on
+  every platform, not just the two macOS Homebrew paths. CI installs it and
+  authors a two-title ISO on Linux and Windows.
+- **Authored portable ISOs are readable directly.** The UDF volume recognition
+  sequence was written at sector 19 instead of the standard sector 16, so
+  libudfread refused every portable image. `disc` now opens the authored ISO
+  without mounting it.
 - **Window-level desktop checks.** Linux CI boots the AppImage under Xvfb and
   openbox, waits for the Tauri window, checks that the frame is not blank,
   hovers and clicks a rail section (a 451k-pixel page change), and calls the MCP

@@ -26,6 +26,7 @@ pub mod rip;
 #[cfg(any(target_os = "linux", target_os = "windows"))]
 pub mod scsi;
 pub mod template;
+pub mod tsmuxer;
 pub mod tv;
 pub mod udf;
 pub mod udf_portable;

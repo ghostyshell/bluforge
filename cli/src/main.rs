@@ -173,6 +173,12 @@ enum Cmd {
         #[arg(long)]
         install: bool,
     },
+    /// Locate or install the managed tsMuxeR.
+    Tsmuxer {
+        /// Download the pinned upstream build into the data directory.
+        #[arg(long)]
+        install: bool,
+    },
     /// Export a decrypted ISO (or `--folder`): all AACS/BD+ removed.
     Iso {
         /// Disc source: mounted volume, BDMV folder, ISO, or /dev/rdiskN.
@@ -1022,6 +1028,18 @@ fn run(cli: &Cli) -> Result<(), keepsake_core::CoreError> {
                         "no (run `keepsake-atelier bdplus --install`)"
                     }
                 );
+            }
+        }
+        Cmd::Tsmuxer { install } => {
+            if *install {
+                let p = keepsake_core::tsmuxer::install()?;
+                println!("installed tsMuxeR at {}", p.display());
+            }
+            match keepsake_core::author::tsmuxer_path() {
+                Some(p) => println!("tsMuxeR : {}", p.display()),
+                None => {
+                    println!("tsMuxeR : not installed (run `keepsake-atelier tsmuxer --install`)")
+                }
             }
         }
         Cmd::Libs => {
