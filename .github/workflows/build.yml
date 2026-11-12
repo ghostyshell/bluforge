@@ -253,12 +253,13 @@ jobs:
       - name: Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb xdotool imagemagick dbus-x11 \
+          sudo apt-get install -y xvfb xdotool imagemagick dbus-x11 openbox \
             libegl1 libgl1 libglx-mesa0 libgles2 libopengl0 libnss3 libasound2t64
       - name: Run the window smoke test
         run: |
           Xvfb :99 -screen 0 1440x900x24 >/dev/null 2>&1 &
           export DISPLAY=:99
+          openbox >/dev/null 2>&1 &
           sleep 2
           dbus-run-session -- scripts/ui-smoke-linux.sh dist/*.AppImage /tmp/ui-linux
       - name: Upload the screenshots

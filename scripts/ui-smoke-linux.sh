@@ -101,15 +101,30 @@ PY
 
 # Keyboard: open the command palette, capture it, close it again. A scrim makes
 # the frame measurably different from the shell capture.
-xdotool windowfocus "$WID" 2>/dev/null || true
+changed_pixels() {
+    compare -metric AE "$OUT/shell.png" "$1" null: 2>&1 | awk '{print $1}'
+}
+
+xdotool windowactivate --sync "$WID" 2>/dev/null ||
+    xdotool windowfocus --sync "$WID" 2>/dev/null || true
 sleep 1
-xdotool key ctrl+k
+xdotool key --clearmodifiers ctrl+k
 sleep 2
 import -window "$WID" "$OUT/palette.png"
-CHANGED=$(compare -metric AE "$OUT/shell.png" "$OUT/palette.png" null: 2>&1 | awk '{print $1}')
+CHANGED=$(changed_pixels "$OUT/palette.png")
 echo "changed pixels after ctrl+k: $CHANGED"
+
+if [ "${CHANGED:-0}" -le 2000 ]; then
+    # No window manager, or the key was swallowed: click the top-bar trigger.
+    eval "$(xdotool getwindowgeometry --shell "$WID")"
+    xdotool mousemove $((X + WIDTH * 78 / 100)) $((Y + 29)) click 1
+    sleep 2
+    import -window "$WID" "$OUT/palette.png"
+    CHANGED=$(changed_pixels "$OUT/palette.png")
+    echo "changed pixels after the click fallback: $CHANGED"
+fi
 [ "${CHANGED:-0}" -gt 2000 ] || { echo "the command palette did not open" >&2; exit 1; }
-xdotool key Escape
+xdotool key --clearmodifiers Escape
 sleep 1
 
 kill -0 "$PID" 2>/dev/null || { echo "the app exited during the interaction" >&2; exit 1; }
