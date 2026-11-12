@@ -170,6 +170,27 @@ jobs:
         run: cargo test -p keepsake-core
         env:
           KEEPSAKE_FFMPEG: ${{ github.workspace }}/app/src-tauri/resources/ffmpeg
+      - name: Cinavia encodes back to the source format
+        run: |
+          FF=app/src-tauri/resources/ffmpeg
+          BIN=./target/release/keepsake-atelier
+          $FF -hide_banner -loglevel error -f lavfi -i "sine=frequency=440:duration=4" \
+            -af "pan=5.1|c0=c0|c1=c0|c2=c0|c3=c0|c4=c0|c5=c0" -c:a pcm_f32le -y /tmp/cin51.wav
+          for codec in ac3 eac3 dts truehd; do
+            "$BIN" cinavia strip /tmp/cin51.wav "/tmp/cin-$codec.mkv" --codec "$codec"
+            "$FF" -hide_banner -i "/tmp/cin-$codec.mkv" 2>&1 | grep -q "Audio: $codec"
+            "$FF" -v error -i "/tmp/cin-$codec.mkv" -f null - 
+            echo "$codec ok"
+          done
+          # auto on PCM stays lossless, and a 7.1 track survives as FLAC.
+          "$BIN" cinavia strip /tmp/cin51.wav /tmp/cin-auto.mkv
+          "$FF" -hide_banner -i /tmp/cin-auto.mkv 2>&1 | grep -q "Audio: flac"
+          $FF -hide_banner -loglevel error -f lavfi -i "sine=frequency=440:duration=4" \
+            -af "pan=7.1|c0=c0|c1=c0|c2=c0|c3=c0|c4=c0|c5=c0|c6=c0|c7=c0" -y /tmp/cin71.wav
+          "$BIN" cinavia strip /tmp/cin71.wav /tmp/cin71.mkv --codec flac
+          app/src-tauri/resources/ffprobe -v error -select_streams a \
+            -show_entries stream=channels -of csv=p=0 /tmp/cin71.mkv | grep -qx 8
+
       - name: Managed tsMuxeR and an authored ISO
         run: |
           BIN=./target/release/keepsake-atelier

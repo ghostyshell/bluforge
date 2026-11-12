@@ -142,9 +142,12 @@ pub struct RipRequest {
     #[serde(default)]
     pub start_episode: Option<u32>,
     /// Strip the Cinavia watermark from the kept audio. Audio is re-encoded
-    /// (FLAC in MKV, AAC in MP4) because a copy cannot carry the filter.
+    /// because a copy cannot carry the filter.
     #[serde(default)]
     pub cinavia: bool,
+    /// Codec for the stripped audio; `None` follows the source format.
+    #[serde(default)]
+    pub cinavia_codec: Option<crate::cinavia::Codec>,
 }
 
 fn yes() -> bool {
@@ -1327,7 +1330,7 @@ fn feed_title(
     })
 }
 
-fn build_args(req: &RipRequest, ctx: &TrackCtx, cinavia: &[(usize, PathBuf)]) -> Vec<String> {
+fn build_args(req: &RipRequest, ctx: &TrackCtx, cinavia: &[PreparedAudio]) -> Vec<String> {
     let mkv = matches!(
         &req.mode,
         RipMode::Remux {
@@ -1365,18 +1368,37 @@ fn build_args(req: &RipRequest, ctx: &TrackCtx, cinavia: &[(usize, PathBuf)]) ->
     }
 
     // Cinavia: each kept audio track is pre-filtered into its own input, so the
-    // map is re-pointed at that input and the audio gets re-encoded.
+    // map is re-pointed at that input and the audio gets re-encoded to the
+    // codec chosen for it (normally the source format).
+    let mut encoders: Vec<Vec<String>> = Vec::new();
     if !cinavia.is_empty() {
         let first = a.iter().filter(|x| x.as_str() == "-i").count();
-        for (n, (_, path)) in cinavia.iter().enumerate() {
+        for (n, prep) in cinavia.iter().enumerate() {
+            // dca and truehd only take a 5.1(side) layout; a decoded WAV carries
+            // no layout, and 7.1 has to be folded down anyway.
+            if prep.target.channels >= 8 {
+                a.push("-channel_layout".into());
+                a.push("7.1".into());
+            } else if prep.target.channels >= 6 {
+                a.push("-channel_layout".into());
+                a.push("5.1(side)".into());
+            }
             a.push("-i".into());
-            a.push(path.to_string_lossy().into_owned());
+            a.push(prep.wav.to_string_lossy().into_owned());
             let _ = n;
         }
         for m in maps.iter_mut() {
             if let Some(idx) = m.strip_prefix("0:a:").and_then(|x| x.parse::<usize>().ok()) {
-                if let Some(pos) = cinavia.iter().position(|(t, _)| *t == idx) {
+                if let Some(pos) = cinavia.iter().position(|p| p.track == idx) {
                     *m = format!("{}:a:0", first + pos);
+                    let out_index = encoders.len();
+                    let mut args = crate::cinavia::encode_args(&cinavia[pos].target);
+                    // encode_args always opens with a plain `-c:a`; index it to
+                    // this output stream.
+                    if let Some(first) = args.first_mut() {
+                        *first = format!("-c:a:{out_index}");
+                    }
+                    encoders.push(args);
                 }
             }
         }
@@ -1386,20 +1408,25 @@ fn build_args(req: &RipRequest, ctx: &TrackCtx, cinavia: &[(usize, PathBuf)]) ->
         RipMode::Remux { container } => match container {
             Container::Mkv => {
                 a.extend(map_args(&maps));
-                if cinavia.is_empty() {
+                if encoders.is_empty() {
                     a.extend(["-c".into(), "copy".into()]);
                 } else {
-                    a.extend(["-c:v".into(), "copy".into(), "-c:a".into(), "flac".into()]);
+                    a.extend(["-c:v".into(), "copy".into()]);
+                    for e in &encoders {
+                        a.extend(e.iter().cloned());
+                    }
                     a.extend(["-c:s".into(), "copy".into()]);
                 }
             }
             Container::Mp4 => {
                 a.extend(map_args(&maps));
-                if cinavia.is_empty() {
+                if encoders.is_empty() {
                     a.extend(["-c".into(), "copy".into()]);
                 } else {
-                    a.extend(["-c:v".into(), "copy".into(), "-c:a".into(), "aac".into()]);
-                    a.extend(["-b:a".into(), "640k".into()]);
+                    a.extend(["-c:v".into(), "copy".into()]);
+                    for e in &encoders {
+                        a.extend(e.iter().cloned());
+                    }
                 }
             }
         },
@@ -1412,11 +1439,9 @@ fn build_args(req: &RipRequest, ctx: &TrackCtx, cinavia: &[(usize, PathBuf)]) ->
                 a.push(m.clone());
             }
             a.extend(codec_args(settings));
-            if !cinavia.is_empty() {
-                if mkv {
-                    a.extend(["-c:a".into(), "flac".into()]);
-                } else {
-                    a.extend(["-c:a".into(), "aac".into(), "-b:a".into(), "640k".into()]);
+            if !encoders.is_empty() {
+                for e in &encoders {
+                    a.extend(e.iter().cloned());
                 }
             } else if settings.aac_audio {
                 a.extend(["-c:a".into(), "aac".into(), "-b:a".into(), "640k".into()]);
@@ -1585,6 +1610,13 @@ fn write_chapters(
     Ok(())
 }
 
+/// One filtered track waiting to be muxed, with the encoder chosen for it.
+struct PreparedAudio {
+    track: usize,
+    wav: PathBuf,
+    target: crate::cinavia::Target,
+}
+
 /// Decode every kept audio track, measure and strip the Cinavia watermark, and
 /// return the processed WAVs with their audio indices. The caller muxes them in
 /// place of the originals.
@@ -1597,7 +1629,7 @@ fn prepare_cinavia(
     req: &RipRequest,
     ctx: &TrackCtx,
     cancel: &std::sync::atomic::AtomicBool,
-) -> Result<(PathBuf, Vec<(usize, PathBuf)>), CoreError> {
+) -> Result<(PathBuf, Vec<PreparedAudio>), CoreError> {
     let (maps, _) = plan_tracks(ctx, req.audio, req.subs);
     let tracks: Vec<usize> = maps
         .iter()
@@ -1656,7 +1688,8 @@ fn prepare_cinavia(
 
     let mut out = Vec::new();
     for (n, raw) in raws.iter().enumerate() {
-        let (channels, _) = crate::cinavia::probe(raw, 0).map_err(CoreError::Disc)?;
+        let probe = crate::cinavia::probe(raw, 0).map_err(CoreError::Disc)?;
+        let channels = probe.channels;
         let report =
             crate::cinavia::analyze(raw, 0, channels, Some(120)).map_err(CoreError::Disc)?;
         if report.verdict == crate::cinavia::Verdict::Clean {
@@ -1669,7 +1702,42 @@ fn prepare_cinavia(
         let dst = dir.join(format!("clean-{n}.wav"));
         crate::cinavia::strip(raw, 0, &dst, spec, channels, cancel, |_| {})
             .map_err(CoreError::Disc)?;
-        out.push((tracks[n], dst));
+
+        // The source coding type is on the disc stream, not on the decoded WAV.
+        let coding = ctx
+            .streams
+            .iter()
+            .filter(|st| st.kind == "audio")
+            .nth(tracks[n])
+            .map(|st| st.coding_type)
+            .unwrap_or(0x80);
+        let (source_family, hd) = crate::cinavia::Codec::from_bd(coding);
+        let mkv = !matches!(
+            &req.mode,
+            RipMode::Remux {
+                container: Container::Mp4
+            } | RipMode::Encode {
+                container: Container::Mp4,
+                ..
+            }
+        );
+        let target = crate::cinavia::target_for(
+            req.cinavia_codec.unwrap_or(crate::cinavia::Codec::Auto),
+            source_family,
+            hd,
+            None,
+            channels,
+            mkv,
+        )
+        .map_err(CoreError::Disc)?;
+        if let Some(note) = &target.note {
+            tracing::info!(track = tracks[n], %note, "cinavia: encoder choice");
+        }
+        out.push(PreparedAudio {
+            track: tracks[n],
+            wav: dst,
+            target,
+        });
     }
     Ok((dir, out))
 }
@@ -1901,7 +1969,7 @@ where
 
     // Cinavia: pre-filter each kept audio track into a temp WAV. This reads the
     // disc once more (audio only), so it is opt-in.
-    let mut cinavia_temps: Vec<(usize, PathBuf)> = Vec::new();
+    let mut cinavia_temps: Vec<PreparedAudio> = Vec::new();
     let mut cinavia_dir: Option<PathBuf> = None;
     if want_cinavia {
         match prepare_cinavia(

@@ -39,8 +39,12 @@ All notable changes to Keepsake Atelier. Newest first.
   ridges and 80-93 mass, which is what calibrated the thresholds.
   `cinavia strip` notches the detected band with raised-cosine edges, adds a
   shallower cut across the rest of the 400-4000 Hz band and re-encodes the
-  audio (FLAC in MKV, AAC in MP4), deepening once if the band is still above
-  the clean level. It is wired into `rip --cinavia`, `watch --cinavia`, the Rip
+  audio, deepening once if the band is still above the clean level. `--codec`
+  (and `--cinavia-codec` on `rip`) encodes back to the source format: AC-3,
+  E-AC-3, DTS and TrueHD are implemented, `auto` follows the source track, and
+  an impossible pairing is rejected instead of substituted. The Dolby and DTS
+  encoders cap at 5.1 and DTS-HD MA has no encoder, so `auto` keeps FLAC for HD
+  sources and anything 7.1 that the chosen encoder cannot hold is folded down. It is wired into `rip --cinavia`, `watch --cinavia`, the Rip
   page and the Automation card, and MCP accepts the flag. The pass costs level
   and brightness and cannot be verified without a Cinavia-aware player; the
   limits, and the measurement behind them, are in [guides/cinavia.md](docs/guides/cinavia.md).

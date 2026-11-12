@@ -117,9 +117,13 @@ enum Cmd {
         /// hiccups after a replug). Default 2.
         #[arg(long, default_value_t = 2)]
         retries: u32,
-        /// Strip the Cinavia watermark from the audio (re-encodes it to FLAC).
+        /// Strip the Cinavia watermark from the audio (re-encodes it).
         #[arg(long)]
         cinavia: bool,
+        /// Codec for stripped audio: auto (source format), ac3, eac3, dts,
+        /// truehd, flac or aac.
+        #[arg(long)]
+        cinavia_codec: Option<String>,
     },
     /// Cover art: search and download case/disc covers.
     Covers {
@@ -298,6 +302,10 @@ enum CinaviaAction {
         /// Cut the whole 280-4000 Hz watermark band.
         #[arg(long)]
         aggressive: bool,
+        /// Codec for the output audio: auto (source format), ac3, eac3, dts,
+        /// truehd, flac or aac.
+        #[arg(long, default_value = "auto")]
+        codec: String,
         /// Measure and print the plan, write nothing.
         #[arg(long)]
         dry_run: bool,
@@ -740,6 +748,7 @@ fn watch_source(
             episodes: None,
             start_episode: None,
             cinavia: cfg.cinavia,
+            cinavia_codec: cfg.cinavia_codec,
         };
         let cancel = std::sync::atomic::AtomicBool::new(false);
         let mut dest: Option<std::path::PathBuf> = None;
@@ -801,15 +810,16 @@ fn cinavia_detect(
     };
     let mut reports = Vec::new();
     for t in tracks {
-        let (channels, _) = cinavia::probe(path, t).map_err(keepsake_core::CoreError::Config)?;
+        let probe = cinavia::probe(path, t).map_err(keepsake_core::CoreError::Config)?;
         reports.push(
-            cinavia::analyze(path, t, channels, Some(seconds))
+            cinavia::analyze(path, t, probe.channels, Some(seconds))
                 .map_err(keepsake_core::CoreError::Config)?,
         );
     }
     Ok(reports)
 }
 
+#[allow(clippy::too_many_arguments)]
 #[allow(clippy::too_many_arguments)]
 fn cinavia_strip(
     path: &std::path::Path,
@@ -819,13 +829,16 @@ fn cinavia_strip(
     band: Option<&str>,
     aggressive: bool,
     dry_run: bool,
+    codec: &str,
 ) -> Result<(), keepsake_core::CoreError> {
     use keepsake_core::cinavia;
     let e = keepsake_core::CoreError::Config;
-    let (channels, codec) = cinavia::probe(path, track).map_err(e)?;
+    let probe = cinavia::probe(path, track).map_err(e)?;
+    let channels = probe.channels;
+    let source_codec = probe.codec.clone();
     let report = cinavia::analyze(path, track, channels, Some(180)).map_err(e)?;
     println!(
-        "track {track} ({channels} ch {codec}): {} ridges, {:.1} dB excess  -> {}",
+        "track {track} ({channels} ch {source_codec}): {} ridges, {:.1} dB excess  -> {}",
         report.density,
         report.mean_excess_db,
         report.verdict.label()
@@ -856,15 +869,28 @@ fn cinavia_strip(
     }
     spec.depth_db = depth.unwrap_or(report.depth_db);
 
-    let audio_codec = if out
+    let mkv = !out
         .extension()
         .and_then(|x| x.to_str())
-        .is_some_and(|x| matches!(x, "mp4" | "m4v" | "mov"))
-    {
-        "aac"
-    } else {
-        "flac"
-    };
+        .is_some_and(|x| matches!(x, "mp4" | "m4v" | "mov"));
+    let want = cinavia::Codec::parse(codec).map_err(e)?;
+    let hd = probe
+        .profile
+        .as_deref()
+        .map(|p| p.to_ascii_uppercase().contains("HD") || p.to_ascii_uppercase().contains("MA"))
+        .unwrap_or(false);
+    let target = cinavia::target_for(
+        want,
+        cinavia::Codec::from_name(&source_codec),
+        hd,
+        probe.kbps,
+        channels,
+        mkv,
+    )
+    .map_err(e)?;
+    if let Some(note) = &target.note {
+        println!("note: {note}");
+    }
     println!(
         "plan: notch {:.0}-{:.0} Hz at {:.0} dB, bed {:.0}-{:.0} Hz at {:.0} dB, re-encode {}",
         spec.lo,
@@ -873,7 +899,7 @@ fn cinavia_strip(
         cinavia::BED.0,
         cinavia::BED.1,
         spec.bed_db,
-        audio_codec
+        target.label()
     );
     if dry_run {
         return Ok(());
@@ -916,22 +942,22 @@ fn cinavia_strip(
         spec.depth_db = (spec.depth_db + 3.0).min(18.0);
     }
 
-    let mkv = audio_codec == "flac";
     let mut cmd = std::process::Command::new(keepsake_core::rip::ffmpeg_path());
-    cmd.args(["-v", "error", "-y", "-i"])
-        .arg(path)
-        .arg("-i")
-        .arg(&tmp);
+    cmd.args(["-v", "error", "-y", "-i"]).arg(path);
+    // dca and truehd only accept a 5.1(side) layout and 5.1 at most, so a 7.1
+    // source is relabelled and folded down by the encoder.
+    if target.channels >= 8 {
+        cmd.args(["-channel_layout", "7.1"]);
+    } else if target.channels >= 6 {
+        cmd.args(["-channel_layout", "5.1(side)"]);
+    }
+    cmd.arg("-i").arg(&tmp);
     cmd.args(["-map", "0:v?", "-map", "1:a:0"]);
     if mkv {
         cmd.args(["-map", "0:s?", "-map", "0:d?", "-c:s", "copy"]);
     }
     cmd.args(["-map_metadata", "0", "-map_chapters", "0", "-c:v", "copy"]);
-    if mkv {
-        cmd.args(["-c:a", "flac"]);
-    } else {
-        cmd.args(["-c:a", "aac", "-b:a", "640k"]);
-    }
+    cmd.args(cinavia::encode_args(&target));
     cmd.args(["-disposition:a:0", "default"]).arg(out);
     let status = cmd.status().map_err(|err| e(format!("ffmpeg: {err}")))?;
     let _ = std::fs::remove_file(&tmp);
@@ -1518,6 +1544,7 @@ fn run(cli: &Cli) -> Result<(), keepsake_core::CoreError> {
                 band,
                 aggressive,
                 dry_run,
+                codec,
             } => {
                 cinavia_strip(
                     path,
@@ -1527,6 +1554,7 @@ fn run(cli: &Cli) -> Result<(), keepsake_core::CoreError> {
                     band.as_deref(),
                     *aggressive,
                     *dry_run,
+                    codec,
                 )?;
             }
         },
@@ -1612,6 +1640,7 @@ fn run(cli: &Cli) -> Result<(), keepsake_core::CoreError> {
             start_episode,
             retries,
             cinavia,
+            cinavia_codec,
         } => {
             use keepsake_core::{
                 Container, EncodeSettings, RipMode, RipProgress, RipRequest, VideoCodec,
@@ -1669,6 +1698,11 @@ fn run(cli: &Cli) -> Result<(), keepsake_core::CoreError> {
                 episodes: episodes.clone(),
                 start_episode: *start_episode,
                 cinavia: *cinavia,
+                cinavia_codec: cinavia_codec
+                    .as_deref()
+                    .map(keepsake_core::cinavia::Codec::parse)
+                    .transpose()
+                    .map_err(keepsake_core::CoreError::Config)?,
             };
             if tv_subs != "all" {
                 let mut c = AppConfig::load();

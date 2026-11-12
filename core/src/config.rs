@@ -83,6 +83,9 @@ pub struct AppConfig {
     /// Strip the Cinavia watermark from the audio on automatic rips.
     #[serde(default)]
     pub cinavia: bool,
+    /// Codec for stripped audio; `None` follows the source format.
+    #[serde(default)]
+    pub cinavia_codec: Option<crate::cinavia::Codec>,
 }
 
 pub fn default_auto_rip_mode() -> String {
@@ -158,6 +161,7 @@ impl Default for AppConfig {
             notify_webhook: None,
             prevent_sleep: true,
             cinavia: false,
+            cinavia_codec: None,
         }
     }
 }

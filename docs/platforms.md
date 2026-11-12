@@ -25,6 +25,7 @@ interfaces, so each platform is at a different stage.
 | MCP server | yes | yes | yes (CI smoke) | yes (CI smoke) |
 | Automatic rip | app + `watch` | app + `watch` | app + `watch` | app + `watch` |
 | Cinavia detect/strip | yes | yes | yes | yes |
+| Cinavia keeps Dolby/DTS | yes | yes | yes | yes |
 
 ## macOS
 

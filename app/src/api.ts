@@ -57,6 +57,7 @@ export type AppConfig = {
   notify_webhook?: string | null;
   prevent_sleep: boolean;
   cinavia: boolean;
+  cinavia_codec: string | null;
 };
 
 export type Title = {
@@ -110,6 +111,7 @@ export type EncodeSettings = {
   ten_bit: boolean;
   aac_audio: boolean;
   cinavia: boolean;
+  cinavia_codec: string;
 };
 
 export type RipMode =
@@ -139,6 +141,8 @@ export type RipRequest = {
   episodes: string | null;
   /** First episode number on this disc (uneven multi-disc sets). */
   start_episode: number | null;
+  cinavia?: boolean;
+  cinavia_codec?: string | null;
 };
 
 export type CoverHit = {

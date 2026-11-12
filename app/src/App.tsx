@@ -103,6 +103,7 @@ export default function App() {
   const [lossless, setLossless] = useState(true);
   const [enc, setEnc] = useState<EncodeSettings>({
     codec: "x265", quality: 20, preset: "medium", ten_bit: true, aac_audio: false, cinavia: false,
+    cinavia_codec: "auto",
   });
   const [audio, setAudio] = useState<AudioSel>("all");
   const [subs, setSubs] = useState<SubSel>("all");
@@ -368,6 +369,8 @@ export default function App() {
         ? Object.entries(tvSel).filter(([, v]) => v).map(([k]) => k).join(",")
         : null,
       start_episode: tvPlan && startEp !== "" ? Number(startEp) : null,
+      cinavia: enc.cinavia,
+      cinavia_codec: enc.cinavia ? enc.cinavia_codec : null,
     };
   };
 
@@ -1349,11 +1352,25 @@ export default function App() {
                           onChange={(e) => setEnc({ ...enc, aac_audio: e.target.checked })} />
                         Re-encode audio to AAC
                       </label>
-                      <label className="check" title="Notch the Verance watermark band and re-encode the audio to FLAC">
+                      <label className="check" title="Notch the Verance watermark band and re-encode the audio">
                         <input type="checkbox" checked={enc.cinavia}
                           onChange={(e) => setEnc({ ...enc, cinavia: e.target.checked })} />
                         Strip Cinavia
                       </label>
+                      {enc.cinavia && (
+                        <label className="field" style={{ minWidth: 170 }}>Stripped audio
+                          <select value={enc.cinavia_codec}
+                            onChange={(e) => setEnc({ ...enc, cinavia_codec: e.target.value })}>
+                            <option value="auto">Same as source</option>
+                            <option value="ac3">Dolby Digital</option>
+                            <option value="eac3">Dolby Digital Plus</option>
+                            <option value="dts">DTS</option>
+                            <option value="truehd">Dolby TrueHD</option>
+                            <option value="flac">FLAC (lossless)</option>
+                            <option value="aac">AAC</option>
+                          </select>
+                        </label>
+                      )}
                     </div>
                   </>
                 )}
@@ -1908,6 +1925,20 @@ export default function App() {
                       onChange={(e) => cfg && void saveCfg({ cinavia: e.target.checked })} />
                     <span>Strip Cinavia from automatic rips</span>
                   </label>
+                  {cfg?.cinavia && (
+                    <label className="field" style={{ maxWidth: 260, marginTop: 6 }}>Automatic strip audio
+                      <select value={cfg.cinavia_codec ?? "auto"}
+                        onChange={(e) => void saveCfg({ cinavia_codec: e.target.value })}>
+                        <option value="auto">Same as source</option>
+                        <option value="ac3">Dolby Digital</option>
+                        <option value="eac3">Dolby Digital Plus</option>
+                        <option value="dts">DTS</option>
+                        <option value="truehd">Dolby TrueHD</option>
+                        <option value="flac">FLAC (lossless)</option>
+                        <option value="aac">AAC</option>
+                      </select>
+                    </label>
+                  )}
                   <label className="field" style={{ marginTop: 10 }}>Notification webhook
                     <input className="mono" placeholder="https://hooks.slack.com/..." value={cfg?.notify_webhook ?? ""}
                       onChange={(e) => cfg && void saveCfg({ notify_webhook: e.target.value || null })} />

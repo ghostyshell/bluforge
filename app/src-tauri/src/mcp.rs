@@ -697,6 +697,8 @@ struct RipArgs {
     #[serde(default)]
     cinavia: Option<bool>,
     #[serde(default)]
+    cinavia_codec: Option<keepsake_core::cinavia::Codec>,
+    #[serde(default)]
     chapters: Option<bool>,
     #[serde(default)]
     poster: Option<bool>,
@@ -780,6 +782,7 @@ fn start_rip(args: Value) -> Result<Value, String> {
         episodes: a.episodes,
         start_episode: a.start_episode,
         cinavia: a.cinavia.unwrap_or(false),
+        cinavia_codec: a.cinavia_codec,
     };
 
     let id = NEXT_JOB.fetch_add(1, Ordering::SeqCst);
@@ -1454,7 +1457,8 @@ fn tools() -> Vec<Value> {
                 "preset": { "type": "string" },
                 "ten_bit": { "type": "boolean" },
                 "aac_audio": { "type": "boolean" },
-                "cinavia": { "type": "boolean", "description": "Strip the Cinavia watermark (re-encodes the audio to FLAC)." }
+                "cinavia": { "type": "boolean", "description": "Strip the Cinavia watermark (re-encodes the audio)." },
+                "cinavia_codec": { "type": "string", "enum": ["auto", "ac3", "eac3", "dts", "truehd", "flac", "aac"], "description": "Codec for stripped audio; auto keeps the source format." }
             }, "required": ["source"] }
         }),
         json!({

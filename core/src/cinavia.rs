@@ -61,6 +61,9 @@ const DETREND_HZ: f32 = 470.0;
 const SPAN_GAP_HZ: f32 = 300.0;
 
 const STFT: usize = 4096;
+/// Envelope rate for the modulation measurement, in frames per second.
+const ENV_RATE: f32 = 100.0;
+const ENV_FRAME: usize = 512;
 const HOP: usize = 1024;
 const RATE: u32 = 48_000;
 const MAX_ANALYZE_SECS: u32 = 600;
@@ -79,15 +82,19 @@ pub enum Verdict {
 pub const MASS: f32 = 15.0;
 /// Mass at or above which the verdict is "strong".
 pub const MASS_STRONG: f32 = 60.0;
+/// Modulation peak-to-floor ratio of the in-band envelope at or above which a
+/// track reads as strongly watermarked. A commentary track measured 9, three
+/// watermarked dubs measured 46-53, and a notched copy fell to 28.
+pub const MOD_PEAK: f32 = 20.0;
 /// In-band level over the high band at or above which a track is watermarked.
 /// A clean control measured 21; watermarked dubs measured 36-41.
 pub const RATIO_CLEAN: f32 = 27.0;
 
 impl Verdict {
-    fn of(density: usize, mass: f32, ratio_db: f32) -> Self {
+    fn of(density: usize, mass: f32, ratio_db: f32, modpeak: f32) -> Self {
         if density < LIKELY || mass < MASS || ratio_db < RATIO_CLEAN {
             Verdict::Clean
-        } else if density >= STRONG && mass >= MASS_STRONG {
+        } else if density >= STRONG && mass >= MASS_STRONG && modpeak >= MOD_PEAK {
             Verdict::Strong
         } else {
             Verdict::Likely
@@ -118,6 +125,9 @@ pub struct TrackReport {
     pub mean_excess_db: f32,
     /// Sum of the ridge heights above the detection floor, in dB. Tilt-free.
     pub score: f32,
+    /// Peak-to-median ratio of the 300-600 Hz envelope modulation spectrum.
+    /// A watermark is modulated, so it leaves a peak the programme does not.
+    pub modpeak: f32,
     pub verdict: Verdict,
     /// Band to cut, when the track is watermarked.
     pub band: Option<(f32, f32)>,
@@ -164,33 +174,59 @@ fn ffprobe_path() -> std::path::PathBuf {
     ff.with_file_name(name)
 }
 
-/// Channel count and codec of one audio stream.
-pub fn probe(path: &Path, track: usize) -> Result<(usize, String), String> {
+/// What an audio stream is, as far as the encoder choice needs to know.
+#[derive(Debug, Clone)]
+pub struct SourceAudio {
+    pub channels: usize,
+    pub codec: String,
+    pub profile: Option<String>,
+    pub kbps: Option<u32>,
+}
+
+/// Describe one audio stream.
+pub fn probe(path: &Path, track: usize) -> Result<SourceAudio, String> {
     let out = Command::new(ffprobe_path())
         .args(["-v", "error", "-select_streams", &format!("a:{track}")])
         .args([
             "-show_entries",
-            "stream=channels,codec_name",
+            "stream=codec_name,profile,channels,bit_rate,sample_rate",
             "-of",
-            "csv=p=0",
+            "default=noprint_wrappers=1",
         ])
         .arg(path)
         .output()
         .map_err(|e| format!("ffprobe: {e}"))?;
     let text = String::from_utf8_lossy(&out.stdout);
-    let line = text.lines().next().unwrap_or_default();
-    // csv column order follows the stream definition, not the request order.
-    let mut channels = 2usize;
-    let mut codec = String::new();
-    for field in line.split(',') {
-        let f = field.trim();
-        if let Ok(n) = f.parse::<usize>() {
-            channels = n.max(1);
-        } else if !f.is_empty() && f.chars().all(|c| c.is_ascii_alphanumeric()) {
-            codec = f.to_string();
+    let mut info = SourceAudio {
+        channels: 2,
+        codec: String::new(),
+        profile: None,
+        kbps: None,
+    };
+    for line in text.lines() {
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        let value = value.trim();
+        if value.is_empty() || value == "N/A" || value == "unknown" {
+            continue;
+        }
+        match key.trim() {
+            "channels" => {
+                if let Ok(n) = value.parse::<usize>() {
+                    info.channels = n.max(1);
+                }
+            }
+            "bit_rate" => info.kbps = value.parse::<u32>().ok().map(|b| b / 1000),
+            "codec_name" => info.codec = value.to_string(),
+            "profile" => info.profile = Some(value.to_string()),
+            _ => {}
         }
     }
-    Ok((channels, codec))
+    if info.codec.is_empty() {
+        info.codec = "pcm".into();
+    }
+    Ok(info)
 }
 
 /// Number of audio streams.
@@ -325,12 +361,35 @@ pub fn analyze(
     let mut levels: Vec<f32> = Vec::new();
     let mut frame = vec![Complex32::default(); FFT];
 
+    let env_cmd = window(ENV_FRAME);
+    let env_fft = planner.plan_fft_forward(ENV_FRAME);
+    let env_lo = (RIDGE_BAND.0 / RATE as f32 * ENV_FRAME as f32).round() as usize;
+    let env_hi = (RIDGE_BAND.1 / RATE as f32 * ENV_FRAME as f32).round() as usize;
+    let mut envelope: Vec<f32> = Vec::new();
+    let mut env_buf = vec![Complex32::default(); ENV_FRAME];
+
     // One averaged PSD per second of audio.
     loop {
         let block = samples.take(RATE as usize).map_err(|e| e.to_string())?;
         if block.is_empty() {
             break;
         }
+        // In-band envelope at ENV_RATE, for the modulation measurement.
+        for chunk in block.chunks((RATE as f32 / ENV_RATE) as usize) {
+            if chunk.len() < ENV_FRAME / 2 {
+                break;
+            }
+            for i in 0..ENV_FRAME {
+                env_buf[i] = Complex32::new(chunk.get(i).copied().unwrap_or(0.0) * env_cmd[i], 0.0);
+            }
+            env_fft.process(&mut env_buf);
+            let sum: f32 = env_buf[env_lo..env_hi.min(env_buf.len())]
+                .iter()
+                .map(|c| c.norm())
+                .sum();
+            envelope.push(sum);
+        }
+
         let mut psd = vec![0.0f32; bins];
         let mut frames = 0usize;
         let mut offset = 0usize;
@@ -418,7 +477,8 @@ pub fn analyze(
     };
 
     let score = ridge_mass(&excess, &hz);
-    let verdict = Verdict::of(density, score, band_ratio_db);
+    let modpeak = modulation_peak(&envelope);
+    let verdict = Verdict::of(density, score, band_ratio_db, modpeak);
     let band = (verdict != Verdict::Clean).then(|| {
         let (start, end) = ridge_span(&excess, hz);
         // Widen: the span tracks the strongest ridges, the cut has to cover
@@ -438,6 +498,7 @@ pub fn analyze(
         wide_density,
         mean_excess_db,
         score,
+        modpeak,
         verdict,
         band,
         // Start deeper when the ridge field is far above the clean ratio, so
@@ -450,6 +511,55 @@ pub fn analyze(
             8.0
         },
     })
+}
+
+/// Peak-to-median ratio of the in-band envelope's modulation spectrum.
+///
+/// A spread-spectrum watermark is *modulated* onto the programme, and a
+/// modulated carrier leaves a peak in its envelope that plain programme
+/// material does not. The envelope is measured at [`ENV_RATE`] from short
+/// frames so modulation up to a few Hz survives.
+fn modulation_peak(env: &[f32]) -> f32 {
+    if env.len() < ENV_RATE as usize {
+        return 0.0;
+    }
+    let mean = env.iter().sum::<f32>() / env.len() as f32;
+    if mean <= 1e-20 {
+        return 0.0;
+    }
+    let mut norm: Vec<f32> = env.iter().map(|v| (*v / mean).max(1e-12).ln()).collect();
+    let dc = norm.iter().sum::<f32>() / norm.len() as f32;
+    for v in &mut norm {
+        *v -= dc;
+    }
+    let size = norm.len().next_power_of_two().max(4096);
+    let mut planner = FftPlanner::<f32>::new();
+    let fft = planner.plan_fft_forward(size);
+    let mut buf: Vec<Complex32> = (0..size)
+        .map(|i| {
+            let w = if i < norm.len() {
+                0.5 - 0.5 * (2.0 * std::f32::consts::PI * i as f32 / norm.len() as f32).cos()
+            } else {
+                0.0
+            };
+            Complex32::new(norm.get(i).copied().unwrap_or(0.0) * w, 0.0)
+        })
+        .collect();
+    fft.process(&mut buf);
+    let hz_per_bin = ENV_RATE / size as f32;
+    let from = ((0.15 / hz_per_bin).ceil() as usize).max(1);
+    let to = ((4.0 / hz_per_bin).floor() as usize)
+        .min(size / 2)
+        .max(from + 1);
+    let power: Vec<f32> = buf[from..to].iter().map(|c| c.norm_sqr()).collect();
+    if power.len() < 8 {
+        return 0.0;
+    }
+    let mut sorted = power.clone();
+    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let floor = sorted[sorted.len() / 2].max(1e-20);
+    let peak = power.iter().cloned().fold(0.0f32, f32::max);
+    peak / floor
 }
 
 /// Ridge heights above the detection floor, summed over the ridge band. This
@@ -629,6 +739,191 @@ fn emit(
     }
     norm.drain(..take);
     Ok(())
+}
+
+/// Target codec for the re-encode. `Auto` follows the source: a track that was
+/// Dolby or DTS goes back to the same family, so the result matches the disc
+/// rather than gaining a foreign codec.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Codec {
+    Auto,
+    Ac3,
+    Eac3,
+    Dts,
+    TrueHd,
+    Flac,
+    Aac,
+}
+
+impl Codec {
+    pub fn parse(name: &str) -> Result<Self, String> {
+        Ok(match name.to_ascii_lowercase().as_str() {
+            "auto" | "same" => Codec::Auto,
+            "ac3" | "dolby" | "dd" => Codec::Ac3,
+            "eac3" | "ddp" | "dolby-digital-plus" => Codec::Eac3,
+            "dts" => Codec::Dts,
+            "truehd" => Codec::TrueHd,
+            "flac" => Codec::Flac,
+            "aac" => Codec::Aac,
+            other => return Err(format!("unknown codec {other}")),
+        })
+    }
+
+    /// Map an ffprobe codec name onto the encoder family.
+    pub fn from_name(name: &str) -> Self {
+        match name.to_ascii_lowercase().as_str() {
+            "ac3" => Codec::Ac3,
+            "eac3" => Codec::Eac3,
+            "dts" => Codec::Dts,
+            "truehd" | "mlp" => Codec::TrueHd,
+            "flac" => Codec::Flac,
+            "aac" => Codec::Aac,
+            _ => Codec::Flac,
+        }
+    }
+
+    /// Map a Blu-ray audio coding type onto the encoder family, plus whether it
+    /// is the HD extension of a lossy core.
+    pub fn from_bd(coding_type: u8) -> (Self, bool) {
+        match coding_type {
+            0x81 => (Codec::Ac3, false),
+            0x84 | 0xa1 => (Codec::Eac3, false),
+            0x82 => (Codec::Dts, false),
+            0x85 | 0x86 => (Codec::Dts, true),
+            0x83 => (Codec::TrueHd, false),
+            0xa2 => (Codec::Dts, false),
+            _ => (Codec::Flac, false),
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Codec::Auto => "auto",
+            Codec::Ac3 => "ac3",
+            Codec::Eac3 => "eac3",
+            Codec::Dts => "dts",
+            Codec::TrueHd => "truehd",
+            Codec::Flac => "flac",
+            Codec::Aac => "aac",
+        }
+    }
+}
+
+/// A resolved encoder plus the arguments it needs.
+#[derive(Debug, Clone)]
+pub struct Target {
+    pub codec: Codec,
+    pub encoder: &'static str,
+    pub bitrate: Option<u32>,
+    pub strict: bool,
+    /// Channels to encode; anything above 5.1 is folded down.
+    pub channels: usize,
+    pub note: Option<String>,
+}
+
+impl Target {
+    pub fn label(&self) -> &'static str {
+        self.codec.label()
+    }
+}
+
+/// Largest channel count any of the bundled encoders accepts.
+pub const MAX_ENCODER_CHANNELS: usize = 6;
+
+fn clamp_kbps(source_kbps: Option<u32>, lo: u32, hi: u32, fallback: u32) -> Option<u32> {
+    let raw = source_kbps.unwrap_or(fallback).clamp(lo, hi);
+    // AC-3, E-AC-3 and DTS all encode in 32 kbps steps.
+    Some(((raw + 16) / 32) * 32)
+}
+
+/// Pick an encoder. `source_codec` is the ffprobe codec name ("ac3", "dts",
+/// "truehd", ...) and `profile` its profile string ("DTS-HD MA", ...).
+pub fn target_for(
+    want: Codec,
+    source: Codec,
+    hd: bool,
+    source_kbps: Option<u32>,
+    channels: usize,
+    mkv: bool,
+) -> Result<Target, String> {
+    let mut note = None;
+    let codec = if want == Codec::Auto {
+        match source {
+            // DTS-HD MA has no encoder; its core is lossy, so keep it lossless.
+            Codec::Dts if hd && mkv => {
+                note = Some("DTS-HD MA cannot be encoded; keeping lossless FLAC".into());
+                Codec::Flac
+            }
+            other => other,
+        }
+    } else {
+        want
+    };
+    let codec = if !mkv {
+        match codec {
+            // MP4 has no standard DTS/TrueHD/FLAC mapping here; AAC is the fallback.
+            Codec::Dts | Codec::TrueHd | Codec::Flac => {
+                if want != Codec::Auto {
+                    note = Some(format!(
+                        "{} is not carried in MP4; using AAC",
+                        codec.label()
+                    ));
+                }
+                Codec::Aac
+            }
+            other => other,
+        }
+    } else {
+        codec
+    };
+
+    let channels = channels.max(1);
+    let (encoder, bitrate, strict) = match codec {
+        Codec::Ac3 => ("ac3", clamp_kbps(source_kbps, 192, 640, 640), false),
+        Codec::Eac3 => ("eac3", clamp_kbps(source_kbps, 192, 1024, 768), false),
+        Codec::Dts => ("dca", clamp_kbps(source_kbps, 768, 1536, 1536), true),
+        Codec::TrueHd => ("truehd", None, true),
+        Codec::Flac => ("flac", None, false),
+        // `aac` covers the fallback and the explicit request.
+        Codec::Aac | Codec::Auto => ("aac", Some(640), false),
+    };
+    if codec == Codec::Dts && !mkv {
+        return Err("DTS needs an MKV output".into());
+    }
+    Ok(Target {
+        codec,
+        encoder,
+        bitrate,
+        strict,
+        channels,
+        note,
+    })
+}
+
+/// Encoder arguments for one output audio stream.
+pub fn encode_args(target: &Target) -> Vec<String> {
+    let mut a = vec!["-c:a".to_string(), target.encoder.to_string()];
+    if let Some(b) = target.bitrate {
+        a.push("-b:a".into());
+        a.push(format!("{b}k"));
+    }
+    if target.strict {
+        // dca and truehd are still marked experimental in libavcodec.
+        a.push("-strict".into());
+        a.push("-2".into());
+    }
+    // Only the Dolby/DTS encoders are capped at 5.1; FLAC and AAC keep 7.1.
+    if target.channels > MAX_ENCODER_CHANNELS
+        && matches!(
+            target.codec,
+            Codec::Ac3 | Codec::Eac3 | Codec::Dts | Codec::TrueHd
+        )
+    {
+        a.push("-ac".into());
+        a.push(MAX_ENCODER_CHANNELS.to_string());
+    }
+    a
 }
 
 /// Decode `track`, band-stop the watermark, write float32 WAV to `out`.
@@ -838,22 +1133,30 @@ mod tests {
     #[test]
     fn verdict_thresholds() {
         assert_eq!(
-            Verdict::of(0, 400.0, 40.0),
+            Verdict::of(0, 400.0, 40.0, 60.0),
             Verdict::Clean,
-            "no ridges, no watermark"
+            "no ridges"
         );
         assert_eq!(
-            Verdict::of(LIKELY, 2.0, 40.0),
+            Verdict::of(LIKELY, 2.0, 40.0, 60.0),
             Verdict::Clean,
-            "weak ridges are not enough"
+            "weak ridges"
         );
         assert_eq!(
-            Verdict::of(LIKELY, 20.0, 20.0),
+            Verdict::of(LIKELY, 20.0, 20.0, 60.0),
             Verdict::Clean,
-            "a quiet band is not enough"
+            "quiet band"
         );
-        assert_eq!(Verdict::of(LIKELY, 20.0, 40.0), Verdict::Likely);
-        assert_eq!(Verdict::of(STRONG, MASS_STRONG, 40.0), Verdict::Strong);
+        assert_eq!(Verdict::of(LIKELY, 20.0, 40.0, 60.0), Verdict::Likely);
+        assert_eq!(
+            Verdict::of(STRONG, MASS_STRONG, 40.0, 1.0),
+            Verdict::Likely,
+            "no modulation"
+        );
+        assert_eq!(
+            Verdict::of(STRONG, MASS_STRONG, 40.0, 60.0),
+            Verdict::Strong
+        );
     }
 
     #[test]
