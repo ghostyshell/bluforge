@@ -11,8 +11,8 @@ All notable changes to Keepsake Atelier. Newest first.
   calls the MCP server's `initialize` and `tools/list`. Windows CI installs the
   NSIS build, finds the real window through UI Automation, invokes the
   command-palette trigger, requires the palette dialog, and checks the same MCP
-  methods. Both seed a config that enables MCP and skips the launch-time KEYDB
-  download.
+  methods. Both seed a config that enables MCP; the Linux check also disables
+  the launch-time KEYDB download so startup is deterministic.
 - **Windows burning is probed, not assumed.** `doctor` instantiates
   `IMAPI2.MsftDiscMaster2` and reports the recorder count or the COM error, and
   the Windows CLI smoke requires that line.
