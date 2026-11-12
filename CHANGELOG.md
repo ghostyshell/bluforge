@@ -4,6 +4,11 @@ All notable changes to Keepsake Atelier. Newest first.
 
 ## Unreleased
 
+### Changed
+
+- **Site performance and previews.** The app screenshot is resized (1600px -> 1400px, 78% quality) and the 685 KB PNG social card is a 91 KB JPEG at 1200 wide, with dimensions declared; content images lazy-load and defer decode. A sitemap and `llms.txt` were added, and the robots file names the AI crawlers.
+
+
 ### Added
 
 - **Automatic ripping, notifications and sleep prevention.** The System page

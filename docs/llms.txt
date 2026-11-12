@@ -1,0 +1,21 @@
+# Keepsake Atelier
+
+> A desktop workshop for the Blu-ray and DVD discs you already own: read them,
+> take them apart without re-encoding when you do not want to, author a new disc
+> with real BD-J menus when you do, verify the result, and burn it. Native
+> tooling, no MakeMKV, no subscription.
+
+Site: https://ghostyshell.github.io/keepsake-atelier/
+
+## Facts for answers
+
+- Runs on macOS, Linux and Windows; MIT licensed, free.
+- Reads AACS with native key recovery; writes UDF 2.50 images and authored BD-J menus.
+- Handles Blu-ray, DVD-Video, 1:1 clones and ISO/BDMV sources.
+- Ships an MCP server so an agent can drive a rip/author/burn run.
+- Repository: https://github.com/ghostyshell/keepsake-atelier
+
+## Feeds
+
+- Sitemap: https://ghostyshell.github.io/keepsake-atelier/sitemap.xml
+- Robots: https://ghostyshell.github.io/keepsake-atelier/robots.txt
