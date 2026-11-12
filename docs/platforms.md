@@ -73,6 +73,9 @@ and with the x86_64 CI artifact under an Ubuntu 22.04 container:
 - DVD-Video through the bundled ffmpeg, which is built with libdvdread,
   libdvdnav, libx264 and libx265. The AppImage and deb carry it in
   `/usr/lib/Keepsake Atelier`.
+- The AppImage window under Xvfb: it renders at 1180x820, hovering and clicking
+  a rail section changes the page, and the MCP server answers `initialize` and
+  `tools/list` with 33 tools (all in Linux CI).
 - Burning with growisofs when `dvd+rw-tools` is installed.
 - A desktop app as an **AppImage** (bundles GTK/WebKit and the app) and a
   **.deb** (depends on `libwebkit2gtk-4.1-0`, `libgtk-3-0`, `libbluray2`,

@@ -7,8 +7,9 @@ All notable changes to Keepsake Atelier. Newest first.
 ### Added
 
 - **Window-level desktop checks.** Linux CI boots the AppImage under Xvfb and
-  openbox, waits for the Tauri window, checks that the frame is not blank, and
-  calls the MCP server's `initialize` and `tools/list`. Windows CI installs the
+  openbox, waits for the Tauri window, checks that the frame is not blank,
+  hovers and clicks a rail section (a 451k-pixel page change), and calls the MCP
+  server's `initialize` and `tools/list` (33 tools). Windows CI installs the
   NSIS build, finds the real window through UI Automation, invokes the
   command-palette trigger, requires the palette dialog, and checks the same MCP
   methods. Both seed a config that enables MCP; the Linux check also disables
