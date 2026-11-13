@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   api,
+  type AboutInfo,
   type AppConfig,
   type DiscInfo,
   type DoctorReport,
@@ -117,6 +118,7 @@ export default function App() {
   const [tvBusy, setTvBusy] = useState(false);
   const [tvError, setTvError] = useState<string | null>(null);
   const [mcp, setMcp] = useState<{ enabled: boolean; port: number | null } | null>(null);
+  const [about, setAbout] = useState<AboutInfo | null>(null);
   const [doctor, setDoctor] = useState<DoctorReport | null>(null);
   const [dvd, setDvd] = useState<DvdInfo | null>(null);
   const [dvdTitle, setDvdTitle] = useState<number | null>(null);
@@ -2118,6 +2120,27 @@ export default function App() {
                       <Icon name="key" size={14} /> ETH
                     </button>
                   </div>
+                </section>
+
+                <section className="card">
+                  <div className="panel-head">
+                    <div>
+                      <h2>Version</h2>
+                      <p className="sub">
+                        Keepsake Atelier <span className="mono">{about?.version ?? "…"}</span> — what changed in each release.
+                      </p>
+                    </div>
+                  </div>
+                  <details className="group" onToggle={(e) => {
+                    if ((e.target as HTMLDetailsElement).open && !about) {
+                      void api.changelog().then(setAbout).catch(() => {});
+                    }
+                  }}>
+                    <summary>Changelog</summary>
+                    <pre className="mono" style={{ whiteSpace: "pre-wrap", fontSize: 12, marginTop: 10 }}>
+                      {about?.text ?? "loading…"}
+                    </pre>
+                  </details>
                 </section>
 
                 <p className="hint">

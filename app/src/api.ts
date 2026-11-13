@@ -1,6 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
+export type AboutInfo = {
+  version: string;
+  text: string;
+};
+
 export type BlockDevice = {
   bsd_name: string;
   media_name: string | null;
@@ -359,6 +364,7 @@ export type QueueJob = {
 
 export const api = {
   snapshot: () => invoke<Snapshot>("snapshot"),
+  changelog: () => invoke<AboutInfo>("changelog"),
   keysStatus: () => invoke<KeyDbStatus>("keys_status"),
   keysUpdate: () => invoke<KeyDbStatus>("keys_update"),
   config: () => invoke<AppConfig>("config_get"),
@@ -502,3 +508,5 @@ export const api = {
   onCloneError: (cb: (msg: string) => void): Promise<UnlistenFn> =>
     listen<string>("clone://error", (e) => cb(e.payload)),
 };
+
+export const changelog = () => invoke<AboutInfo>("changelog");

@@ -4,6 +4,23 @@ All notable changes to Keepsake Atelier. Newest first.
 
 ## Unreleased
 
+Nothing yet.
+
+## 0.2.0 - 2026-11-13
+
+### Added
+
+- **Changelog and version discipline.** `scripts/version.sh` reads or writes the
+  version across the three files that carry it, `scripts/bump-version.sh` dates
+  the `Unreleased` section and moves the version in one step, and
+  `scripts/check-changelog.sh` fails when product files changed without either.
+  A CI job runs that guard on every push, so a version can no longer be reused
+  for a different build. Two project skills (`.claude/skills/changelog`,
+  `.claude/skills/release`) carry the entry style and the release runbook.
+- **Changelog in the app.** System -> Version shows the running version and the
+  bundled changelog, so the release notes travel with the build instead of
+  living only in the repository.
+
 ### Changed
 
 - **Site performance and previews.** The app screenshot is resized (1600px -> 1400px, 78% quality) and the 685 KB PNG social card is a 91 KB JPEG at 1200 wide, with dimensions declared; content images lazy-load and defer decode. A sitemap and `llms.txt` were added, and the robots file names the AI crawlers.

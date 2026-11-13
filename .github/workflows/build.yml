@@ -18,6 +18,21 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  changelog:
+    name: Changelog and version bump
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Every change bumps the version and notes it
+        run: |
+          base="${{ github.event.before }}"
+          case "$base" in
+            ""|0000000000000000000000000000000000000000) base="origin/${{ github.base_ref || 'main' }}" ;;
+          esac
+          git fetch -q origin "${base#origin/}" 2>/dev/null || true
+          scripts/check-changelog.sh "$base"
   macos-arm64:
     name: macOS arm64 (DMG + CLI)
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.platforms == 'all' || inputs.platforms == 'macos' }}

@@ -9,6 +9,15 @@ use keepsake_core::{config::AppConfig, disc::DiscInfo, iso, keys::KeyDbStatus, r
 
 mod mcp;
 
+/// The bundled changelog, and the version it belongs to.
+#[tauri::command]
+fn changelog() -> serde_json::Value {
+    serde_json::json!({
+        "version": env!("CARGO_PKG_VERSION"),
+        "text": include_str!("../../../CHANGELOG.md"),
+    })
+}
+
 /// Where the MCP server is listening, if it is.
 #[tauri::command]
 fn mcp_status() -> serde_json::Value {
@@ -1036,6 +1045,7 @@ pub fn run() {
             cancel_rip,
             author_start,
             export_iso,
+            changelog,
             check_update,
             install_update,
             reveal,
