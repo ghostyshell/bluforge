@@ -63,6 +63,26 @@ It runs the real Xlet in a stubbed BD-J harness and writes screenshots.
   `scripts/publish-release.sh`. Do not hand-edit inside the
   `<!-- downloads:start/end -->` markers.
 
+## Changelog and version
+
+Every change that alters behaviour, the build, or the docs lands with an entry
+under `## Unreleased` in `CHANGELOG.md` **and** a version bump in the same
+commit:
+
+```sh
+scripts/bump-version.sh patch    # or minor for features, major for breakage
+scripts/check-changelog.sh       # what CI runs
+```
+
+`scripts/version.sh` moves the version in the three files that carry it. The CI
+job "Changelog and version bump" rejects a push that changes product files
+without both. A build must never be published under a version that already has
+artifacts; the publisher tags what it ships.
+
+Two project skills document the house style and the runbook:
+[`.claude/skills/changelog`](.claude/skills/changelog/SKILL.md) and
+[`.claude/skills/release`](.claude/skills/release/SKILL.md).
+
 ## Release process
 
 The maintainers publish with:
