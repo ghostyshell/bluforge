@@ -1,105 +1,105 @@
 {
-  "version": "0.1.0",
+  "version": "0.2.1",
   "updated": "2026-11-13",
   "artifacts": [
     {
       "label": "macOS (Apple Silicon)",
-      "name": "Keepsake-Atelier-0.1.0-arm64.dmg",
-      "version": "0.1.0",
+      "name": "Keepsake-Atelier-0.2.1-arm64.dmg",
+      "version": "0.2.1",
       "os": "macOS",
       "arch": "arm64",
-      "gofile": "https://gofile.io/d/335QU42w",
-      "kiwi": "https://file.kiwi/b314bd7d#cj7v0Zgi2lgXgwhTREE9-A",
-      "size": "33.9 MiB",
-      "sha256": "79f71f9f5cd53e92e4ca0f4a07b5a9f0360e92493f2773799e3b1ea8b7a662f0"
+      "gofile": "https://gofile.io/d/FHpUJzpg",
+      "kiwi": "https://file.kiwi/99196d4f#N-XnN_ZMq2nDnGatwPESKQ",
+      "size": "34.0 MiB",
+      "sha256": "817c181415b8b6b287fa934c9a28ad3b88788ad1d8444ed74ee44cf7531a52f9"
     },
     {
       "label": "macOS (Intel)",
-      "name": "Keepsake-Atelier-0.1.0-x64.dmg",
-      "version": "0.1.0",
+      "name": "Keepsake-Atelier-0.2.1-x64.dmg",
+      "version": "0.2.1",
       "os": "macOS",
       "arch": "x64",
-      "gofile": "https://gofile.io/d/AWzNPrZS",
-      "kiwi": "https://file.kiwi/dda3ffa0#qxP8t9YDOnW1VD4OynmxYA",
+      "gofile": "https://gofile.io/d/62ldCwnR",
+      "kiwi": "https://file.kiwi/49dfab95#6vYvfyBWbZdcwqXKtKEQbQ",
       "size": "38.6 MiB",
-      "sha256": "bea6ea47b9b72bb12b5596b694835f2ebcfc9ba001284b1d5acb57128abf5e4c"
+      "sha256": "b5384030cdfef2a3bcf5ada377a1a20b92a7bbf9c356cf7e34f6c9e79fe7581b"
     },
     {
       "label": "macOS (Apple Silicon, CLI)",
-      "name": "keepsake-atelier-0.1.0-macos-arm64.tar.gz",
-      "version": "0.1.0",
+      "name": "keepsake-atelier-0.2.1-macos-arm64.tar.gz",
+      "version": "0.2.1",
       "os": "macOS",
       "arch": "arm64",
-      "gofile": "https://gofile.io/d/8u5OQfXF",
-      "kiwi": "https://file.kiwi/8b2130a9#u_yK6KbIOE2FrOcC-QNvwg",
+      "gofile": "https://gofile.io/d/6r4RxrXw",
+      "kiwi": "https://file.kiwi/0a0c3bbc#TS1dnxXngdWILJF1qm9lCg",
       "size": "27.0 MiB",
-      "sha256": "1d00eb434cc224a379da1185e6b642bc80028fa5cba0e500dea2cd3f408cd251"
+      "sha256": "ef54e40a8ab72f958c4a37d06765fab6af060a9ce118999057672573e03ff439"
     },
     {
       "label": "macOS (Intel, CLI)",
-      "name": "keepsake-atelier-0.1.0-macos-x64.tar.gz",
-      "version": "0.1.0",
+      "name": "keepsake-atelier-0.2.1-macos-x64.tar.gz",
+      "version": "0.2.1",
       "os": "macOS",
       "arch": "x64",
-      "gofile": "https://gofile.io/d/nK61JyGM",
-      "kiwi": "https://file.kiwi/fd672404#FF5-Nm1jrlWe0752WgvQNQ",
+      "gofile": "https://gofile.io/d/s6qII7ME",
+      "kiwi": "https://file.kiwi/a18f9a22#lBRh3ZIiQ-NbV4rBOvm4Uw",
       "size": "30.0 MiB",
-      "sha256": "753233196c5602d0892942bd1691c82820f3302ec997eb44c04170b579020cf2"
+      "sha256": "0f776283a2efc9685e3a898b61030e087bf8e2113c87b7c42c157eb4f010ffe2"
     },
     {
       "label": "Linux (x86_64, CLI)",
-      "name": "keepsake-atelier-0.1.0-linux-x64.tar.gz",
-      "version": "0.1.0",
+      "name": "keepsake-atelier-0.2.1-linux-x64.tar.gz",
+      "version": "0.2.1",
       "os": "Linux",
       "arch": "x86_64",
-      "gofile": "https://gofile.io/d/icl6oNnP",
-      "kiwi": "https://file.kiwi/037c9510#fZDwj_gPHknqJX48PSZTmg",
+      "gofile": "https://gofile.io/d/LEfTZJsW",
+      "kiwi": "https://file.kiwi/945b8cd7#FE3v2xUX0M4dTFRT2x0xgg",
       "size": "42.8 MiB",
-      "sha256": "71ea1cc366ca09911472e9392a4f12c58beb9bb25ef2070868ab32415aa9f6cb"
+      "sha256": "2a521813504cc86f141f683a8d71e55c4106094615075c3ad6d0950a2798860e"
     },
     {
       "label": "Linux (x86_64, AppImage)",
-      "name": "Keepsake-Atelier-0.1.0-linux-x64.AppImage",
-      "version": "0.1.0",
+      "name": "Keepsake-Atelier-0.2.1-linux-x64.AppImage",
+      "version": "0.2.1",
       "os": "Linux",
       "arch": "x86_64",
-      "gofile": "https://gofile.io/d/pmK4PfRp",
-      "kiwi": "https://file.kiwi/d18b535b#9I5XkTchf_HvrUF3WkxH4w",
+      "gofile": "https://gofile.io/d/7cYffY7K",
+      "kiwi": "https://file.kiwi/38452f04#T_kv_4y0v_TinQHkgWRrJw",
       "size": "108.0 MiB",
-      "sha256": "3ef5938d383f415eef40f136c40f6b77980c73921015f390723dc6851c1f7a18"
+      "sha256": "af93e4f63989777746408e21011de1004139666e03e497c09ccddfbe567eda18"
     },
     {
       "label": "Linux (x86_64, deb)",
-      "name": "Keepsake-Atelier-0.1.0-linux-x64.deb",
-      "version": "0.1.0",
+      "name": "Keepsake-Atelier-0.2.1-linux-x64.deb",
+      "version": "0.2.1",
       "os": "Linux",
       "arch": "x86_64",
-      "gofile": "https://gofile.io/d/HBSFIV4u",
-      "kiwi": "https://file.kiwi/9d612121#w0SnYBpkepEgHSowuyLVxg",
+      "gofile": "https://gofile.io/d/OQXzCABk",
+      "kiwi": "https://file.kiwi/8e7dfb32#-mNMUxGX4xygPTm5gLahjw",
       "size": "36.0 MiB",
-      "sha256": "54b55ca8eacc997678ee85f1e59452ddf07138f2e3e9316dfa1a83389468758b"
+      "sha256": "e277915c9cbfdb63516a934b1726efb3993c4028f056e0704f8c963903d18c7b"
     },
     {
       "label": "Windows (x86_64, CLI)",
-      "name": "keepsake-atelier-0.1.0-windows-x64.zip",
-      "version": "0.1.0",
+      "name": "keepsake-atelier-0.2.1-windows-x64.zip",
+      "version": "0.2.1",
       "os": "Windows",
       "arch": "x86_64",
-      "gofile": "https://gofile.io/d/T9MiY0A0",
-      "kiwi": "https://file.kiwi/66602b40#O0APs9qOH8gd8nfdks6EKQ",
+      "gofile": "https://gofile.io/d/2XaoNqtm",
+      "kiwi": "https://file.kiwi/ac817e10#qyJngIS43meHY_f0oJQfgw",
       "size": "135.6 MiB",
-      "sha256": "b8133eaea79bc0b18f3e7fc26d94f66b4a2cb18f1ce5e448f6714874afa6e8b4"
+      "sha256": "97788efaa8ed1d63d8ccf6d3f7e692f2a9349b3028a219f32813648094952bfe"
     },
     {
       "label": "Windows (x86_64, installer)",
-      "name": "Keepsake-Atelier-0.1.0-windows-x64-setup.exe",
-      "version": "0.1.0",
+      "name": "Keepsake-Atelier-0.2.1-windows-x64-setup.exe",
+      "version": "0.2.1",
       "os": "Windows",
       "arch": "x86_64",
-      "gofile": "https://gofile.io/d/5Hydfcez",
-      "kiwi": "https://file.kiwi/4c796669#CZ5ezcUcVejTd2GJ38veww",
+      "gofile": "https://gofile.io/d/VeexpCa0",
+      "kiwi": "https://file.kiwi/ef0bb8d1#rcO3LJhO-f_woqhUvgOvmQ",
       "size": "99.7 MiB",
-      "sha256": "770eca150a34d023965c984ec43613feaa55a5be55cafafdbf8c4db80254a7b0"
+      "sha256": "ec35b2c12b1d829fa10105f74116aa8b42faf5133d17efdb301e113e68f6fc9c"
     }
   ]
 }
