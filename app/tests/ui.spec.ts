@@ -88,6 +88,14 @@ test("reduced motion removes running animations", async ({ page }) => {
     .toBe(0);
 });
 
+test("System shows the running version and the changelog", async ({ page }) => {
+  await page.getByRole("button", { name: /^System\./ }).click();
+  await expect(page.getByRole("heading", { name: "Version" })).toBeVisible();
+  await expect(page.locator(".about-version")).toHaveText("0.2.0");
+  await page.getByText("Changelog", { exact: true }).click();
+  await expect(page.getByText("Nothing yet.")).toBeVisible();
+});
+
 test("captures the populated disc view", async ({ page }) => {
   await page.getByRole("button", { name: /Pioneer/ }).click();
   await page.getByRole("button", { name: "Read disc" }).click();

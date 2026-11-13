@@ -6,6 +6,14 @@ All notable changes to Keepsake Atelier. Newest first.
 
 Nothing yet.
 
+## 0.2.1 - 2026-11-13
+
+### Fixed
+
+- **The version card loads its notes immediately.** The System pane fetches the
+  changelog when it opens rather than when the disclosure is expanded, so the
+  running version is on screen at once, and a UI test covers the card.
+
 ## 0.2.0 - 2026-11-13
 
 ### Added

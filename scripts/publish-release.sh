@@ -198,6 +198,10 @@ are repointed at the fresh mirrors." || die "git commit failed"
     git -c credential.helper='!gh auth git-credential' push -q origin main \
       || die "git push failed - links are committed locally but not published"
     log "pushed refreshed ${V} links"
+    # A tag marks what has actually shipped; check-changelog.sh uses it as its
+    # baseline so a version is never reused.
+    git tag -f "v${V}" >/dev/null 2>&1 || true
+    git -c credential.helper='!gh auth git-credential' push -q -f origin "v${V}" >/dev/null 2>&1 || true
   fi
 fi
 

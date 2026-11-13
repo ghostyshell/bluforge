@@ -672,6 +672,12 @@ export default function App() {
   };
 
   const [section, setSection] = useState<SectionId>("disc");
+  // Load the changelog when the System pane opens, so the version shows at once.
+  useEffect(() => {
+    if (section === "system" && !about) {
+      void api.changelog().then(setAbout).catch(() => {});
+    }
+  }, [section, about]);
   const [railCompact, setRailCompact] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [paletteQuery, setPaletteQuery] = useState("");
@@ -2127,15 +2133,11 @@ export default function App() {
                     <div>
                       <h2>Version</h2>
                       <p className="sub">
-                        Keepsake Atelier <span className="mono">{about?.version ?? "…"}</span> — what changed in each release.
+                        Keepsake Atelier <span className="mono about-version">{about?.version ?? "…"}</span> — what changed in each release.
                       </p>
                     </div>
                   </div>
-                  <details className="group" onToggle={(e) => {
-                    if ((e.target as HTMLDetailsElement).open && !about) {
-                      void api.changelog().then(setAbout).catch(() => {});
-                    }
-                  }}>
+                  <details className="group">
                     <summary>Changelog</summary>
                     <pre className="mono" style={{ whiteSpace: "pre-wrap", fontSize: 12, marginTop: 10 }}>
                       {about?.text ?? "loading…"}

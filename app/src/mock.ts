@@ -143,6 +143,8 @@ const invoke: Invoke = async (cmd, args = {}) => {
         optical: [drive],
         keys: { path: "/Users/you/Library/Application Support/keepsake-atelier/KEYDB.cfg", exists: true, entries: 128433, bytes: 24117248, modified: 0 },
       };
+    case "changelog":
+      return { version: "0.2.0", text: "## Unreleased\n\nNothing yet.\n" };
     case "config_get":
       return config;
     case "config_set":

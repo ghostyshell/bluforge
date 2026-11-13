@@ -15,7 +15,11 @@ cd "$root"
 
 base=${1:-}
 if [ -z "$base" ]; then
-  base=$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null || true)
+  # Prefer the last shipped tag: that is what "already released" means.
+  base=$(git describe --tags --abbrev=0 2>/dev/null || true)
+  if [ -z "$base" ]; then
+    base=$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null || true)
+  fi
   base=${base:-origin/main}
 fi
 git rev-parse --verify --quiet "$base" >/dev/null || {
