@@ -6,6 +6,21 @@ All notable changes to Keepsake Atelier. Newest first.
 
 Nothing yet.
 
+## 0.3.1 - 2026-11-14
+
+### Added
+
+- **Failed jobs log their context.** A failed rip, DVD rip, ISO export, clone,
+  author or burn records the source, title, mode and destination plus the last
+  40 lines the process wrote, then raises the banner with a link to that entry,
+  so the cause is one click from the error rather than a separate hunt.
+
+### Changed
+
+- **Log entries are scrubbed.** The home directory becomes `~`, hex blobs of 32
+  characters or more keep their first eight, and URL query strings collapse to
+  `?…`, so a pasted entry carries no key material or tracking token.
+
 ## 0.3.0 - 2026-11-14
 
 ### Added

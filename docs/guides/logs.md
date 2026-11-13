@@ -10,6 +10,9 @@ failed rip can be inspected instead of guessed at.
 - Everything a child process writes to stderr (ffmpeg, the Atmos tools, tsMuxeR),
   line by line, with the process as the source and error lines flagged.
 - Every failure the interface catches, with its full message.
+- Every failed job (rip, DVD rip, ISO export, clone, author, burn) with its
+  context — source, title, mode, destination — followed by the last 40 lines
+  the producing process wrote. The banner links straight to that entry.
 
 `RUST_LOG=debug` widens the tracing filter; the page shows info and above by
 default.
@@ -31,5 +34,7 @@ the result of the thing you just ran is one click away.
 - It is not persisted: the buffer dies with the app. Copy the detail before
   closing if you are filing a report.
 - It is not the terminal. A debug build still prints to stderr for a live view.
-- Keys and passwords are not redacted by the buffer; the backend does not log
-  them, but a child tool might echo a path or a URL.
+- Entries are scrubbed before they are stored: the home directory becomes `~`,
+  hex blobs of 32 characters or more (keys, hashes) keep their first 8, and a
+  URL query string becomes `?…`. A password inside a query string still shows as
+  its key name only, never its value.

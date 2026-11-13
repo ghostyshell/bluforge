@@ -11,6 +11,8 @@
 type Invoke = (cmd: string, args?: Record<string, any>) => Promise<unknown>;
 
 const callbacks = new Map<number, (payload: unknown) => void>();
+const listeners = new Map<string, Set<number>>();
+const calls: string[] = [];
 let nextCallback = 1;
 
 const bytes = Array.from({ length: 24 }, (_, i) =>
@@ -135,6 +137,7 @@ const doctor = {
 };
 
 const invoke: Invoke = async (cmd, args = {}) => {
+  calls.push(cmd);
   switch (cmd) {
     case "snapshot":
       return {
@@ -148,6 +151,8 @@ const invoke: Invoke = async (cmd, args = {}) => {
     case "logs_clear":
       return logs;
     case "log_error":
+      return 1;
+    case "logs_emit_fail":
       return 1;
     case "changelog":
       return {
@@ -281,6 +286,20 @@ const invoke: Invoke = async (cmd, args = {}) => {
       return "removed";
     case "menu_apply":
       return { version: 1, label: "applied", titles: [] };
+    case "plugin:event|listen": {
+      const { event, handler } = args ?? {};
+      if (callbacks.has(handler)) {
+        const set = listeners.get(event) ?? new Set<number>();
+        set.add(handler);
+        listeners.set(event, set);
+      }
+      return handler;
+    }
+    case "plugin:event|unlisten": {
+      const { event, eventId } = args ?? {};
+      listeners.get(event)?.delete(eventId ?? 0);
+      return null;
+    }
     default:
       // Event plumbing and the file dialogs are no-ops in the mock.
       if (cmd.startsWith("plugin:")) return 1;
@@ -325,5 +344,14 @@ export function installMock() {
     },
   };
   // A tiny window hook so Playwright can drive the mock without a real backend.
-  w.__KEEPSAKE_MOCK__ = { callbacks };
+  w.__KEEPSAKE_MOCK__ = {
+    callbacks,
+    listeners,
+    calls,
+    emit(event: string, payload: unknown) {
+      for (const id of listeners.get(event) ?? []) {
+        callbacks.get(id)?.({ event, id: 0, payload });
+      }
+    },
+  };
 }

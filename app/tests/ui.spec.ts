@@ -116,6 +116,18 @@ test("the session lists recent logs and the page filters by id", async ({ page }
   await expect(page.locator(".logrow")).toContainText("spawning ffmpeg");
 });
 
+test("a backend failure event raises the banner with a log link", async ({ page }) => {
+  await page.evaluate(() => {
+    (window as any).__KEEPSAKE_MOCK__.emit("logs://fail", { id: 1, message: "rip failed: mux" });
+  });
+  const banner = page.getByRole("alert");
+  await expect(banner).toBeVisible();
+  await expect(banner).toContainText("rip failed: mux");
+  await banner.getByRole("button", { name: "View log" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Logs" })).toBeVisible();
+  await expect(page.locator(".logrow.focus")).toHaveCount(1);
+});
+
 test("captures the populated disc view", async ({ page }) => {
   await page.getByRole("button", { name: /Pioneer/ }).click();
   await page.getByRole("button", { name: "Read disc" }).click();

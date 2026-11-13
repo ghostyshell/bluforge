@@ -36,6 +36,30 @@ fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
+/// Scrub the values that are useless (or risky) to paste into a report: the
+/// user's home path, long hex blobs (keys, hashes) and URL query strings.
+fn redact(text: &str) -> String {
+    static HEX: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    static QUERY: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let hex = HEX.get_or_init(|| regex::Regex::new(r"\b[0-9a-fA-F]{32,}\b").expect("hex regex"));
+    let query = QUERY.get_or_init(|| regex::Regex::new(r"\?[^\s]+").expect("query regex"));
+
+    let home = std::env::var("HOME").unwrap_or_default();
+    let mut out = if home.len() > 1 {
+        text.replace(&home, "~")
+    } else {
+        text.to_string()
+    };
+    out = hex
+        .replace_all(&out, |c: &regex::Captures| {
+            let s = c[0].to_string();
+            format!("{}…", &s[..8])
+        })
+        .into_owned();
+    out = query.replace_all(&out, "?…").into_owned();
+    out
+}
+
 fn push_inner(level: &str, source: &str, message: impl AsRef<str>, detail: Option<&str>) -> u64 {
     let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
     let entry = Entry {
@@ -43,8 +67,8 @@ fn push_inner(level: &str, source: &str, message: impl AsRef<str>, detail: Optio
         at: now_ms(),
         level: level.to_string(),
         source: source.to_string(),
-        message: message.as_ref().to_string(),
-        detail: detail.map(|d| d.trim_end().to_string()),
+        message: redact(message.as_ref()),
+        detail: detail.map(|d| redact(d.trim_end())),
     };
     if let Ok(mut logs) = LOGS.lock() {
         logs.push_back(entry);
@@ -96,6 +120,51 @@ pub fn fail(
     )
 }
 
+/// The last `want` entries written by one source, oldest first.
+pub fn tail_of(source: &str, want: usize) -> Vec<String> {
+    LOGS.lock()
+        .map(|logs| {
+            let mut rows: Vec<&Entry> = logs.iter().filter(|e| e.source == source).collect();
+            rows.reverse();
+            rows.into_iter()
+                .take(want)
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .map(|e| format!("{} {}", e.level, e.message))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Record a failed job with its context and the tail of the producing process,
+/// and tell the UI so the banner can link straight to it.
+pub fn fail_job(
+    app: &AppHandle,
+    source: &str,
+    summary: impl AsRef<str>,
+    context: &[(&str, String)],
+    error: impl AsRef<str>,
+) -> u64 {
+    let mut detail = format!("{}\n", error.as_ref().trim_end());
+    for (key, value) in context {
+        detail.push_str(&format!("{key}: {value}\n"));
+    }
+    detail.push_str(&format!("--- stderr ({} lines) ---\n", source));
+    let tail = tail_of(source, 40);
+    if tail.is_empty() {
+        detail.push_str("(nothing captured)");
+    } else {
+        detail.push_str(&tail.join("\n"));
+    }
+    let id = fail(Some(app), source, summary.as_ref(), detail);
+    let _ = app.emit(
+        "logs://fail",
+        serde_json::json!({ "id": id, "message": summary.as_ref() }),
+    );
+    id
+}
+
 pub fn events(limit: usize, filter: Option<&str>) -> Vec<Entry> {
     let needle = filter.map(|f| f.to_ascii_lowercase());
     let Ok(logs) = LOGS.lock() else {
@@ -135,31 +204,6 @@ pub fn clear() {
 
 pub fn count() -> usize {
     LOGS.lock().map(|l| l.len()).unwrap_or(0)
-}
-
-/// Drain a child's stderr into the log, one entry per line, from a thread.
-pub fn drain_stderr(
-    mut stderr: std::process::ChildStderr,
-    source: &'static str,
-    app: Option<AppHandle>,
-) -> std::thread::JoinHandle<()> {
-    std::thread::spawn(move || {
-        use std::io::BufRead;
-        let reader = std::io::BufReader::new(&mut stderr);
-        for line in reader.lines() {
-            let Ok(line) = line else { break };
-            if line.trim().is_empty() {
-                continue;
-            }
-            let level =
-                if line.contains("Error") || line.contains("error") || line.contains("failed") {
-                    "error"
-                } else {
-                    "debug"
-                };
-            push(app.as_ref(), level, source, &line, None);
-        }
-    })
 }
 
 /// tracing layer: mirrors every event into the ring so nothing is lost when the
@@ -218,8 +262,16 @@ impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for Layer {
 mod tests {
     use super::*;
 
+    // The buffer is global; serialize the tests that clear it.
+    static LOCK: Mutex<()> = Mutex::new(());
+
+    fn guard() -> std::sync::MutexGuard<'static, ()> {
+        LOCK.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
     #[test]
     fn newest_first_and_filtered() {
+        let _g = guard();
         clear();
         push_inner("info", "rip", "starting title 1", None);
         let fail_id = push_inner("error", "ffmpeg", "mux failed", Some("line 1\nline 2"));
@@ -236,7 +288,33 @@ mod tests {
     }
 
     #[test]
+    fn redacts_keys_queries_and_home() {
+        let _g = guard();
+        let home = std::env::var("HOME").unwrap_or_default();
+        let text = format!("{home}/x?token=abc abcdef0123456789abcdef0123456789");
+        let out = redact(&text);
+        assert!(out.starts_with("~/"), "{out}");
+        assert!(out.contains("?…"), "{out}");
+        assert!(out.contains("abcdef01…"), "{out}");
+        assert!(!out.contains("abcdef0123456789abcdef0123456789"), "{out}");
+    }
+
+    #[test]
+    fn fail_job_carries_context_and_tail() {
+        let _g = guard();
+        clear();
+        push_inner("debug", "ffmpeg", "Opening decoder", None);
+        push_inner("error", "ffmpeg", "mux failed", None);
+        let id = push_inner("error", "rip", "rip failed", Some("ctx"));
+        let tail = tail_of("ffmpeg", 10);
+        assert_eq!(tail, vec!["debug Opening decoder", "error mux failed"]);
+        assert_eq!(get(id).unwrap().source, "rip");
+        clear();
+    }
+
+    #[test]
     fn bounded() {
+        let _g = guard();
         clear();
         for i in 0..CAPACITY + 5 {
             push_inner("info", "t", format!("e{i}"), None);

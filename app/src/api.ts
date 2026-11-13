@@ -392,6 +392,8 @@ export const api = {
     listen<IsoProgress>("iso://progress", (e) => cb(e.payload)),
   onIsoDone: (cb: () => void): Promise<UnlistenFn> =>
     listen("iso://done", () => cb()),
+  onLogFail: (cb: (e: { id: number; message: string }) => void): Promise<UnlistenFn> =>
+    listen<{ id: number; message: string }>("logs://fail", (e) => cb(e.payload)),
   onIsoError: (cb: (e: string) => void): Promise<UnlistenFn> =>
     listen<string>("iso://error", (e) => cb(e.payload)),
   onProgress: (cb: (p: RipProgress) => void): Promise<UnlistenFn> =>

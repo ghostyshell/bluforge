@@ -250,6 +250,7 @@ export default function App() {
     const unAuthor = [
       api.onAuthorProgress((p) => setAuthorProg({ percent: p.percent, message: p.message })),
       api.onAuthorDone((path) => { setAuthorBusy(false); setToast(`Authored ${path}`); }),
+      api.onLogFail((e) => { setError(e.message); setErrorLog(e.id); }),
       api.onAuthorError((e) => { setAuthorBusy(false); void fail(e, "", "author"); }),
     ];
     const unErr = api.onRipError((msg) => {
@@ -2009,7 +2010,15 @@ export default function App() {
                             <span className="chip mono">{e.source}</span>
                             <span className="mono grow">#{e.id}</span>
                           </div>
-                          <div style={{ marginTop: 4 }}>{e.message}</div>
+                          <div className="row between" style={{ gap: 8 }}>
+                            <div style={{ marginTop: 4 }}>{e.message}</div>
+                            <button className="ghost sm" title="Copy this entry"
+                              onClick={() => void navigator.clipboard.writeText(
+                                `#${e.id} ${new Date(e.at).toISOString()} ${e.level} ${e.source}: ${e.message}\n${e.detail ?? ""}`,
+                              ).then(() => setToast("entry copied")).catch(() => setToast("copy failed"))}>
+                              Copy
+                            </button>
+                          </div>
                           {e.detail && (
                             <details open={e.id === logFocus}>
                               <summary className="sub">detail</summary>

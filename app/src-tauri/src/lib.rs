@@ -10,6 +10,12 @@ use keepsake_core::{config::AppConfig, disc::DiscInfo, iso, keys::KeyDbStatus, r
 mod logs;
 mod mcp;
 
+/// The first line of an error, for the banner and the log summary.
+fn short(e: &keepsake_core::CoreError) -> String {
+    let text = e.to_string();
+    text.lines().next().unwrap_or_default().to_string()
+}
+
 #[tauri::command]
 fn logs_tail(limit: Option<usize>, filter: Option<String>) -> Vec<logs::Entry> {
     logs::events(limit.unwrap_or(200), filter.as_deref())
@@ -301,6 +307,35 @@ fn pump_queue(app: AppHandle, state: &RpState) {
         }
         if let Err(e) = &res {
             if !cancelled {
+                let ctx = [
+                    ("job", id.to_string()),
+                    ("source", request.source.display().to_string()),
+                    (
+                        "title",
+                        request
+                            .title
+                            .map(|t| t.to_string())
+                            .unwrap_or_else(|| "main".into()),
+                    ),
+                    ("mode", format!("{:?}", request.mode)),
+                    ("audio", format!("{:?}", request.audio)),
+                    ("subs", format!("{:?}", request.subs)),
+                    (
+                        "dest",
+                        request
+                            .output
+                            .as_ref()
+                            .map(|p| p.display().to_string())
+                            .unwrap_or_default(),
+                    ),
+                ];
+                logs::fail_job(
+                    &app2,
+                    "ffmpeg",
+                    format!("rip failed: {}", short(e)),
+                    &ctx,
+                    e.to_string(),
+                );
                 let _ = app2.emit("rip://error", e.to_string());
             }
         }
@@ -814,6 +849,31 @@ fn start_rip(
         });
         running.store(false, Ordering::Relaxed);
         if let Err(e) = res {
+            let ctx = [
+                ("source", request.source.display().to_string()),
+                (
+                    "title",
+                    request
+                        .title
+                        .map(|t| t.to_string())
+                        .unwrap_or_else(|| "main".into()),
+                ),
+                (
+                    "dest",
+                    request
+                        .output
+                        .as_ref()
+                        .map(|p| p.display().to_string())
+                        .unwrap_or_default(),
+                ),
+            ];
+            logs::fail_job(
+                &app2,
+                "ffmpeg",
+                format!("rip failed: {}", short(&e)),
+                &ctx,
+                e.to_string(),
+            );
             let _ = app2.emit("rip://error", e.to_string());
         }
     });
@@ -844,6 +904,14 @@ fn burn_start(
                 let _ = app2.emit("burn://done", request.image.display().to_string());
             }
             Err(e) => {
+                let ctx = [("image", request.image.display().to_string())];
+                logs::fail_job(
+                    &app2,
+                    "burn",
+                    format!("burn failed: {}", short(&e)),
+                    &ctx,
+                    e.to_string(),
+                );
                 let _ = app2.emit("burn://error", e.to_string());
             }
         }
@@ -883,6 +951,14 @@ fn dvd_rip(
                 let _ = app2.emit("dvd://done", path.display().to_string());
             }
             Err(e) => {
+                let ctx = [("source", request.source.display().to_string())];
+                logs::fail_job(
+                    &app2,
+                    "dvd",
+                    format!("dvd rip failed: {}", short(&e)),
+                    &ctx,
+                    e.to_string(),
+                );
                 let _ = app2.emit("dvd://error", e.to_string());
             }
         }
@@ -933,6 +1009,17 @@ fn clone_start(
                 );
             }
             Err(e) => {
+                let ctx = [
+                    ("source", request.source.display().to_string()),
+                    ("dest", request.dest.display().to_string()),
+                ];
+                logs::fail_job(
+                    &app2,
+                    "clone",
+                    format!("clone failed: {}", short(&e)),
+                    &ctx,
+                    e.to_string(),
+                );
                 let _ = app2.emit("clone://error", e.to_string());
             }
         }
@@ -959,6 +1046,17 @@ fn author_start(
                 let _ = app2.emit("author://done", path.display().to_string());
             }
             Err(e) => {
+                let ctx = [
+                    ("dest", request.dest.display().to_string()),
+                    ("inputs", request.inputs.len().to_string()),
+                ];
+                logs::fail_job(
+                    &app2,
+                    "author",
+                    format!("author failed: {}", short(&e)),
+                    &ctx,
+                    e.to_string(),
+                );
                 let _ = app2.emit("author://error", e.to_string());
             }
         }
@@ -983,6 +1081,17 @@ fn export_iso(app: AppHandle, request: iso::IsoRequest) -> Result<(), String> {
                 let _ = app2.emit("iso://done", ());
             }
             Err(e) => {
+                let ctx = [
+                    ("source", request.source.display().to_string()),
+                    ("dest", request.dest.display().to_string()),
+                ];
+                logs::fail_job(
+                    &app2,
+                    "iso",
+                    format!("iso export failed: {}", short(&e)),
+                    &ctx,
+                    e.to_string(),
+                );
                 let _ = app2.emit("iso://error", e.to_string());
             }
         }
