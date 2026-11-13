@@ -91,9 +91,11 @@ test("reduced motion removes running animations", async ({ page }) => {
 test("System shows the running version and the changelog", async ({ page }) => {
   await page.getByRole("button", { name: /^System\./ }).click();
   await expect(page.getByRole("heading", { name: "Version" })).toBeVisible();
-  await expect(page.locator(".about-version")).toHaveText("0.2.0");
+  await expect(page.locator(".about-version")).toHaveText("0.2.2");
   await page.getByText("Changelog", { exact: true }).click();
-  await expect(page.getByText("Nothing yet.")).toBeVisible();
+  // An empty Unreleased heading is hidden in a shipped build.
+  await expect(page.locator("pre.mono")).not.toContainText("## Unreleased");
+  await expect(page.locator("pre.mono")).toContainText("## 0.2.1");
 });
 
 test("captures the populated disc view", async ({ page }) => {

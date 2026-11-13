@@ -42,6 +42,10 @@ scripts/bump-version.sh patch   # or minor for features, major for breakage
 scripts/check-changelog.sh
 ```
 
+The bump moves everything out of `Unreleased`; the guard fails if a version
+moved while entries are still pending there. Nothing may sit in `Unreleased`
+once the version that carries it has a dated section.
+
 Commit the changelog and the version files together with the code. Never bump
 the version without an entry, and never edit a released section: corrections go
 in the open one.

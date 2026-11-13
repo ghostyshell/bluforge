@@ -27,6 +27,18 @@ if body.strip() == "":
 open(sys.argv[1], "w").write(head + sep + body + sep2 + rest)
 PY
 
+cur=$(scripts/version.sh get)
+case "$part" in
+  major) next="$(( ${cur%%.*} + 1 )).0.0" ;;
+  minor) rest=${cur#*.}; next="${cur%%.*}.$(( ${rest%%.*} + 1 )).0" ;;
+  patch) next="${cur%.*}.$(( ${cur##*.} + 1 ))" ;;
+  *) echo "usage: $0 patch|minor|major" >&2; exit 1 ;;
+esac
+if grep -q "^## $next - " "$changelog"; then
+  echo "CHANGELOG.md already has a section for $next; released twice?" >&2
+  exit 1
+fi
+
 version=$(scripts/version.sh bump "$part")
 date=$(date +%F)
 

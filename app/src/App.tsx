@@ -119,6 +119,11 @@ export default function App() {
   const [tvError, setTvError] = useState<string | null>(null);
   const [mcp, setMcp] = useState<{ enabled: boolean; port: number | null } | null>(null);
   const [about, setAbout] = useState<AboutInfo | null>(null);
+  // A shipped build has nothing pending; hide the empty heading entirely.
+  const notes = useMemo(() => {
+    if (!about) return "";
+    return about.text.replace(/## Unreleased\n+(?:Nothing yet\.\n*)?(?=## )/m, "");
+  }, [about]);
   const [doctor, setDoctor] = useState<DoctorReport | null>(null);
   const [dvd, setDvd] = useState<DvdInfo | null>(null);
   const [dvdTitle, setDvdTitle] = useState<number | null>(null);
@@ -2140,7 +2145,7 @@ export default function App() {
                   <details className="group">
                     <summary>Changelog</summary>
                     <pre className="mono" style={{ whiteSpace: "pre-wrap", fontSize: 12, marginTop: 10 }}>
-                      {about?.text ?? "loading…"}
+                      {about ? notes : "loading…"}
                     </pre>
                   </details>
                 </section>

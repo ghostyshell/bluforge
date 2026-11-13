@@ -51,6 +51,19 @@ if ! grep -q "^## $new - " CHANGELOG.md; then
   fail=1
 fi
 
+# A released version must not leave notes waiting in Unreleased: those would
+# ship silently, and the app would show them under the wrong heading.
+if [ "$old" != "$new" ]; then
+  pending=$(awk '/^## Unreleased$/{f=1; next} /^## /{f=0} f' CHANGELOG.md \
+    | sed '/^[[:space:]]*$/d' | sed '/^Nothing yet\.$/d')
+  if [ -n "$pending" ]; then
+    echo "Unreleased still has entries under a new version $new:" >&2
+    printf '%s\n' "$pending" | sed 's/^/  /' >&2
+    echo "run scripts/bump-version.sh so they move into the dated section" >&2
+    fail=1
+  fi
+fi
+
 if [ "$fail" -ne 0 ]; then
   cat >&2 <<'MSG'
 

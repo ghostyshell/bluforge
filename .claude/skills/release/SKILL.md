@@ -14,7 +14,11 @@ job.
 ```sh
 scripts/check-changelog.sh          # shows what is missing
 scripts/bump-version.sh minor       # features; patch for fixes, major for breakage
+./scripts/check-changelog.sh v$(git describe --tags --abbrev=0 | tr -d v)
 ```
+
+The bump must leave `Unreleased` empty and create the dated section for the new
+version; the guard enforces both.
 
 That dates the `Unreleased` section, opens a new empty one, and writes the
 version to `Cargo.toml`, `app/src-tauri/tauri.conf.json` and

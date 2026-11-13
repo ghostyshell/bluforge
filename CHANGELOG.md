@@ -6,6 +6,17 @@ All notable changes to Keepsake Atelier. Newest first.
 
 Nothing yet.
 
+## 0.2.2 - 2026-11-14
+
+### Fixed
+
+- **A released version no longer leaves notes behind in Unreleased.** The
+  changelog guard now fails when the version moved but `Unreleased` still holds
+  entries, so a bump that forgets to move them cannot land; `bump-version.sh`
+  also refuses to cut a version that already has a dated section. The app hides
+  an empty `Unreleased` heading instead of showing "Nothing yet." in a shipped
+  build.
+
 ## 0.2.1 - 2026-11-13
 
 ### Fixed
