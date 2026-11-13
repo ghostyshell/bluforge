@@ -838,7 +838,8 @@ fn cinavia_strip(
     let source_codec = probe.codec.clone();
     let report = cinavia::analyze(path, track, channels, Some(180)).map_err(e)?;
     println!(
-        "track {track} ({channels} ch {source_codec}): {} ridges, {:.1} dB excess  -> {}",
+        "track {track} ({channels} ch {source_codec}{}): {} ridges, {:.1} dB excess  -> {}",
+        if probe.atmos { " + Atmos" } else { "" },
         report.density,
         report.mean_excess_db,
         report.verdict.label()
@@ -883,6 +884,7 @@ fn cinavia_strip(
         want,
         cinavia::Codec::from_name(&source_codec),
         hd,
+        probe.atmos,
         probe.kbps,
         channels,
         mkv,

@@ -181,6 +181,8 @@ pub struct SourceAudio {
     pub codec: String,
     pub profile: Option<String>,
     pub kbps: Option<u32>,
+    /// Dolby Atmos (JOC) metadata on a TrueHD or E-AC-3 track.
+    pub atmos: bool,
 }
 
 /// Describe one audio stream.
@@ -189,7 +191,7 @@ pub fn probe(path: &Path, track: usize) -> Result<SourceAudio, String> {
         .args(["-v", "error", "-select_streams", &format!("a:{track}")])
         .args([
             "-show_entries",
-            "stream=codec_name,profile,channels,bit_rate,sample_rate",
+            "stream=codec_name,profile,channels,bit_rate,sample_rate:stream_tags=title,handler_name",
             "-of",
             "default=noprint_wrappers=1",
         ])
@@ -202,6 +204,7 @@ pub fn probe(path: &Path, track: usize) -> Result<SourceAudio, String> {
         codec: String::new(),
         profile: None,
         kbps: None,
+        atmos: false,
     };
     for line in text.lines() {
         let Some((key, value)) = line.split_once('=') else {
@@ -219,7 +222,17 @@ pub fn probe(path: &Path, track: usize) -> Result<SourceAudio, String> {
             }
             "bit_rate" => info.kbps = value.parse::<u32>().ok().map(|b| b / 1000),
             "codec_name" => info.codec = value.to_string(),
-            "profile" => info.profile = Some(value.to_string()),
+            "TAG:title" | "TAG:handler_name" => {
+                if value.to_ascii_lowercase().contains("atmos") {
+                    info.atmos = true;
+                }
+            }
+            "profile" => {
+                if value.to_ascii_lowercase().contains("atmos") {
+                    info.atmos = true;
+                }
+                info.profile = Some(value.to_string());
+            }
             _ => {}
         }
     }
@@ -840,16 +853,23 @@ fn clamp_kbps(source_kbps: Option<u32>, lo: u32, hi: u32, fallback: u32) -> Opti
 
 /// Pick an encoder. `source_codec` is the ffprobe codec name ("ac3", "dts",
 /// "truehd", ...) and `profile` its profile string ("DTS-HD MA", ...).
+#[allow(clippy::too_many_arguments)]
 pub fn target_for(
     want: Codec,
     source: Codec,
     hd: bool,
+    atmos: bool,
     source_kbps: Option<u32>,
     channels: usize,
     mkv: bool,
 ) -> Result<Target, String> {
     let mut note = None;
-    let codec = if want == Codec::Auto {
+    let codec = if want == Codec::Auto && atmos && mkv {
+        // No Atmos encoder exists, so the objects are gone whatever happens.
+        // Keep the bed lossless and at full width instead of folding it to 5.1.
+        note = Some("Atmos objects cannot be encoded; keeping the lossless bed as FLAC".into());
+        Codec::Flac
+    } else if want == Codec::Auto {
         match source {
             // DTS-HD MA has no encoder; its core is lossy, so keep it lossless.
             Codec::Dts if hd && mkv => {
@@ -859,6 +879,9 @@ pub fn target_for(
             other => other,
         }
     } else {
+        if atmos {
+            note = Some("Atmos objects are dropped; only the bed is encoded".into());
+        }
         want
     };
     let codec = if !mkv {
@@ -1158,6 +1181,31 @@ mod tests {
             Verdict::of(STRONG, MASS_STRONG, 40.0, 60.0),
             Verdict::Strong
         );
+    }
+
+    #[test]
+    fn atmos_keeps_the_bed_lossless() {
+        // Auto must not fold a 7.1 Atmos bed to 5.1 TrueHD; FLAC keeps it.
+        let t = target_for(Codec::Auto, Codec::TrueHd, false, true, None, 8, true).unwrap();
+        assert_eq!(t.encoder, "flac");
+        assert!(t.note.unwrap().contains("Atmos"));
+        // An explicit choice still loses the objects, and says so.
+        let t = target_for(Codec::Eac3, Codec::TrueHd, false, true, None, 8, true).unwrap();
+        assert_eq!(t.encoder, "eac3");
+        assert_eq!(t.channels, 8);
+        assert!(t.note.unwrap().contains("objects are dropped"));
+    }
+
+    #[test]
+    fn source_format_is_followed() {
+        let t = target_for(Codec::Auto, Codec::Ac3, false, false, Some(448), 6, true).unwrap();
+        assert_eq!(t.encoder, "ac3");
+        assert_eq!(t.bitrate, Some(448));
+        let t = target_for(Codec::Auto, Codec::Dts, true, false, None, 6, true).unwrap();
+        assert_eq!(t.encoder, "flac", "DTS-HD has no encoder");
+        let t = target_for(Codec::Auto, Codec::Dts, false, false, None, 6, true).unwrap();
+        assert_eq!(t.encoder, "dca");
+        assert!(t.strict);
     }
 
     #[test]

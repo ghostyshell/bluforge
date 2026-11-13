@@ -1721,10 +1721,12 @@ fn prepare_cinavia(
                 ..
             }
         );
+        // A TrueHD track may carry Atmos; there is no probe on this path.
         let target = crate::cinavia::target_for(
             req.cinavia_codec.unwrap_or(crate::cinavia::Codec::Auto),
             source_family,
             hd,
+            coding == 0x83,
             None,
             channels,
             mkv,

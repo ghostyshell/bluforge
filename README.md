@@ -275,8 +275,9 @@ The test suite runs with `cargo test`.
 - Cinavia is a proprietary audio watermark. The app measures it and can notch
   it out (`cinavia detect` / `cinavia strip`, or the Rip page's Strip Cinavia
   option), re-encoding to the source format by default (AC-3, E-AC-3, DTS,
-  TrueHD). It costs some level and brightness and cannot be verified without a
-  Cinavia-aware player. See [docs/guides/cinavia.md](docs/guides/cinavia.md).
+  TrueHD). Atmos is detected and its bed is kept; the objects cannot be
+  re-created. It costs some level and brightness and cannot be verified without
+  a Cinavia-aware player. See [docs/guides/cinavia.md](docs/guides/cinavia.md).
 - Authored BD-J menus are verified in a JVM harness and by libbluray's parser,
   not on a hardware player. They are opt-in.
 - Burning needs a writer and a blank BD-RE or BD-R. The drive and size query are

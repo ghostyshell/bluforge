@@ -82,10 +82,15 @@ keepsake-atelier cinavia strip movie.mkv out.mkv --dry-run        # print the pl
 | DTS core | DTS, 768-1536 kbps, at the source bitrate |
 | Dolby TrueHD | TrueHD (lossless, ffmpeg's experimental encoder) |
 | DTS-HD MA | FLAC, because no encoder exists for the extension |
+| Dolby Atmos (TrueHD or E-AC-3) | FLAC: no Atmos encoder exists, so the objects are dropped and the bed stays lossless and 7.1 |
 | LPCM / AAC / anything else | FLAC in MKV, AAC in MP4 |
 
 The explicit values are `ac3`, `eac3`, `dts`, `truehd`, `flac` and `aac`, and a
-hopeless pairing is rejected rather than silently substituted. Two constraints
+hopeless pairing is rejected rather than silently substituted. Atmos is
+detected from the track's profile or tags, shown in `detect` output, and always
+flagged in the plan: ffmpeg has no Atmos (JOC) encoder, so an Atmos track comes
+back as a 7.1 bed with objects discarded, whichever codec you choose. Keeping
+FLAC is the least lossy option; the object metadata is gone in every case. Two constraints
 are real: the bundled Dolby and DTS encoders take **5.1 at most**, so a 7.1
 track is folded down (FLAC and AAC keep 7.1), and MP4 only carries AC-3, E-AC-3
 and AAC, so `dts`/`truehd`/`flac` with `.mp4` become AAC with a note.
@@ -121,6 +126,8 @@ Honest limits, in the same order the white paper puts them:
 - The Dolby and DTS re-encoders are ffmpeg's own: `dca` and `truehd` are still
   marked experimental, the DTS encoder is the core only (no DTS-HD extension),
   and all four cap at 5.1. A 7.1 track is folded down unless you keep FLAC.
+- Atmos object metadata is never re-created. Only the bed survives, at 7.1 if
+  you keep FLAC and 5.1 if you pick a Dolby or DTS target.
 - AC-3 and DTS have hard bitrate ceilings (640 kbps and 1536 kbps). Re-encoding
   a DTS-HD MA core to DTS at those rates is a quality step down from FLAC, so
   `auto` prefers FLAC for HD sources even though it is not the source family.
