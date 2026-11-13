@@ -1458,7 +1458,7 @@ fn tools() -> Vec<Value> {
                 "ten_bit": { "type": "boolean" },
                 "aac_audio": { "type": "boolean" },
                 "cinavia": { "type": "boolean", "description": "Strip the Cinavia watermark (re-encodes the audio)." },
-                "cinavia_codec": { "type": "string", "enum": ["auto", "ac3", "eac3", "dts", "truehd", "flac", "aac"], "description": "Codec for stripped audio; auto keeps the source format." }
+                "cinavia_codec": { "type": "string", "enum": ["auto", "ac3", "eac3", "dts", "truehd", "atmos", "flac", "aac"], "description": "Codec for stripped audio; auto keeps the source format." }
             }, "required": ["source"] }
         }),
         json!({

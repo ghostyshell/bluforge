@@ -766,6 +766,8 @@ pub enum Codec {
     Dts,
     #[serde(rename = "truehd", alias = "true_hd")]
     TrueHd,
+    /// E-AC-3 with Atmos object metadata, through the external tools.
+    Atmos,
     Flac,
     Aac,
 }
@@ -778,6 +780,7 @@ impl Codec {
             "eac3" | "ddp" | "dolby-digital-plus" => Codec::Eac3,
             "dts" => Codec::Dts,
             "truehd" | "true_hd" => Codec::TrueHd,
+            "atmos" | "joc" => Codec::Atmos,
             "flac" => Codec::Flac,
             "aac" => Codec::Aac,
             other => return Err(format!("unknown codec {other}")),
@@ -818,6 +821,7 @@ impl Codec {
             Codec::Eac3 => "eac3",
             Codec::Dts => "dts",
             Codec::TrueHd => "truehd",
+            Codec::Atmos => "atmos",
             Codec::Flac => "flac",
             Codec::Aac => "aac",
         }
@@ -842,6 +846,33 @@ impl Target {
     }
 }
 
+/// Locate one of the external Atmos tools (env override, then PATH).
+pub fn atmos_tool(name: &str) -> Option<std::path::PathBuf> {
+    let env = format!("KEEPSAKE_{}", name.to_uppercase().replace('-', "_"));
+    if let Ok(p) = std::env::var(&env) {
+        return Some(std::path::PathBuf::from(p));
+    }
+    let path = std::env::var_os("PATH")?;
+    std::env::split_paths(&path)
+        .map(|d| d.join(name))
+        .find(|p| p.is_file())
+}
+
+/// Both halves of the Atmos pipeline, or an explanation.
+pub fn atmos_tools() -> Result<(std::path::PathBuf, std::path::PathBuf), String> {
+    let decode = atmos_tool("truehdd");
+    let encode = atmos_tool("dolby-atmos-encoder");
+    match (decode, encode) {
+        (Some(d), Some(e)) => Ok((d, e)),
+        _ => Err(
+            "Atmos needs two tools on PATH: truehdd and dolby-atmos-encoder \
+             (cargo install --git https://github.com/truehdd/truehdd --bin truehdd; \
+             cargo install --git https://github.com/raress96/dolby-atmos-encoder)"
+                .into(),
+        ),
+    }
+}
+
 /// Largest channel count any of the bundled encoders accepts.
 pub const MAX_ENCODER_CHANNELS: usize = 6;
 
@@ -863,8 +894,16 @@ pub fn target_for(
     channels: usize,
     mkv: bool,
 ) -> Result<Target, String> {
+    if want == Codec::Atmos && !mkv {
+        return Err("Atmos (E-AC-3) needs an MKV output".into());
+    }
     let mut note = None;
-    let codec = if want == Codec::Auto && atmos && mkv {
+    let codec = if want == Codec::Atmos {
+        if !atmos {
+            note = Some("the source carries no Atmos metadata; objects will be empty".into());
+        }
+        Codec::Atmos
+    } else if want == Codec::Auto && atmos && mkv {
         // No Atmos encoder exists, so the objects are gone whatever happens.
         // Keep the bed lossless and at full width instead of folding it to 5.1.
         note = Some("Atmos objects cannot be encoded; keeping the lossless bed as FLAC".into());
@@ -909,6 +948,8 @@ pub fn target_for(
         Codec::Dts => ("dca", clamp_kbps(source_kbps, 768, 1536, 1536), true),
         Codec::TrueHd => ("truehd", None, true),
         Codec::Flac => ("flac", None, false),
+        // The encoder is the external Atmos pipeline, not a libavcodec one.
+        Codec::Atmos => ("eac3", Some(768), false),
         // `aac` covers the fallback and the explicit request.
         Codec::Aac | Codec::Auto => ("aac", Some(640), false),
     };
@@ -941,7 +982,7 @@ pub fn encode_args(target: &Target) -> Vec<String> {
     if target.channels > MAX_ENCODER_CHANNELS
         && matches!(
             target.codec,
-            Codec::Ac3 | Codec::Eac3 | Codec::Dts | Codec::TrueHd
+            Codec::Ac3 | Codec::Eac3 | Codec::Dts | Codec::TrueHd | Codec::Atmos
         )
     {
         a.push("-ac".into());

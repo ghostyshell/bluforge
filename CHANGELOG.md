@@ -46,8 +46,12 @@ All notable changes to Keepsake Atelier. Newest first.
   encoders cap at 5.1 and DTS-HD MA and Atmos have no encoder, so `auto` keeps
   FLAC for HD and Atmos sources and anything the chosen encoder cannot hold is
   folded down. Atmos is detected from the profile or stream tags, surfaced in
-  `detect` and always called out in the plan: the objects cannot be re-created,
-  only the bed is encoded. It is wired into `rip --cinavia`, `watch --cinavia`, the Rip
+  `detect` and always called out in the plan. `--codec atmos` goes further and
+  actually re-creates an Atmos track: the TrueHD master is decoded with
+  `truehdd`, the rendered bed is notched, and an E-AC-3 core is encoded and has
+  the object metadata re-injected with `dolby-atmos-encoder`. Without those two
+  tools, or under `auto`, Atmos falls back to the lossless bed as FLAC with the
+  objects dropped. It is wired into `rip --cinavia`, `watch --cinavia`, the Rip
   page and the Automation card, and MCP accepts the flag. The pass costs level
   and brightness and cannot be verified without a Cinavia-aware player; the
   limits, and the measurement behind them, are in [guides/cinavia.md](docs/guides/cinavia.md).

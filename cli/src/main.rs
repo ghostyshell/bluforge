@@ -907,6 +907,9 @@ fn cinavia_strip(
         return Ok(());
     }
 
+    if target.codec == cinavia::Codec::Atmos {
+        return cinavia_strip_atmos(path, out, track, spec, &report, channels, probe.atmos);
+    }
     let tmp = std::env::temp_dir().join(format!("keepsake-cinavia-{}.wav", std::process::id()));
     let cancel = std::sync::atomic::AtomicBool::new(false);
     let mut attempt = 0;
@@ -971,6 +974,139 @@ fn cinavia_strip(
         out.display(),
         report.density
     );
+    Ok(())
+}
+
+/// Atmos variant of the strip: decode the TrueHD/Atmos master, render the bed,
+/// notch it, encode an E-AC-3 core and re-inject the object metadata.
+fn cinavia_strip_atmos(
+    path: &std::path::Path,
+    out: &std::path::Path,
+    track: usize,
+    mut spec: keepsake_core::cinavia::BandSpec,
+    report: &keepsake_core::cinavia::TrackReport,
+    channels: usize,
+    atmos_source: bool,
+) -> Result<(), keepsake_core::CoreError> {
+    use keepsake_core::cinavia;
+    let e = keepsake_core::CoreError::Config;
+    let (truehdd, encoder) = cinavia::atmos_tools().map_err(e)?;
+    let ffmpeg = keepsake_core::rip::ffmpeg_path();
+    let cancel = std::sync::atomic::AtomicBool::new(false);
+
+    let dir = std::env::temp_dir().join(format!("keepsake-atmos-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).map_err(|x| e(x.to_string()))?;
+    let run =
+        |mut cmd: std::process::Command, what: &str| -> Result<(), keepsake_core::CoreError> {
+            let st = cmd.status().map_err(|x| e(format!("{what}: {x}")))?;
+            if st.success() {
+                Ok(())
+            } else {
+                Err(e(format!("{what} failed")))
+            }
+        };
+
+    // 1. elementary stream (a copy, so the objects survive).
+    let thd = dir.join("a.thd");
+    let mut c = std::process::Command::new(&ffmpeg);
+    c.args(["-v", "error", "-y", "-i"]).arg(path);
+    c.args(["-map", &format!("0:a:{track}"), "-vn", "-sn", "-dn"]);
+    c.args(["-c:a", "copy", "-f", "truehd"]).arg(&thd);
+    run(c, "truehd extract")?;
+
+    // 2. TrueHD -> Damf master.
+    let master = dir.join("m");
+    let mut c = std::process::Command::new(&truehdd);
+    c.arg("decode").arg(&thd).arg("--output-path").arg(&master);
+    run(c, "truehdd decode")?;
+    // truehdd writes a .atmos master when the stream carries objects, and a
+    // plain .caf when it does not.
+    let master_file = dir.join("m.atmos");
+    let plain = dir.join("m.caf");
+    let has_objects = master_file.is_file();
+    let down = dir.join("down.wav");
+    if !has_objects && !plain.is_file() {
+        return Err(e("truehdd produced no master".into()));
+    }
+
+    // 3. Render the bed to 5.1 float, with a little headroom.
+    if has_objects {
+        let mut c = std::process::Command::new(&encoder);
+        c.arg("downmix").arg(&master_file).arg("--out").arg(&down);
+        // clap reads a bare -3 as a flag, so bind it with `=`.
+        c.arg("--gain-db=-3");
+        run(c, "atmos downmix")?;
+    } else {
+        let mut c = std::process::Command::new(&ffmpeg);
+        c.args(["-v", "error", "-y", "-i"]).arg(&plain);
+        c.args(["-channel_layout", "5.1", "-ac", "6"]);
+        c.arg(&down);
+        run(c, "bed downmix")?;
+    }
+
+    // 4. Measure, notch and re-check the rendered bed.
+    let probe = cinavia::probe(&down, 0).map_err(e)?;
+    let ch = probe.channels;
+    spec.depth_db = report.depth_db;
+    let mut pass = 0;
+    let notched = dir.join("n.wav");
+    loop {
+        pass += 1;
+        cinavia::strip(&down, 0, &notched, spec, ch, &cancel, |_| {}).map_err(e)?;
+        let check = cinavia::analyze(&notched, 0, ch, Some(120)).map_err(e)?;
+        println!(
+            "  pass {pass}: notch at {:.0} dB -> {} ridges, mass {:.0}",
+            spec.depth_db, check.density, check.score
+        );
+        if check.band_ratio_db <= cinavia::RATIO_CLEAN + 1.0 || spec.depth_db >= 18.0 || pass >= 2 {
+            break;
+        }
+        spec.depth_db = (spec.depth_db + 3.0).min(18.0);
+    }
+
+    // 5. E-AC-3 core, then metadata injection.
+    let core = dir.join("core.eac3");
+    let mut c = std::process::Command::new(&ffmpeg);
+    c.args(["-v", "error", "-y", "-i"]).arg(&notched);
+    // The render can exceed 0 dBFS; E-AC-3 rejects out-of-range exponents.
+    c.args(["-channel_layout", "5.1", "-af", "alimiter=limit=0.9"]);
+    c.args(["-c:a", "eac3", "-b:a", "768k"]);
+    c.args(["-f", "eac3"]).arg(&core);
+    run(c, "eac3 encode")?;
+
+    let mut atmos = core.clone();
+    if has_objects {
+        atmos = dir.join("atmos.eac3");
+        let mut c = std::process::Command::new(&encoder);
+        c.arg("atmos")
+            .arg(&core)
+            .arg(&master_file)
+            .arg("--out")
+            .arg(&atmos);
+        run(c, "atmos inject")?;
+    } else {
+        println!("note: the stream carries no object metadata; writing plain E-AC-3");
+    }
+
+    // 6. Mux: video and subtitles copied, the Atmos track copied in.
+    let mut c = std::process::Command::new(&ffmpeg);
+    c.args(["-v", "error", "-y", "-i"])
+        .arg(path)
+        .arg("-i")
+        .arg(&atmos);
+    c.args([
+        "-map", "0:v?", "-map", "1:a:0", "-map", "0:s?", "-map", "0:d?",
+    ]);
+    c.args(["-map_metadata", "0", "-map_chapters", "0"]);
+    c.args(["-c:v", "copy", "-c:a", "copy", "-c:s", "copy"]);
+    c.args(["-disposition:a:0", "default"]).arg(out);
+    run(c, "mux")?;
+    let _ = std::fs::remove_dir_all(&dir);
+
+    let kind = if atmos_source { "Atmos" } else { "E-AC-3" };
+    println!("wrote {} ({kind}, bed notched)", out.display());
+    let _ = channels;
     Ok(())
 }
 

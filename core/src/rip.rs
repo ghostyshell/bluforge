@@ -1722,8 +1722,22 @@ fn prepare_cinavia(
             }
         );
         // A TrueHD track may carry Atmos; there is no probe on this path.
+        // The rip pipe is decoded PCM, so there is no TrueHD master to inject
+        // objects into; Atmos degrades to plain E-AC-3 here.
+        let want = req.cinavia_codec.unwrap_or(crate::cinavia::Codec::Auto);
+        if want == crate::cinavia::Codec::Atmos {
+            tracing::info!(
+                track = tracks[n],
+                "cinavia: rip writes plain E-AC-3 for Atmos"
+            );
+        }
+        let want = if want == crate::cinavia::Codec::Atmos {
+            crate::cinavia::Codec::Eac3
+        } else {
+            want
+        };
         let target = crate::cinavia::target_for(
-            req.cinavia_codec.unwrap_or(crate::cinavia::Codec::Auto),
+            want,
             source_family,
             hd,
             coding == 0x83,

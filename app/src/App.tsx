@@ -1366,6 +1366,7 @@ export default function App() {
                             <option value="eac3">Dolby Digital Plus</option>
                             <option value="dts">DTS</option>
                             <option value="truehd">Dolby TrueHD</option>
+                            <option value="atmos">Dolby Atmos (E-AC-3)</option>
                             <option value="flac">FLAC (lossless)</option>
                             <option value="aac">AAC</option>
                           </select>
@@ -1934,6 +1935,7 @@ export default function App() {
                         <option value="eac3">Dolby Digital Plus</option>
                         <option value="dts">DTS</option>
                         <option value="truehd">Dolby TrueHD</option>
+                        <option value="atmos">Dolby Atmos (E-AC-3)</option>
                         <option value="flac">FLAC (lossless)</option>
                         <option value="aac">AAC</option>
                       </select>

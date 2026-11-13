@@ -82,15 +82,12 @@ keepsake-atelier cinavia strip movie.mkv out.mkv --dry-run        # print the pl
 | DTS core | DTS, 768-1536 kbps, at the source bitrate |
 | Dolby TrueHD | TrueHD (lossless, ffmpeg's experimental encoder) |
 | DTS-HD MA | FLAC, because no encoder exists for the extension |
-| Dolby Atmos (TrueHD or E-AC-3) | FLAC: no Atmos encoder exists, so the objects are dropped and the bed stays lossless and 7.1 |
+| Dolby Atmos on TrueHD | `--codec atmos`: E-AC-3 with the objects re-attached; `auto` keeps FLAC |
+| Dolby Atmos on E-AC-3 | `--codec atmos`, or `auto` re-encodes E-AC-3 without objects |
 | LPCM / AAC / anything else | FLAC in MKV, AAC in MP4 |
 
-The explicit values are `ac3`, `eac3`, `dts`, `truehd`, `flac` and `aac`, and a
-hopeless pairing is rejected rather than silently substituted. Atmos is
-detected from the track's profile or tags, shown in `detect` output, and always
-flagged in the plan: ffmpeg has no Atmos (JOC) encoder, so an Atmos track comes
-back as a 7.1 bed with objects discarded, whichever codec you choose. Keeping
-FLAC is the least lossy option; the object metadata is gone in every case. Two constraints
+The explicit values are `ac3`, `eac3`, `dts`, `truehd`, `atmos`, `flac` and
+`aac`, and a hopeless pairing is rejected rather than silently substituted. Two constraints
 are real: the bundled Dolby and DTS encoders take **5.1 at most**, so a 7.1
 track is folded down (FLAC and AAC keep 7.1), and MP4 only carries AC-3, E-AC-3
 and AAC, so `dts`/`truehd`/`flac` with `.mp4` become AAC with a note.
@@ -126,13 +123,44 @@ Honest limits, in the same order the white paper puts them:
 - The Dolby and DTS re-encoders are ffmpeg's own: `dca` and `truehd` are still
   marked experimental, the DTS encoder is the core only (no DTS-HD extension),
   and all four cap at 5.1. A 7.1 track is folded down unless you keep FLAC.
-- Atmos object metadata is never re-created. Only the bed survives, at 7.1 if
-  you keep FLAC and 5.1 if you pick a Dolby or DTS target.
+- Atmos: with `--codec atmos` the objects survive as E-AC-3 metadata, but the
+  track is lossy DD+ and the object audio is limited by the 5.1 core. On
+  `auto`, or with any other codec, the objects are dropped and only the bed
+  survives.
 - AC-3 and DTS have hard bitrate ceilings (640 kbps and 1536 kbps). Re-encoding
   a DTS-HD MA core to DTS at those rates is a quality step down from FLAC, so
   `auto` prefers FLAC for HD sources even though it is not the source family.
 - Stereo-only titles give the detector one channel of evidence and are the
   likeliest to need `--band` by hand.
+
+## Atmos
+
+ffmpeg has no Atmos (JOC) encoder, so `--codec atmos` uses two external tools
+instead:
+
+```sh
+cargo install --git https://github.com/truehdd/truehdd --bin truehdd
+cargo install --git https://github.com/raress96/dolby-atmos-encoder
+```
+
+Both must be on `PATH` (or set `KEEPSAKE_TRUEHDD` / `KEEPSAKE_DOLBY_ATMOS_ENCODER`).
+The strip then:
+
+1. copies the TrueHD elementary stream out of the file,
+2. decodes it to a Dolby Atmos Master (`truehdd decode`),
+3. renders the bed to 5.1 and notches that, with the usual measurement,
+4. encodes an E-AC-3 core and re-injects the per-frame object metadata
+   (`dolby-atmos-encoder atmos`).
+
+The result decodes as `Dolby Digital Plus + Dolby Atmos` and keeps the object
+positions, but it is not a TrueHD Atmos track: the lossless coding, and the
+object audio beyond what the 5.1 core can carry, are not restored. A track with
+no object metadata is written as plain E-AC-3 with a note.
+
+Costs, on top of the usual ones: two extra tools to install, a temporary copy of
+the stream and the rendered bed on disk, and a muxed file that is E-AC-3 rather
+than TrueHD. `cinavia strip` handles Atmos; a `rip --cinavia-codec atmos` falls
+back to plain E-AC-3 because the rip pipe carries decoded PCM, not a master.
 
 ## References
 
