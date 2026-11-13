@@ -143,6 +143,12 @@ const invoke: Invoke = async (cmd, args = {}) => {
         optical: [drive],
         keys: { path: "/Users/you/Library/Application Support/keepsake-atelier/KEYDB.cfg", exists: true, entries: 128433, bytes: 24117248, modified: 0 },
       };
+    case "logs_tail":
+    case "logs_get":
+    case "logs_clear":
+      return logs;
+    case "log_error":
+      return 1;
     case "changelog":
       return {
         version: "0.2.2",
@@ -281,6 +287,18 @@ const invoke: Invoke = async (cmd, args = {}) => {
       throw new Error(`mock: no handler for ${cmd}`);
   }
 };
+
+let logs: unknown[] = [
+  {
+    id: 1,
+    at: Date.now(),
+    level: "error",
+    source: "ffmpeg",
+    message: "mux failed",
+    detail: "line one\nline two",
+  },
+  { id: 2, at: Date.now() - 5000, level: "info", source: "rip", message: "spawning ffmpeg", detail: null },
+];
 
 export function installMock() {
   const w = window as any;

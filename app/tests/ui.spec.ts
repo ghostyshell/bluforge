@@ -98,6 +98,24 @@ test("System shows the running version and the changelog", async ({ page }) => {
   await expect(page.locator("pre.mono")).toContainText("## 0.2.1");
 });
 
+test("the session lists recent logs and the page filters by id", async ({ page }) => {
+  const session = page.getByRole("complementary", { name: "Session" });
+  await expect(session.getByText("mux failed")).toBeVisible();
+  await expect(session.getByText("spawning ffmpeg")).toBeVisible();
+
+  // The error entry pins itself when opened from the session list.
+  await session.getByRole("button", { name: /mux failed/ }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Logs" })).toBeVisible();
+  await expect(page.locator(".logrow.focus")).toHaveCount(1);
+  await expect(page.locator(".logrow.focus")).toContainText("line one");
+  await expect(page.locator(".logrow")).toHaveCount(1);
+
+  // The filter box clears the pin and searches freely.
+  await page.getByPlaceholder("text, source, or #id").fill("spawning");
+  await expect(page.locator(".logrow")).toHaveCount(1);
+  await expect(page.locator(".logrow")).toContainText("spawning ffmpeg");
+});
+
 test("captures the populated disc view", async ({ page }) => {
   await page.getByRole("button", { name: /Pioneer/ }).click();
   await page.getByRole("button", { name: "Read disc" }).click();

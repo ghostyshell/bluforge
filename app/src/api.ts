@@ -1,6 +1,15 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
+export type LogEntry = {
+  id: number;
+  at: number;
+  level: "error" | "warn" | "info" | "debug" | string;
+  source: string;
+  message: string;
+  detail: string | null;
+};
+
 export type AboutInfo = {
   version: string;
   text: string;
@@ -365,6 +374,12 @@ export type QueueJob = {
 export const api = {
   snapshot: () => invoke<Snapshot>("snapshot"),
   changelog: () => invoke<AboutInfo>("changelog"),
+  logsTail: (limit?: number, filter?: string | null) =>
+    invoke<LogEntry[]>("logs_tail", { limit: limit ?? null, filter: filter ?? null }),
+  logsGet: (id: number) => invoke<LogEntry | null>("logs_get", { id }),
+  logsClear: () => invoke<void>("logs_clear"),
+  logError: (source: string, message: string, detail: string) =>
+    invoke<number>("log_error", { source, message, detail }),
   keysStatus: () => invoke<KeyDbStatus>("keys_status"),
   keysUpdate: () => invoke<KeyDbStatus>("keys_update"),
   config: () => invoke<AppConfig>("config_get"),

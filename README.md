@@ -158,6 +158,7 @@ The complete list, including limits and caveats, is in
 | [Burn and verify](docs/guides/burn.md) | Size query, dry run, write, read back |
 | [Automation](docs/guides/automation.md) | Auto-rip on insertion, watch folders, notifications |
 | [Cinavia](docs/guides/cinavia.md) | Measure and remove the Verance watermark |
+| [Logs](docs/guides/logs.md) | Read run detail and failure output |
 | [MCP](docs/guides/mcp.md) | Drive the app from Claude, Cursor or a script |
 | [Troubleshooting](docs/guides/troubleshooting.md) | The errors people actually hit |
 

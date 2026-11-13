@@ -64,3 +64,36 @@ pub fn helper(name: &str) -> Option<PathBuf> {
 pub fn helper_str(name: &str) -> Option<String> {
     helper(name).map(|p| p.display().to_string())
 }
+
+/// Drain a child's stderr into tracing, one line per event, so a caller that
+/// does not read it cannot dead-lock on a full pipe and the app can show it.
+/// The thread ends when the child closes stderr.
+pub fn drain_stderr(
+    mut stderr: std::process::ChildStderr,
+    label: &'static str,
+) -> std::thread::JoinHandle<()> {
+    std::thread::spawn(move || {
+        use std::io::BufRead;
+        let reader = std::io::BufReader::new(&mut stderr);
+        for line in reader.lines() {
+            let Ok(line) = line else { break };
+            let line = line.trim_end().to_string();
+            if line.is_empty() {
+                continue;
+            }
+            if line.contains("Error") || line.contains("error") || line.contains("failed") {
+                tracing::error!(target: "process", process = label, "{line}");
+            } else {
+                tracing::info!(target: "process", process = label, "{line}");
+            }
+        }
+    })
+}
+
+/// Take the child's stderr and start draining it. Returns the drain thread.
+pub fn capture_stderr(
+    child: &mut std::process::Child,
+    label: &'static str,
+) -> Option<std::thread::JoinHandle<()>> {
+    child.stderr.take().map(|s| drain_stderr(s, label))
+}

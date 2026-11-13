@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import {
   api,
   type AboutInfo,
+  type LogEntry,
   type AppConfig,
   type DiscInfo,
   type DoctorReport,
@@ -152,6 +153,11 @@ export default function App() {
   const [burnProgress, setBurnProgress] = useState<BurnProgress | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [errorLog, setErrorLog] = useState<number | null>(null);
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [logFilter, setLogFilter] = useState("");
+  const [logLevel, setLogLevel] = useState("all");
+  const [logFocus, setLogFocus] = useState<number | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [update, setUpdate] = useState<string | null>(null);
   const startedKeys = useRef(false);
@@ -222,7 +228,7 @@ export default function App() {
       const dev = s.optical[0];
       if (dev) setDiscPath(dev.mount_point ?? `/dev/r${dev.bsd_name}`);
       else if (s.optical.length === 0) setDiscPath("");
-    } catch (e) { setError(String(e)); }
+    } catch (e) { void fail(String(e)); }
   }, []);
 
   useEffect(() => {
@@ -244,11 +250,11 @@ export default function App() {
     const unAuthor = [
       api.onAuthorProgress((p) => setAuthorProg({ percent: p.percent, message: p.message })),
       api.onAuthorDone((path) => { setAuthorBusy(false); setToast(`Authored ${path}`); }),
-      api.onAuthorError((e) => { setAuthorBusy(false); setError(e); }),
+      api.onAuthorError((e) => { setAuthorBusy(false); void fail(e, "", "author"); }),
     ];
     const unErr = api.onRipError((msg) => {
       setBusy(null);
-      setError(msg);
+      void fail(msg);
     });
     return () => {
       un.then((f) => f());
@@ -258,7 +264,7 @@ export default function App() {
   }, [refresh]);
 
   const openDisc = async (p: string) => {
-    setError(null); setBusy("reading disc");
+    setError(null); setErrorLog(null); setBusy("reading disc");
     try {
       const info = await api.openDisc(p);
       setDisc(info);
@@ -282,7 +288,7 @@ export default function App() {
       } catch {
         setDisc(null);
         setDvd(null);
-        setError(String(e));
+        void fail(String(e));
       }
     } finally { setBusy(null); }
   };
@@ -346,7 +352,24 @@ export default function App() {
       await api.setConfig(next);
       setToast("Saved");
       setMcp(await api.mcpStatus());
-    } catch (e) { setError(String(e)); }
+    } catch (e) { void fail(String(e)); }
+  };
+
+  /// Surface a failure and file it in the log, keeping the entry id for the
+  /// banner's link.
+  const fail = async (message: string, detail = "", source = "ui") => {
+    setError(message);
+    try {
+      setErrorLog(await api.logError(source, message, detail));
+    } catch {
+      setErrorLog(null);
+    }
+  };
+
+  const openLogFor = (id: number | null) => {
+    setSection("logs");
+    setLogFocus(id);
+    setLogFilter(id == null ? "" : `#${id}`);
   };
 
   // Build the request for one title (or the TV plan). The queue backend runs
@@ -384,12 +407,12 @@ export default function App() {
   const enqueueRip = async (t: number | null = title) => {
     const req = ripRequest(t);
     if (!req) return;
-    setError(null);
+    setError(null); setErrorLog(null);
     try {
       await api.queueAdd(req);
       await refreshQueue();
       setToast(tvPlan ? "episodes queued" : `title ${t ?? "main"} queued`);
-    } catch (e) { setError(String(e)); }
+    } catch (e) { void fail(String(e)); }
   };
 
   // Queue every real title (skip menus/trailers under a minute). In TV mode the
@@ -405,7 +428,7 @@ export default function App() {
       setToast("no titles at least a minute long");
       return;
     }
-    setError(null);
+    setError(null); setErrorLog(null);
     try {
       for (const t of targets) {
         const req = ripRequest(t.index);
@@ -413,7 +436,7 @@ export default function App() {
       }
       await refreshQueue();
       setToast(`${targets.length} title(s) queued`);
-    } catch (e) { setError(String(e)); }
+    } catch (e) { void fail(String(e)); }
   };
 
   const patchTab = (role: CoverRole, p: Partial<TabState>) =>
@@ -428,7 +451,7 @@ export default function App() {
       const hits = await api.coversSearch(q, st.source, 12);
       patchTab(role, { hits });
       if (selectBest) patchTab(role, { selected: hits.find((h) => fitsRole(role, h)) ?? null });
-    } catch (e) { setError(String(e)); }
+    } catch (e) { void fail(String(e)); }
     finally { patchTab(role, { busy: false }); }
   };
 
@@ -473,8 +496,8 @@ export default function App() {
     const dev = optical[0];
     const raw = dev ? `/dev/r${dev.bsd_name}` : "";
     const src = raw || discPath;
-    if (!src) { setError("no disc device found"); return; }
-    setError(null);
+    if (!src) { void fail("no disc device found"); return; }
+    setError(null); setErrorLog(null);
     setTvBusy(true);
     try {
       let p;
@@ -488,7 +511,7 @@ export default function App() {
       setTvPlan(p);
       setTvSel(Object.fromEntries(p.items.map((i) => [i.episode.number, true])));
       setToast(`${p.items.length} episodes detected`);
-    } catch (e) { setTvError(String(e)); setError(String(e)); }
+    } catch (e) { setTvError(String(e)); void fail(String(e)); }
     finally { setTvBusy(false); }
   };
 
@@ -506,12 +529,12 @@ export default function App() {
       const stem = files[0].split("/").pop()?.replace(/\.[^.]+$/, "") ?? "disc";
       const base = `${(cfg?.output_dir ?? "").replace(/\/$/, "")}/${stem}/${stem}`;
       setAuthorOut(`${base}.iso`);
-    } catch (e) { setError(String(e)); }
+    } catch (e) { void fail(String(e)); }
   };
 
   const startAuthor = async () => {
     if (authorFiles.length === 0 || !authorOut) return;
-    setError(null); setAuthorBusy(true); setAuthorProg({ percent: 0, message: "starting" });
+    setError(null); setErrorLog(null); setAuthorBusy(true); setAuthorProg({ percent: 0, message: "starting" });
     try {
       await api.authorStart({
         inputs: authorFiles,
@@ -524,7 +547,7 @@ export default function App() {
         menu_background: authorMenuBg.trim() === "" ? null : authorMenuBg.trim(),
         menu_template: null,
       });
-    } catch (e) { setError(String(e)); setAuthorBusy(false); }
+    } catch (e) { void fail(String(e)); setAuthorBusy(false); }
   };
 
   const saveChosen = async () => {
@@ -541,7 +564,7 @@ export default function App() {
         `Saved ${saved.map((s) => s.role).join(", ")} to ${coverTarget.dir.split("/").pop()}` +
           (wm > 0 ? ` (${wm} watermarked preview${wm > 1 ? "s" : ""})` : " (originals)"),
       );
-    } catch (e) { setError(String(e)); }
+    } catch (e) { void fail(String(e)); }
     finally { setSavingCovers(false); }
   };
 
@@ -550,13 +573,13 @@ export default function App() {
     const us = [
       api.onIsoProgress((p) => setIsoProgress(p)),
       api.onIsoDone(() => { setIsoBusy(false); setToast("Decrypted ISO written"); }),
-      api.onIsoError((e) => { setIsoBusy(false); setError(e); }),
+      api.onIsoError((e) => { setIsoBusy(false); void fail(e, "", "iso"); }),
       api.onCloneProgress((p) => setCloneProgress(p)),
       api.onCloneDone(({ dest }) => { setCloneProgress(null); setToast("Clone written"); void api.reveal(dest); }),
-      api.onCloneError((e) => { setCloneProgress(null); setError(e); }),
+      api.onCloneError((e) => { setCloneProgress(null); void fail(e, "", "clone"); }),
       api.onBurnProgress((p) => setBurnProgress(p)),
       api.onBurnDone(() => { setBurnProgress(null); setToast("Disc burned"); }),
-      api.onBurnError((e) => { setBurnProgress(null); setError(e); }),
+      api.onBurnError((e) => { setBurnProgress(null); void fail(e, "", "burn"); }),
     ];
     return () => { us.forEach((u) => u.then((f) => f())); };
   }, []);
@@ -565,7 +588,7 @@ export default function App() {
     const us = [
       api.onDvdProgress((p) => setDvdProgress(p)),
       api.onDvdDone((path) => { setDvdProgress(null); setToast("DVD title written"); void api.reveal(path); }),
-      api.onDvdError((e) => { setDvdProgress(null); setError(e); }),
+      api.onDvdError((e) => { setDvdProgress(null); void fail(e, "", "dvd"); }),
     ];
     return () => { us.forEach((u) => u.then((f) => f())); };
   }, []);
@@ -578,7 +601,7 @@ export default function App() {
 
   const exportIso = async (format: "iso" | "folder") => {
     if (!discPath) return;
-    setError(null); setIsoBusy(true);
+    setError(null); setErrorLog(null); setIsoBusy(true);
     setIsoProgress({ stage: "starting", percent: 0, files: 0, message: "starting" });
     try {
       await api.exportIso({
@@ -588,23 +611,23 @@ export default function App() {
         format,
         label: disc?.name ?? null,
       });
-    } catch (e) { setError(String(e)); setIsoBusy(false); }
+    } catch (e) { void fail(String(e)); setIsoBusy(false); }
   };
 
   const cloneDisc = async () => {
     if (!discPath) return;
     const dev = optical[0];
     if (!dev) {
-      setError("cloning needs the raw optical device (/dev/rdiskN); reconnect the drive");
+      void fail("cloning needs the raw optical device (/dev/rdiskN); reconnect the drive", "", "clone");
       return;
     }
     const src = `/dev/r${dev.bsd_name}`;
     const dest = isoPath.replace(/\.iso$/i, " - clone.iso");
-    setError(null);
+    setError(null); setErrorLog(null);
     setCloneProgress({ percent: 0, bytes: 0, total: 0, message: "starting", done: false });
     try {
       await api.cloneStart({ source: src, dest });
-    } catch (e) { setError(String(e)); setCloneProgress(null); }
+    } catch (e) { void fail(String(e)); setCloneProgress(null); }
   };
 
   const verifyTree = async (target: string) => {
@@ -614,27 +637,31 @@ export default function App() {
       if (r.ok) {
         setToast(`tree ok: ${r.titles.length} title(s)`);
       } else {
-        setError(r.errors.slice(0, 5).join("; "));
+        void fail(
+          `verify: ${r.errors.length} problem(s)`,
+          r.errors.join("\n"),
+          "verify",
+        );
       }
-    } catch (e) { setError(String(e)); }
+    } catch (e) { void fail(String(e)); }
   };
 
   const ripDvd = async () => {
     if (!dvd || dvdTitle == null || !cfg) return;
     const name = sanitize(dvd.label || "DVD");
     const output = `${cfg.output_dir.replace(/\/$/, "")}/${name}/${name} - Title ${dvdTitle}.mkv`;
-    setError(null);
+    setError(null); setErrorLog(null);
     setDvdProgress({ percent: 0, out_time_ms: 0, total_ms: 0, message: "starting", done: false });
     try {
       await api.dvdRip({ source: dvd.root, title: dvdTitle, output, subtitles: false });
-    } catch (e) { setError(String(e)); setDvdProgress(null); }
+    } catch (e) { void fail(String(e)); setDvdProgress(null); }
   };
 
   const searchKeys = async () => {
     setKeyBusy(true);
     try {
       setKeyHits(await api.keysSearch(keyQuery, 20));
-    } catch (e) { setError(String(e)); } finally { setKeyBusy(false); }
+    } catch (e) { void fail(String(e)); } finally { setKeyBusy(false); }
   };
 
   const importKeys = async () => {
@@ -649,7 +676,7 @@ export default function App() {
       await refresh();
       setKeyEpoch((n) => n + 1);
       setToast(`imported ${added} (${skipped} already present)`);
-    } catch (e) { setError(String(e)); }
+    } catch (e) { void fail(String(e)); }
   };
 
   const removeKey = async (id: string) => {
@@ -658,7 +685,7 @@ export default function App() {
       setKeyHits((h) => h.filter((e) => e.id !== id));
       setKeyEpoch((n) => n + 1);
       setToast(gone ? "key removed" : "not found");
-    } catch (e) { setError(String(e)); }
+    } catch (e) { void fail(String(e)); }
   };
 
   const burnIso = async () => {
@@ -668,15 +695,30 @@ export default function App() {
       return;
     }
     if (!window.confirm(`Write\n${isoPath}\nto the drive (${dev.bsd_name})?\n\nThis erases the disc and cannot be undone.`)) return;
-    setError(null);
+    setError(null); setErrorLog(null);
     setBurnProgress({ percent: 0, message: "starting", done: false });
     try {
       // Native hdiutil burn: it picks the writer itself.
       await api.burnStart({ image: isoPath, device: null, speed: null, dry_run: false });
-    } catch (e) { setError(String(e)); setBurnProgress(null); }
+    } catch (e) { void fail(String(e)); setBurnProgress(null); }
   };
 
   const [section, setSection] = useState<SectionId>("disc");
+  // Keep the log page and the session preview current while they are visible.
+  useEffect(() => {
+    if (section !== "logs" && section !== "disc" && section !== "output") return;
+    let alive = true;
+    const load = async () => {
+      try {
+        const rows = await api.logsTail(600);
+        if (alive) setLogs(rows);
+      } catch { /* the page still renders what it has */ }
+    };
+    void load();
+    const id = setInterval(load, 2000);
+    return () => { alive = false; clearInterval(id); };
+  }, [section]);
+
   // Load the changelog when the System pane opens, so the version shows at once.
   useEffect(() => {
     if (section === "system" && !about) {
@@ -774,7 +816,7 @@ export default function App() {
             await refresh();
             setKeyEpoch((n) => n + 1);
             setToast("Keys updated");
-          } catch (e) { setError(String(e)); }
+          } catch (e) { void fail(String(e)); }
         })();
       },
     },
@@ -846,7 +888,7 @@ export default function App() {
       const u = await api.checkUpdate();
       setUpdate(u.version);
       setToast(u.version ? `Update ${u.version} is ready` : "You are up to date");
-    } catch (e) { setError(String(e)); }
+    } catch (e) { void fail(String(e)); }
   };
 
   useEffect(() => {
@@ -944,6 +986,22 @@ export default function App() {
       void api.eject().then((m) => setToast(m)).catch(() => {});
     }
   }, [queue.length, cfg?.auto_rip_eject]);
+
+  const filteredLogs = useMemo(() => {
+    const q = logFilter.trim().toLowerCase();
+    const byId = /^#(\d+)$/.exec(q);
+    return logs.filter((e) => {
+      if (logLevel !== "all" && e.level !== logLevel) return false;
+      if (!q) return true;
+      if (byId) return e.id === Number(byId[1]);
+      return (
+        e.message.toLowerCase().includes(q) ||
+        e.source.toLowerCase().includes(q) ||
+        e.level.toLowerCase().includes(q) ||
+        (e.detail ?? "").toLowerCase().includes(q)
+      );
+    });
+  }, [logs, logFilter, logLevel]);
 
   const page = PAGE_META[section];
   const checksOk = doctor?.checks.filter((c) => c.ok).length ?? 0;
@@ -1064,7 +1122,14 @@ export default function App() {
               <div className="err" role="alert">
                 <span aria-hidden="true">⚠</span>
                 <span className="grow">{error}</span>
-                <button className="ghost sm" onClick={() => setError(null)}>Dismiss</button>
+                {errorLog != null && (
+                  <button className="ghost sm" onClick={() => openLogFor(errorLog)}>
+                    <Icon name="logs" size={13} /> View log
+                  </button>
+                )}
+                <button className="ghost sm" onClick={() => { setError(null); setErrorLog(null); }}>
+                  Dismiss
+                </button>
               </div>
             )}
 
@@ -1087,7 +1152,7 @@ export default function App() {
                         Verify
                       </button>
                       <button className="ghost sm" disabled={optical.length === 0}
-                        onClick={async () => { try { setToast(await api.eject()); } catch (e) { setError(String(e)); } }}>
+                        onClick={async () => { try { setToast(await api.eject()); } catch (e) { void fail(String(e)); } }}>
                         <Icon name="eject" size={14} /> Eject
                       </button>
                       <button className="ghost sm" onClick={refresh}>
@@ -1787,7 +1852,7 @@ export default function App() {
                         await refresh();
                         setKeyEpoch((n) => n + 1);
                         setToast("Keys updated");
-                      } catch (e) { setError(String(e)); } finally { setBusy(null); }
+                      } catch (e) { void fail(String(e)); } finally { setBusy(null); }
                     }}>
                     {busy === "keys" ? <><span className="spin" /> Updating</> : "Update keys"}
                   </button>
@@ -1802,7 +1867,7 @@ export default function App() {
                         await refresh();
                         setKeyEpoch((n) => n + 1);
                         setToast(`${r.added ? "Derived" : "Already keyed"}: ${r.key.name}`);
-                      } catch (e) { setError(String(e)); } finally { setBusy(null); }
+                      } catch (e) { void fail(String(e)); } finally { setBusy(null); }
                     }}>
                     {busy === "derive" ? "Deriving…" : "Derive key for this disc"}
                   </button>
@@ -1810,7 +1875,7 @@ export default function App() {
                     onClick={async () => {
                       setBusy("bdplus");
                       try { setToast(`BD+ VM installed at ${await api.bdplusInstall()}`); }
-                      catch (e) { setError(String(e)); } finally { setBusy(null); }
+                      catch (e) { void fail(String(e)); } finally { setBusy(null); }
                     }}>
                     {busy === "bdplus" ? "Installing…" : "Install BD+ VM"}
                   </button>
@@ -1890,6 +1955,73 @@ export default function App() {
                   )}
                 </details>
               </section>
+            )}
+
+            {section === "logs" && (
+              <>
+                <section className="card">
+                  <div className="panel-head">
+                    <div>
+                      <h2>Run detail</h2>
+                      <p className="sub">
+                        Backend steps, child-process output and UI failures. Newest first; the buffer keeps
+                        the last 2,000 entries.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="row wrap" style={{ gap: 10 }}>
+                    <label className="field grow" style={{ minWidth: 220 }}>Filter
+                      <input className="mono" value={logFilter} placeholder="text, source, or #id"
+                        onChange={(e) => { setLogFilter(e.target.value); setLogFocus(null); }} />
+                    </label>
+                    <label className="field" style={{ minWidth: 130 }}>Level
+                      <select value={logLevel} onChange={(e) => setLogLevel(e.target.value)}>
+                        <option value="all">All</option>
+                        <option value="error">Errors</option>
+                        <option value="warn">Warnings</option>
+                        <option value="info">Info</option>
+                        <option value="debug">Debug</option>
+                      </select>
+                    </label>
+                    <button className="ghost" onClick={() => { void api.logsClear().then(() => setLogs([])); }}>
+                      <Icon name="refresh" size={14} /> Clear
+                    </button>
+                  </div>
+                  <p className="sub" style={{ marginTop: 8 }}>
+                    {filteredLogs.length} of {logs.length} entr{logs.length === 1 ? "y" : "ies"}
+                    {logFocus != null && ` · pinned to #${logFocus}`}
+                  </p>
+                </section>
+
+                <section className="card">
+                  {filteredLogs.length === 0 ? (
+                    <p className="sub">Nothing matches.</p>
+                  ) : (
+                    <ol className="loglist">
+                      {filteredLogs.map((e) => (
+                        <li key={e.id} id={`log-${e.id}`}
+                          className={`logrow ${e.level}${e.id === logFocus ? " focus" : ""}`}>
+                          <div className="row wrap" style={{ gap: 8, alignItems: "baseline" }}>
+                            <span className="mono sub">{new Date(e.at).toLocaleTimeString()}</span>
+                            <span className={`pill ${e.level === "error" ? "warn" : e.level === "warn" ? "warn" : "good"}`}>
+                              <span className="dot" />{e.level}
+                            </span>
+                            <span className="chip mono">{e.source}</span>
+                            <span className="mono grow">#{e.id}</span>
+                          </div>
+                          <div style={{ marginTop: 4 }}>{e.message}</div>
+                          {e.detail && (
+                            <details open={e.id === logFocus}>
+                              <summary className="sub">detail</summary>
+                              <pre className="mono" style={{ whiteSpace: "pre-wrap", fontSize: 12 }}>{e.detail}</pre>
+                            </details>
+                          )}
+                        </li>
+                      ))}
+                    </ol>
+                  )}
+                </section>
+              </>
             )}
 
             {section === "system" && (
@@ -2060,7 +2192,7 @@ export default function App() {
                         {doctor ? `${checksOk} of ${checksTotal} tools present` : "Probing native tools…"}
                       </p>
                     </div>
-                    <button className="ghost sm" onClick={async () => { try { setDoctor(await api.doctor()); } catch (e) { setError(String(e)); } }}>
+                    <button className="ghost sm" onClick={async () => { try { setDoctor(await api.doctor()); } catch (e) { void fail(String(e)); } }}>
                       <Icon name="refresh" size={14} /> Re-run
                     </button>
                   </div>
@@ -2093,7 +2225,7 @@ export default function App() {
                                       const p = await api.tsmuxerInstall();
                                       setDoctor(await api.doctor());
                                       setToast(`tsMuxeR installed at ${p}`);
-                                    } catch (e) { setError(String(e)); }
+                                    } catch (e) { void fail(String(e)); }
                                   }}>
                                   Install
                                 </button>
@@ -2292,6 +2424,27 @@ export default function App() {
               Edit rip settings
             </button>
           </div>
+
+          <div className="insp-card">
+            <div className="insp-title">
+              <h3>Logs</h3>
+              <button className="ghost sm" onClick={() => openLogFor(null)}>Open</button>
+            </div>
+            {logs.length === 0 ? (
+              <p className="sub">Nothing logged yet.</p>
+            ) : (
+              <ul className="sessionlogs">
+                {logs.slice(0, 4).map((e) => (
+                  <li key={e.id}>
+                    <button className="loglink" onClick={() => openLogFor(e.id)}>
+                      <span className={`dot ${e.level}`} aria-hidden="true" />
+                      <span className="mono sub">{e.source}</span> {e.message.slice(0, 60)}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </aside>
       </div>
 
@@ -2400,7 +2553,8 @@ export default function App() {
 
 /* ---------- shell data and small presentational pieces ---------- */
 
-type SectionId = "disc" | "output" | "episodes" | "author" | "artwork" | "menus" | "keys" | "system";
+type SectionId =
+  | "disc" | "output" | "episodes" | "author" | "artwork" | "menus" | "keys" | "system" | "logs";
 
 type PaletteItem = {
   id: string;
@@ -2423,6 +2577,7 @@ const SECTIONS: { id: SectionId; label: string; blurb: string; icon: string; key
   { id: "menus", label: "Menus", blurb: "Templates", icon: "menu", key: "6" },
   { id: "keys", label: "Keys", blurb: "AACS and BD+", icon: "key", key: "7" },
   { id: "system", label: "System", blurb: "Paths and tools", icon: "system", key: "8" },
+  { id: "logs", label: "Logs", blurb: "Run and failure detail", icon: "logs", key: "9" },
 ];
 
 const PAGE_META: Record<SectionId, { eyebrow: string; title: string; lede: string }> = {
@@ -2466,6 +2621,11 @@ const PAGE_META: Record<SectionId, { eyebrow: string; title: string; lede: strin
     title: "System",
     lede: "Where files go, which tools are present, and how the workshop is wired.",
   },
+  logs: {
+    eyebrow: "09 / diagnostics",
+    title: "Logs",
+    lede: "Everything the backend and its child processes reported, newest first.",
+  },
 };
 
 const ICON_PATHS: Record<string, string[]> = {
@@ -2486,6 +2646,7 @@ const ICON_PATHS: Record<string, string[]> = {
     "M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z",
   ],
   search: ["M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16Z", "m21 21-4.3-4.3"],
+  logs: ["M4 4h16v16H4z", "M8 9h8", "M8 13h8", "M8 17h5"],
   refresh: ["M21 12a9 9 0 1 1-3-6.7", "M21 3v6h-6"],
   eject: ["M5 17h14", "M12 4 5 12h14L12 4Z"],
   play: ["m7 4 13 8-13 8V4Z"],

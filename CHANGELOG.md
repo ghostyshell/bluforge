@@ -6,6 +6,18 @@ All notable changes to Keepsake Atelier. Newest first.
 
 Nothing yet.
 
+## 0.3.0 - 2026-11-14
+
+### Added
+
+- **A Logs page, and an error banner that opens it.** Backend steps,
+  child-process stderr (ffmpeg, the Atmos tools, tsMuxeR) and every interface
+  failure are recorded in a bounded in-memory buffer and shown newest first,
+  with text and level filters, `#id` pinning and expandable detail. The session
+  panel previews the last four entries, and the error banner gains **View log**,
+  which lands on the logs page pinned to that exact error, so a failed rip can be
+  inspected instead of guessed at. `RUST_LOG=debug` widens what is captured.
+
 ## 0.2.2 - 2026-11-14
 
 ### Fixed

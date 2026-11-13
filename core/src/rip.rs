@@ -1665,10 +1665,11 @@ fn prepare_cinavia(
     }
     cmd.stdin(Stdio::piped())
         .stdout(Stdio::null())
-        .stderr(Stdio::inherit());
+        .stderr(Stdio::piped());
     let mut child = cmd
         .spawn()
         .map_err(|e| CoreError::Disc(format!("cinavia ffmpeg: {e}")))?;
+    let cin_stderr = crate::binaries::capture_stderr(&mut child, "cinavia");
     let stdin = child
         .stdin
         .take()
@@ -1682,6 +1683,9 @@ fn prepare_cinavia(
     let feed = feed_title(pre, stdin);
     let status = child.wait()?;
     let _ = feed.join();
+    if let Some(h) = cin_stderr {
+        let _ = h.join();
+    }
     if !status.success() {
         return Err(CoreError::Disc("cinavia: audio decode failed".into()));
     }
@@ -2019,12 +2023,13 @@ where
         .args(&args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::inherit())
+        .stderr(Stdio::piped())
         .spawn()
         .map_err(|e| CoreError::Disc(format!("spawn ffmpeg: {e}")))?;
 
-    let mut stdin = child.stdin.take().expect("stdin");
+    let stdin = child.stdin.take().expect("stdin");
     let stdout = child.stdout.take().expect("stdout");
+    let stderr = crate::binaries::capture_stderr(&mut child, "ffmpeg");
 
     let feed = feed_title(disc, stdin);
 
@@ -2048,6 +2053,9 @@ where
 
     let status = child.wait()?;
     let _ = feed.join();
+    if let Some(h) = stderr {
+        let _ = h.join();
+    }
     if let Some(dir) = &cinavia_dir {
         let _ = std::fs::remove_dir_all(dir);
     }

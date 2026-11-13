@@ -347,7 +347,7 @@ fn decode_cmd(
     };
     cmd.args(["-ar", &RATE.to_string()]);
     cmd.args(["-acodec", "pcm_f32le", "-f", "f32le", "pipe:1"]);
-    cmd.stdout(Stdio::piped()).stderr(Stdio::null());
+    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
     cmd
 }
 
@@ -364,6 +364,7 @@ pub fn analyze(
     let mut child = decode_cmd(path, track, channels, Some(secs), Some(channel))
         .spawn()
         .map_err(|e| format!("ffmpeg: {e}"))?;
+    let stderr = crate::binaries::capture_stderr(&mut child, "cinavia");
     let mut samples = Samples::new(child.stdout.take().ok_or("no ffmpeg stdout")?);
 
     let win = window(FFT);
@@ -439,6 +440,9 @@ pub fn analyze(
         spectra.push(psd);
     }
     let _ = child.wait();
+    if let Some(h) = stderr {
+        let _ = h.join();
+    }
 
     // Pick the quietest blocks, skipping the very quietest (digital silence).
     let mut order: Vec<usize> = (0..levels.len()).collect();
@@ -1004,6 +1008,7 @@ pub fn strip(
     let mut child = decode_cmd(input, track, channels, None, None)
         .spawn()
         .map_err(|e| format!("ffmpeg: {e}"))?;
+    let stderr = crate::binaries::capture_stderr(&mut child, "cinavia");
     let mut samples = Samples::new(child.stdout.take().ok_or("no ffmpeg stdout")?);
 
     let win = window(STFT);
@@ -1149,6 +1154,9 @@ pub fn strip(
     w.flush().map_err(|e| e.to_string())?;
     drop(w);
     let _ = child.wait();
+    if let Some(h) = stderr {
+        let _ = h.join();
+    }
 
     let mut patch = std::fs::OpenOptions::new()
         .write(true)

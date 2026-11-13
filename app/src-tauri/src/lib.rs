@@ -7,7 +7,31 @@ use tauri::{AppHandle, Emitter, Manager, State};
 
 use keepsake_core::{config::AppConfig, disc::DiscInfo, iso, keys::KeyDbStatus, rip, CoreSnapshot};
 
+mod logs;
 mod mcp;
+
+#[tauri::command]
+fn logs_tail(limit: Option<usize>, filter: Option<String>) -> Vec<logs::Entry> {
+    logs::events(limit.unwrap_or(200), filter.as_deref())
+}
+
+#[tauri::command]
+fn logs_get(id: u64) -> Option<logs::Entry> {
+    logs::get(id)
+}
+
+#[tauri::command]
+fn logs_clear() {
+    logs::clear();
+}
+
+/// Record a failure the frontend caught, and return its id for the banner link.
+#[tauri::command]
+fn log_error(app: AppHandle, source: String, message: String, detail: String) -> u64 {
+    let id = logs::fail(Some(&app), &source, &message, detail);
+    tracing::error!(target: "ui", %message);
+    id
+}
 
 /// The bundled changelog, and the version it belongs to.
 #[tauri::command]
@@ -1014,12 +1038,16 @@ fn reveal(app: AppHandle, path: String) -> Result<(), String> {
 pub fn run() {
     // Core logs go through `tracing`; the app had no subscriber, so every
     // rip/disc log line was dropped. RUST_LOG=debug for detail.
-    let _ = tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
-        )
-        .try_init();
+    {
+        use tracing_subscriber::prelude::*;
+        let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+            .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
+        let _ = tracing_subscriber::registry()
+            .with(filter)
+            .with(tracing_subscriber::fmt::layer())
+            .with(logs::Layer { app: None })
+            .try_init();
+    }
 
     // The MCP listener is off unless the saved config enables it.
     mcp::apply(&AppConfig::load());
@@ -1046,6 +1074,10 @@ pub fn run() {
             author_start,
             export_iso,
             changelog,
+            logs_tail,
+            logs_get,
+            logs_clear,
+            log_error,
             check_update,
             install_update,
             reveal,
@@ -1123,6 +1155,7 @@ mod tests {
             episodes: None,
             start_episode: None,
             cinavia: false,
+            cinavia_codec: None,
         }
     }
 

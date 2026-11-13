@@ -1932,3 +1932,27 @@ h1 {
     animation: none;
   }
 }
+
+/* Logs: a dense, scannable list. Errors are tinted, the pinned row is ringed. */
+.loglist { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.logrow {
+  border: 1px solid color-mix(in oklab, currentColor 12%, transparent);
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 13px;
+}
+.logrow.debug { opacity: 0.78; }
+.logrow.error { border-color: color-mix(in oklab, var(--warn, #e0763a) 45%, transparent); }
+.logrow.focus { outline: 2px solid var(--accent, #8ab4f8); outline-offset: 2px; }
+.logrow summary { cursor: pointer; }
+.sessionlogs { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.loglink {
+  width: 100%; text-align: left; background: none; border: 0; padding: 3px 0;
+  font: inherit; font-size: 12px; color: inherit; cursor: pointer;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.loglink:hover { color: var(--accent, #8ab4f8); }
+.sessionlogs .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; }
+.sessionlogs .dot.error { background: #e0763a; }
+.sessionlogs .dot.warn { background: #d9b44a; }
+.sessionlogs .dot.info, .sessionlogs .dot.debug { background: #6b7280; }
