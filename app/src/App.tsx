@@ -158,6 +158,7 @@ export default function App() {
   const [logFilter, setLogFilter] = useState("");
   const [logLevel, setLogLevel] = useState("all");
   const [logFocus, setLogFocus] = useState<number | null>(null);
+  const [logJob, setLogJob] = useState<number | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [update, setUpdate] = useState<string | null>(null);
   const startedKeys = useRef(false);
@@ -250,7 +251,7 @@ export default function App() {
     const unAuthor = [
       api.onAuthorProgress((p) => setAuthorProg({ percent: p.percent, message: p.message })),
       api.onAuthorDone((path) => { setAuthorBusy(false); setToast(`Authored ${path}`); }),
-      api.onLogFail((e) => { setError(e.message); setErrorLog(e.id); }),
+      api.onLogFail((e) => { setError(e.message); setErrorLog(e.id); setLogJob(e.job); }),
       api.onAuthorError((e) => { setAuthorBusy(false); void fail(e, "", "author"); }),
     ];
     const unErr = api.onRipError((msg) => {
@@ -367,9 +368,10 @@ export default function App() {
     }
   };
 
-  const openLogFor = (id: number | null) => {
+  const openLogFor = (id: number | null, job: number | null = null) => {
     setSection("logs");
     setLogFocus(id);
+    setLogJob(job);
     setLogFilter(id == null ? "" : `#${id}`);
   };
 
@@ -711,14 +713,14 @@ export default function App() {
     let alive = true;
     const load = async () => {
       try {
-        const rows = await api.logsTail(600);
+        const rows = await api.logsTail(600, null, logJob);
         if (alive) setLogs(rows);
       } catch { /* the page still renders what it has */ }
     };
     void load();
     const id = setInterval(load, 2000);
     return () => { alive = false; clearInterval(id); };
-  }, [section]);
+  }, [section, logJob]);
 
   // Load the changelog when the System pane opens, so the version shows at once.
   useEffect(() => {
@@ -1991,6 +1993,14 @@ export default function App() {
                   <p className="sub" style={{ marginTop: 8 }}>
                     {filteredLogs.length} of {logs.length} entr{logs.length === 1 ? "y" : "ies"}
                     {logFocus != null && ` · pinned to #${logFocus}`}
+                    {logJob != null && (
+                      <>
+                        {` · job #${logJob}`}{" "}
+                        <button className="ghost sm" onClick={() => { setLogJob(null); setLogFilter(""); }}>
+                          show all
+                        </button>
+                      </>
+                    )}
                   </p>
                 </section>
 
@@ -2008,6 +2018,12 @@ export default function App() {
                               <span className="dot" />{e.level}
                             </span>
                             <span className="chip mono">{e.source}</span>
+                            {e.job != null && (
+                              <button className="chip mono" title="Only this job"
+                                onClick={() => { setLogJob(e.job); setLogFocus(null); setLogFilter(""); }}>
+                                job {e.job}
+                              </button>
+                            )}
                             <span className="mono grow">#{e.id}</span>
                           </div>
                           <div className="row between" style={{ gap: 8 }}>

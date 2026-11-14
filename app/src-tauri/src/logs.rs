@@ -24,10 +24,50 @@ pub struct Entry {
     pub source: String,
     pub message: String,
     pub detail: Option<String>,
+    /// The job this line belongs to, when it was written during one.
+    pub job: Option<u64>,
 }
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
+/// Running jobs, innermost last. One job runs at a time, so a stack is enough
+/// and child threads (process stderr) inherit it by peeking.
+static CURRENT: Mutex<Vec<u64>> = Mutex::new(Vec::new());
 static LOGS: Mutex<VecDeque<Entry>> = Mutex::new(VecDeque::new());
+
+fn current_job() -> Option<u64> {
+    CURRENT.lock().ok().and_then(|c| c.last().copied())
+}
+
+/// Mark a job as running for this thread and every thread it spawns. Dropping
+/// the guard closes it out, even on a panic.
+pub struct JobGuard(u64);
+
+impl Drop for JobGuard {
+    fn drop(&mut self) {
+        // Close the section before popping, so the marker keeps the tag.
+        info("job", format!("job {} finished", self.0));
+        if let Ok(mut current) = CURRENT.lock() {
+            if let Some(pos) = current.iter().rposition(|id| *id == self.0) {
+                current.remove(pos);
+            }
+        }
+    }
+}
+
+/// Open a job section: a start marker and the tag that every line carries.
+pub fn begin_job(id: u64, kind: &str, what: &str) -> JobGuard {
+    if let Ok(mut current) = CURRENT.lock() {
+        current.push(id);
+    }
+    push(
+        None,
+        "info",
+        "job",
+        format!("job {id} started: {kind} {what}"),
+        None,
+    );
+    JobGuard(id)
+}
 
 fn now_ms() -> u64 {
     std::time::SystemTime::now()
@@ -69,6 +109,7 @@ fn push_inner(level: &str, source: &str, message: impl AsRef<str>, detail: Optio
         source: source.to_string(),
         message: redact(message.as_ref()),
         detail: detail.map(|d| redact(d.trim_end())),
+        job: current_job(),
     };
     if let Ok(mut logs) = LOGS.lock() {
         logs.push_back(entry);
@@ -157,21 +198,26 @@ pub fn fail_job(
     } else {
         detail.push_str(&tail.join("\n"));
     }
-    let id = fail(Some(app), source, summary.as_ref(), detail);
+    let summary: String = match current_job() {
+        Some(job) => format!("job {job}: {}", summary.as_ref()),
+        None => summary.as_ref().to_string(),
+    };
+    let id = fail(Some(app), source, &summary, detail);
     let _ = app.emit(
         "logs://fail",
-        serde_json::json!({ "id": id, "message": summary.as_ref() }),
+        serde_json::json!({ "id": id, "message": summary.clone(), "job": current_job() }),
     );
     id
 }
 
-pub fn events(limit: usize, filter: Option<&str>) -> Vec<Entry> {
+pub fn events(limit: usize, filter: Option<&str>, job: Option<u64>) -> Vec<Entry> {
     let needle = filter.map(|f| f.to_ascii_lowercase());
     let Ok(logs) = LOGS.lock() else {
         return Vec::new();
     };
     logs.iter()
         .rev()
+        .filter(|e| job.map(|j| e.job == Some(j)).unwrap_or(true))
         .filter(|e| match &needle {
             None => true,
             Some(n) if n.is_empty() => true,
@@ -279,11 +325,11 @@ mod tests {
             get(fail_id).unwrap().detail.as_deref(),
             Some("line 1\nline 2")
         );
-        let all = events(10, None);
+        let all = events(10, None, None);
         assert_eq!(all[0].id, fail_id, "newest first");
-        assert_eq!(events(10, Some("mux")).len(), 1);
-        assert_eq!(events(10, Some("nothing-here")).len(), 0);
-        assert_eq!(events(10, Some("ffmpeg")).len(), 1, "source matches");
+        assert_eq!(events(10, Some("mux"), None).len(), 1);
+        assert_eq!(events(10, Some("nothing-here"), None).len(), 0);
+        assert_eq!(events(10, Some("ffmpeg"), None).len(), 1, "source matches");
         clear();
     }
 
@@ -309,6 +355,22 @@ mod tests {
         let tail = tail_of("ffmpeg", 10);
         assert_eq!(tail, vec!["debug Opening decoder", "error mux failed"]);
         assert_eq!(get(id).unwrap().source, "rip");
+        clear();
+    }
+
+    #[test]
+    fn a_job_tags_its_lines_and_closes() {
+        let _g = guard();
+        clear();
+        let job = begin_job(7, "rip", "title 1");
+        push_inner("info", "ffmpeg", "frame 1", None);
+        drop(job);
+        let rows = events(10, None, Some(7));
+        assert!(rows.iter().all(|e| e.job == Some(7)));
+        assert!(rows.iter().any(|e| e.message.contains("job 7 started")));
+        assert!(rows.iter().any(|e| e.message.contains("job 7 finished")));
+        assert_eq!(events(10, None, Some(8)).len(), 0);
+        assert!(current_job().is_none(), "guard pops the job");
         clear();
     }
 

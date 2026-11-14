@@ -21,6 +21,9 @@ default.
 
 - **Filter** matches message, source, level and detail text. `#123` pins one
   entry, which is what the error banner's **View log** button does.
+- **Job** chips narrow to one run. A job opens a section with a start marker,
+  tags every line it and its child processes write, and closes with a finished
+  marker, so a run can be read on its own instead of interleaved with polling.
 - **Level** narrows to errors or warnings.
 - A row's **detail** disclosure holds multi-line output, such as the verify
   report or a stack of ffmpeg lines.

@@ -114,6 +114,15 @@ test("the session lists recent logs and the page filters by id", async ({ page }
   await page.getByPlaceholder("text, source, or #id").fill("spawning");
   await expect(page.locator(".logrow")).toHaveCount(1);
   await expect(page.locator(".logrow")).toContainText("spawning ffmpeg");
+
+  // The job chip narrows to that job; "show all" restores the rest.
+  await page.getByPlaceholder("text, source, or #id").fill("");
+  await expect(page.locator(".logrow")).toHaveCount(4);
+  await page.locator(".logrow").getByRole("button", { name: "job 4" }).first().click();
+  await expect(page.locator(".logrow")).toHaveCount(3);
+  await expect(page.locator(".logrow").filter({ hasText: "iso export started" })).toHaveCount(0);
+  await page.getByRole("button", { name: "show all" }).click();
+  await expect(page.locator(".logrow")).toHaveCount(4);
 });
 
 test("a backend failure event raises the banner with a log link", async ({ page }) => {

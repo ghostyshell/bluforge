@@ -6,6 +6,17 @@ All notable changes to Keepsake Atelier. Newest first.
 
 Nothing yet.
 
+## 0.3.2 - 2026-11-14
+
+### Added
+
+- **Job-scoped logs.** Every rip, DVD rip, ISO export, clone, author and burn
+  opens a log section with a start marker, tags the lines it and its child
+  processes produce, and closes with a finished marker. Each row carries a job
+  chip that narrows the page to that run, and the banner's failure link opens
+  already scoped to it, so a run reads on its own instead of interleaved with
+  polling noise.
+
 ## 0.3.1 - 2026-11-14
 
 ### Added

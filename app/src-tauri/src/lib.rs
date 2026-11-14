@@ -1,5 +1,5 @@
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
@@ -10,6 +10,10 @@ use keepsake_core::{config::AppConfig, disc::DiscInfo, iso, keys::KeyDbStatus, r
 mod logs;
 mod mcp;
 
+/// Ids for one-off jobs (a single rip, ISO export, author run ...). The queue
+/// has its own counter.
+static NEXT_JOB: AtomicU64 = AtomicU64::new(1);
+
 /// The first line of an error, for the banner and the log summary.
 fn short(e: &keepsake_core::CoreError) -> String {
     let text = e.to_string();
@@ -17,8 +21,8 @@ fn short(e: &keepsake_core::CoreError) -> String {
 }
 
 #[tauri::command]
-fn logs_tail(limit: Option<usize>, filter: Option<String>) -> Vec<logs::Entry> {
-    logs::events(limit.unwrap_or(200), filter.as_deref())
+fn logs_tail(limit: Option<usize>, filter: Option<String>, job: Option<u64>) -> Vec<logs::Entry> {
+    logs::events(limit.unwrap_or(200), filter.as_deref(), job)
 }
 
 #[tauri::command]
@@ -275,6 +279,18 @@ fn pump_queue(app: AppHandle, state: &RpState) {
     let running = state.running.clone();
     let queue = state.queue.clone();
     std::thread::spawn(move || {
+        let _job = logs::begin_job(
+            id,
+            "rip",
+            &format!(
+                "{} title {}",
+                request.source.display(),
+                request
+                    .title
+                    .map(|t| t.to_string())
+                    .unwrap_or_else(|| "main".into())
+            ),
+        );
         let mut dest: Option<std::path::PathBuf> = None;
         let res = rip::run(&request, &cancel, |p| {
             if let Some(d) = p.dest.clone() {
@@ -843,7 +859,20 @@ fn start_rip(
     let cancel = state.cancel.clone();
     let running = state.running.clone();
     let app2 = app.clone();
+    let job = NEXT_JOB.fetch_add(1, Ordering::SeqCst);
     std::thread::spawn(move || {
+        let _job = logs::begin_job(
+            job,
+            "rip",
+            &format!(
+                "{} title {}",
+                request.source.display(),
+                request
+                    .title
+                    .map(|t| t.to_string())
+                    .unwrap_or_else(|| "main".into())
+            ),
+        );
         let res = rip::run(&request, &cancel, |p| {
             let _ = app2.emit("rip://progress", p);
         });
@@ -894,7 +923,9 @@ fn burn_start(
     let app2 = app.clone();
     let cancel = state.cancel.clone();
     let running = state.running.clone();
+    let job = NEXT_JOB.fetch_add(1, Ordering::SeqCst);
     std::thread::spawn(move || {
+        let _job = logs::begin_job(job, "burn", &request.image.display().to_string());
         let res = keepsake_core::burn::run(&request, &cancel, |p| {
             let _ = app2.emit("burn://progress", p);
         });
@@ -941,7 +972,9 @@ fn dvd_rip(
     let app2 = app.clone();
     let cancel = state.cancel.clone();
     let running = state.running.clone();
+    let job = NEXT_JOB.fetch_add(1, Ordering::SeqCst);
     std::thread::spawn(move || {
+        let _job = logs::begin_job(job, "dvd", &request.source.display().to_string());
         let res = keepsake_core::dvd::rip(&request, &cancel, |p| {
             let _ = app2.emit("dvd://progress", p);
         });
@@ -993,7 +1026,9 @@ fn clone_start(
     let app2 = app.clone();
     let cancel = state.cancel.clone();
     let running = state.running.clone();
+    let job = NEXT_JOB.fetch_add(1, Ordering::SeqCst);
     std::thread::spawn(move || {
+        let _job = logs::begin_job(job, "clone", &request.source.display().to_string());
         let res = keepsake_core::clone::run(&request, &cancel, |p| {
             let _ = app2.emit("clone://progress", p);
         });
@@ -1037,7 +1072,9 @@ fn author_start(
     request: keepsake_core::author::AuthorRequest,
 ) -> Result<(), String> {
     let app2 = app.clone();
+    let job = NEXT_JOB.fetch_add(1, Ordering::SeqCst);
     std::thread::spawn(move || {
+        let _job = logs::begin_job(job, "author", &request.dest.display().to_string());
         let res = keepsake_core::author::run(&request, |p| {
             let _ = app2.emit("author://progress", p);
         });
@@ -1072,7 +1109,9 @@ fn cancel_rip(state: State<RpState>) {
 #[tauri::command]
 fn export_iso(app: AppHandle, request: iso::IsoRequest) -> Result<(), String> {
     let app2 = app.clone();
+    let job = NEXT_JOB.fetch_add(1, Ordering::SeqCst);
     std::thread::spawn(move || {
+        let _job = logs::begin_job(job, "iso", &request.source.display().to_string());
         let res = iso::run(&request, |p| {
             let _ = app2.emit("iso://progress", p);
         });

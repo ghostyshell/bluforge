@@ -8,6 +8,7 @@ export type LogEntry = {
   source: string;
   message: string;
   detail: string | null;
+  job: number | null;
 };
 
 export type AboutInfo = {
@@ -374,8 +375,12 @@ export type QueueJob = {
 export const api = {
   snapshot: () => invoke<Snapshot>("snapshot"),
   changelog: () => invoke<AboutInfo>("changelog"),
-  logsTail: (limit?: number, filter?: string | null) =>
-    invoke<LogEntry[]>("logs_tail", { limit: limit ?? null, filter: filter ?? null }),
+  logsTail: (limit?: number, filter?: string | null, job?: number | null) =>
+    invoke<LogEntry[]>("logs_tail", {
+      limit: limit ?? null,
+      filter: filter ?? null,
+      job: job ?? null,
+    }),
   logsGet: (id: number) => invoke<LogEntry | null>("logs_get", { id }),
   logsClear: () => invoke<void>("logs_clear"),
   logError: (source: string, message: string, detail: string) =>
@@ -392,8 +397,8 @@ export const api = {
     listen<IsoProgress>("iso://progress", (e) => cb(e.payload)),
   onIsoDone: (cb: () => void): Promise<UnlistenFn> =>
     listen("iso://done", () => cb()),
-  onLogFail: (cb: (e: { id: number; message: string }) => void): Promise<UnlistenFn> =>
-    listen<{ id: number; message: string }>("logs://fail", (e) => cb(e.payload)),
+  onLogFail: (cb: (e: { id: number; message: string; job: number | null }) => void): Promise<UnlistenFn> =>
+    listen<{ id: number; message: string; job: number | null }>("logs://fail", (e) => cb(e.payload)),
   onIsoError: (cb: (e: string) => void): Promise<UnlistenFn> =>
     listen<string>("iso://error", (e) => cb(e.payload)),
   onProgress: (cb: (p: RipProgress) => void): Promise<UnlistenFn> =>

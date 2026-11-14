@@ -146,7 +146,17 @@ const invoke: Invoke = async (cmd, args = {}) => {
         optical: [drive],
         keys: { path: "/Users/you/Library/Application Support/keepsake-atelier/KEYDB.cfg", exists: true, entries: 128433, bytes: 24117248, modified: 0 },
       };
-    case "logs_tail":
+    case "logs_tail": {
+      const job = (args as any)?.job ?? null;
+      const filter = String((args as any)?.filter ?? "").toLowerCase();
+      const byId = /^#(\d+)$/.exec(filter);
+      return (logs as any[]).filter((e) => {
+        if (job != null && e.job !== job) return false;
+        if (!filter) return true;
+        if (byId) return e.id === Number(byId[1]);
+        return `${e.message} ${e.source} ${e.level}`.toLowerCase().includes(filter);
+      });
+    }
     case "logs_get":
     case "logs_clear":
       return logs;
@@ -315,8 +325,11 @@ let logs: unknown[] = [
     source: "ffmpeg",
     message: "mux failed",
     detail: "line one\nline two",
+    job: 4,
   },
-  { id: 2, at: Date.now() - 5000, level: "info", source: "rip", message: "spawning ffmpeg", detail: null },
+  { id: 2, at: Date.now() - 5000, level: "info", source: "rip", message: "spawning ffmpeg", detail: null, job: 4 },
+  { id: 3, at: Date.now() - 9000, level: "info", source: "job", message: "job 4 started: rip title 1", detail: null, job: 4 },
+  { id: 4, at: Date.now() - 20000, level: "info", source: "iso", message: "iso export started", detail: null, job: 5 },
 ];
 
 export function installMock() {
