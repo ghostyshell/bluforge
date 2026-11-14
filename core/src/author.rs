@@ -657,7 +657,10 @@ where
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| CoreError::Disc(format!("tsMuxeR: {e}")))?;
+        .map_err(|e| {
+            tracing::error!(target: "tsmuxer", error = %e, "spawning tsMuxeR failed");
+            CoreError::Disc(format!("tsMuxeR: {e}"))
+        })?;
 
     let mut out = child
         .stdout
@@ -697,10 +700,9 @@ where
     let err_text = err_thread.join().unwrap_or_default();
     let _ = std::fs::remove_file(&meta_path);
     if !status.success() {
-        return Err(CoreError::Disc(format!(
-            "tsMuxeR failed: {}",
-            err_text.lines().last().unwrap_or("see log")
-        )));
+        let last = err_text.lines().last().unwrap_or("see log").to_string();
+        tracing::error!(target: "tsmuxer", status = %status, reason = %last, "tsMuxeR failed");
+        return Err(CoreError::Disc(format!("tsMuxeR failed: {last}")));
     }
     Ok(())
 }

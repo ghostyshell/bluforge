@@ -229,7 +229,10 @@ where
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| CoreError::Disc(format!("ffmpeg: {e}")))?;
+        .map_err(|e| {
+            tracing::error!(target: "ffmpeg", error = %e, "spawning ffmpeg failed");
+            CoreError::Disc(format!("ffmpeg: {e}"))
+        })?;
     let stdout = child
         .stdout
         .take()
@@ -295,10 +298,9 @@ where
         return Err(CoreError::Disc("DVD rip cancelled".into()));
     }
     if !status.success() {
-        return Err(CoreError::Disc(format!(
-            "ffmpeg failed: {}",
-            err.lines().last().unwrap_or("see log")
-        )));
+        let last = err.lines().last().unwrap_or("see log").to_string();
+        tracing::error!(target: "ffmpeg", status = %status, reason = %last, "dvd rip failed");
+        return Err(CoreError::Disc(format!("ffmpeg failed: {last}")));
     }
     Ok(req.output.clone())
 }

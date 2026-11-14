@@ -25,6 +25,9 @@ sha2 = "0.10"
 aes = "0.8"
 rustfft = "6.4.1"
 
+[dev-dependencies]
+tracing-subscriber.workspace = true
+
 [target.'cfg(all(windows, target_env = "msvc"))'.dependencies]
 libloading = "0.8"
 

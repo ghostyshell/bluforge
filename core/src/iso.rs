@@ -191,8 +191,14 @@ where
     let backend = Disc::plan_backend(&req.source);
     let (source, remount) = crate::disc::prepare_source(&req.source, false);
     let _remount = crate::disc::RemountGuard(remount);
-    let disc = Disc::open_with_backend(&source, req.keydb.as_deref(), backend)?;
-    let info = disc.info()?;
+    let disc = Disc::open_with_backend(&source, req.keydb.as_deref(), backend).map_err(|e| {
+        tracing::error!(target: "disc", source = %source.display(), error = %e, "opening the disc failed");
+        e
+    })?;
+    let info = disc.info().map_err(|e| {
+        tracing::error!(target: "disc", error = %e, "reading disc info failed");
+        e
+    })?;
     let label = req
         .label
         .clone()

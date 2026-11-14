@@ -10,6 +10,8 @@ failed rip can be inspected instead of guessed at.
 - Everything a child process writes to stderr (ffmpeg, the Atmos tools, tsMuxeR),
   line by line, with the process as the source and error lines flagged.
 - Every failure the interface catches, with its full message.
+- The reason a step failed, logged where it failed rather than at the boundary:
+  an unopenable disc, a refused title select, a failed spawn, a non-zero exit.
 - Every failed job (rip, DVD rip, ISO export, clone, author, burn) with its
   context — source, title, mode, destination — followed by the last 40 lines
   the producing process wrote. The banner links straight to that entry.

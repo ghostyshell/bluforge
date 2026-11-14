@@ -392,7 +392,10 @@ where
 
     let disc = crate::disc::Disc::open_with_backend(&req.source, req.keydb.as_deref(), backend)?;
     let _ = disc.info()?;
-    disc.select(title)?;
+    disc.select(title).map_err(|e| {
+        tracing::error!(target: "disc", title, error = %e, "selecting the title failed");
+        e
+    })?;
     // When the wanted range does not start at the first clip, jump to it: the
     // splitter only writes wanted clips anyway, so there is no reason to read
     // the earlier ones.
@@ -427,7 +430,10 @@ where
         let n = match reader.read(&mut buf) {
             Ok(0) => break,
             Ok(n) => n,
-            Err(e) => return Err(CoreError::Disc(format!("disc read: {e}"))),
+            Err(e) => {
+                tracing::error!(target: "disc", error = %e, "reading the title failed");
+                return Err(CoreError::Disc(format!("disc read: {e}")));
+            }
         };
         read_total += n as u64;
 
@@ -868,7 +874,10 @@ pub fn probe_sub_events(
         return Ok(Vec::new());
     }
     let _ = info;
-    disc.select(title)?;
+    disc.select(title).map_err(|e| {
+        tracing::error!(target: "disc", title, error = %e, "selecting the title failed");
+        e
+    })?;
     let mut reader = TitleReader::new(&disc);
     let mut buf = vec![0u8; 1 << 20];
     let mut stride = 0usize;
@@ -1682,7 +1691,11 @@ fn prepare_cinavia(
     pre.select(title)?;
     let feed = feed_title(pre, stdin);
     let status = child.wait()?;
-    let _ = feed.join();
+    match feed.join() {
+        Ok(Ok(())) => {}
+        Ok(Err(e)) => tracing::error!(target: "disc", error = %e, "pumping the disc failed"),
+        Err(_) => tracing::error!(target: "disc", "disc pump thread panicked"),
+    }
     if let Some(h) = cin_stderr {
         let _ = h.join();
     }
@@ -1799,8 +1812,14 @@ where
     let want_cinavia =
         req.cinavia || matches!(&req.mode, RipMode::Encode { settings, .. } if settings.cinavia);
 
-    let disc = Disc::open_with_backend(&req.source, req.keydb.as_deref(), backend)?;
-    let info = disc.info()?;
+    let disc = Disc::open_with_backend(&req.source, req.keydb.as_deref(), backend).map_err(|e| {
+        tracing::error!(target: "disc", source = %req.source.display(), error = %e, "opening the disc failed");
+        e
+    })?;
+    let info = disc.info().map_err(|e| {
+        tracing::error!(target: "disc", source = %req.source.display(), error = %e, "reading disc info failed");
+        e
+    })?;
     let (aacs_lib, _) = Disc::decryption_backend();
     tracing::info!(
         backend = backend.label(),
@@ -1985,7 +2004,10 @@ where
         }
     }
 
-    disc.select(title)?;
+    disc.select(title).map_err(|e| {
+        tracing::error!(target: "disc", title, error = %e, "selecting the title failed");
+        e
+    })?;
 
     // Cinavia: pre-filter each kept audio track into a temp WAV. This reads the
     // disc once more (audio only), so it is opt-in.
@@ -2025,7 +2047,10 @@ where
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| CoreError::Disc(format!("spawn ffmpeg: {e}")))?;
+        .map_err(|e| {
+            tracing::error!(target: "ffmpeg", error = %e, bin = %ffmpeg_path().display(), "spawning ffmpeg failed");
+            CoreError::Disc(format!("spawn ffmpeg: {e}"))
+        })?;
 
     let stdin = child.stdin.take().expect("stdin");
     let stdout = child.stdout.take().expect("stdout");
@@ -2052,7 +2077,11 @@ where
     }
 
     let status = child.wait()?;
-    let _ = feed.join();
+    match feed.join() {
+        Ok(Ok(())) => {}
+        Ok(Err(e)) => tracing::error!(target: "disc", error = %e, "pumping the disc failed"),
+        Err(_) => tracing::error!(target: "disc", "disc pump thread panicked"),
+    }
     if let Some(h) = stderr {
         let _ = h.join();
     }
@@ -2066,6 +2095,7 @@ where
         return Ok(());
     }
     if !status.success() {
+        tracing::error!(target: "ffmpeg", %status, "ffmpeg exited unsuccessfully");
         return Err(CoreError::Disc(format!("ffmpeg exited with {status}")));
     }
     // A drive read error mid-stream makes libbluray end early; ffmpeg then still

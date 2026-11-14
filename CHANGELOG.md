@@ -6,6 +6,16 @@ All notable changes to Keepsake Atelier. Newest first.
 
 Nothing yet.
 
+## 0.3.3 - 2026-11-14
+
+### Changed
+
+- **Failures log where they happen.** Opening a disc, reading its info,
+  selecting a title, spawning ffmpeg or tsMuxeR, and every non-zero exit now
+  record the reason and their inputs at the failing step, not only at the job
+  boundary. A rip that dies inside libbluray before ffmpeg starts therefore has
+  its cause in the job section instead of one line of summary.
+
 ## 0.3.2 - 2026-11-14
 
 ### Added

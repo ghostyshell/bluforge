@@ -364,9 +364,10 @@ where
     } else {
         command.stdout(Stdio::null()).stderr(Stdio::piped());
     }
-    let mut child = command
-        .spawn()
-        .map_err(|e| CoreError::Disc(format!("{}: {e}", bin.display())))?;
+    let mut child = command.spawn().map_err(|e| {
+        tracing::error!(target: "burn", bin = %bin.display(), error = %e, "spawning the writer failed");
+        CoreError::Disc(format!("{}: {e}", bin.display()))
+    })?;
     let stream: Box<dyn std::io::Read> = if native {
         Box::new(
             child
@@ -413,10 +414,13 @@ where
         ));
     }
     if !status.success() {
-        return Err(CoreError::Disc(format!(
-            "writer failed: {}",
-            tail.last().map(String::as_str).unwrap_or("see log")
-        )));
+        let last = tail
+            .last()
+            .map(String::as_str)
+            .unwrap_or("see log")
+            .to_string();
+        tracing::error!(target: "burn", status = %status, reason = %last, "the writer failed");
+        return Err(CoreError::Disc(format!("writer failed: {last}")));
     }
     on_progress(BurnProgress {
         percent: 100.0,

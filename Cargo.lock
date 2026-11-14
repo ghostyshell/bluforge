@@ -2354,7 +2354,7 @@ dependencies = [
 
 [[package]]
 name = "keepsake-atelier"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "clap",
  "keepsake-core",
@@ -2365,7 +2365,7 @@ dependencies = [
 
 [[package]]
 name = "keepsake-atelier-app"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "keepsake-core",
  "regex",
@@ -2383,7 +2383,7 @@ dependencies = [
 
 [[package]]
 name = "keepsake-core"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "aes",
  "cc",
@@ -2400,6 +2400,7 @@ dependencies = [
  "sha2",
  "thiserror 2.0.21",
  "tracing",
+ "tracing-subscriber",
  "ureq",
  "vcpkg",
  "windows-sys 0.59.0",
